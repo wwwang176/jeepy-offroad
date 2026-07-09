@@ -67,7 +67,8 @@ export function dustEmitRate(opts: {
   // Side-slip plume (powerslide / crab)
   const slip = clamp((lat - 1.2) / 6, 0, 1) * 68 * (0.4 + 0.6 * speedGate);
 
-  return clamp(drive + braking + roll + slip, 0, 144);
+  // ×2 particle count budget
+  return clamp((drive + braking + roll + slip) * 2, 0, 288);
 }
 
 /**
@@ -82,7 +83,8 @@ export function landingBurstCount(
   // vy negative = falling
   if (vy > -1.2) return 0;
   const impact = clamp((-vy - 1.2) / 8, 0, 1);
-  return Math.round(20 + impact * 56);
+  // ×2 particle count
+  return Math.round((20 + impact * 56) * 2);
 }
 
 /**
@@ -191,9 +193,11 @@ export function splashEmitRate(opts: {
   const speed = Math.abs(opts.speedMps);
   const speedGate = clamp((speed - 0.4) / 5, 0, 1);
   const th = clamp(Math.abs(opts.throttle), 0, 1);
+  // ×2 particle count
   return (
     opts.wetness *
-    (speedGate * speed * 10.4 + th * 32 * speedGate + speedGate * 16)
+    (speedGate * speed * 10.4 + th * 32 * speedGate + speedGate * 16) *
+    2
   );
 }
 

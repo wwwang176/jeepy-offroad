@@ -8,7 +8,6 @@ import {
   exhaustEmitRate,
   landingBurstCount,
   lateralSpeedMps,
-  longitudinalSpeedMps,
   parseHexRgb,
   splashEmitRate,
   streamWetness,
@@ -29,6 +28,11 @@ import { createSoftDiscTexture } from "./softDiscTexture";
 export type OffroadFxWheelSample = {
   contact: boolean;
   suspensionLength: number;
+  /**
+   * Cumulative wheel spin angle (rad) from Rapier, if available.
+   * Used to derive tread speed for dust kick; omit → throttle proxy.
+   */
+  rotation?: number;
 };
 
 export type OffroadFxSample = {
@@ -93,6 +97,8 @@ export class OffroadFx {
   private worldSize = 0;
   private prevContact: boolean[] = [false, false, false, false];
   private prevBodyContactCount = 0;
+  /** Previous wheel rotation (rad); NaN = not primed. */
+  private readonly prevWheelRot = new Float32Array(4).fill(Number.NaN);
   private readonly _q = new THREE.Quaternion();
   private readonly _local = new THREE.Vector3();
   private readonly _world = new THREE.Vector3();
@@ -182,7 +188,6 @@ export class OffroadFx {
     const vy = sample.linvel.y;
     const vz = sample.linvel.z;
     const speed = Math.hypot(vx, vz);
-    const long = longitudinalSpeedMps(vx, vz, yaw);
     const lat = lateralSpeedMps(vx, vz, yaw);
     const latAbs = Math.abs(lat);
     const rangeBoost = sample.driveRange === "L" ? 1.35 : 1;
@@ -236,13 +241,19 @@ export class OffroadFx {
         });
       }
 
+      // Tread speed (m/s): wheel ω×r if rotation known, else throttle proxy.
+      const treadMps = this.treadSpeedMps(i, w.rotation, dtClamped, sample.throttle);
+
       // --- Continuous dust (dry) / splash (wet) ---
       if (w.contact) {
+        // Prefer tread for "how hard tires are working"; chassis speed only
+        // for light roll when freewheeling with little throttle.
+        const workSpeed = Math.max(speed, Math.abs(treadMps));
         const dustR = dustEmitRate({
           grounded: true,
           throttle: sample.throttle,
           brake: sample.brake,
-          speedMps: speed,
+          speedMps: workSpeed,
           lateralAbsMps: latAbs,
           rangeBoost,
         });
@@ -253,7 +264,7 @@ export class OffroadFx {
         const splashR = splashEmitRate({
           grounded: true,
           wetness: wet,
-          speedMps: speed,
+          speedMps: workSpeed,
           throttle: sample.throttle,
         });
         SPLASH_ACC[i] += splashR * dtClamped;
@@ -262,17 +273,15 @@ export class OffroadFx {
           DUST_ACC[i] -= 1;
           this.emitDustPuff(
             contactPos,
-            long,
+            treadMps,
             lat,
-            vx,
-            vz,
             sample.throttle,
             dustCol,
           );
         }
         while (SPLASH_ACC[i] >= 1) {
           SPLASH_ACC[i] -= 1;
-          this.emitSplashPuff(contactPos, long, lat, vx, vz);
+          this.emitSplashPuff(contactPos, treadMps, lat);
         }
       } else {
         DUST_ACC[i] = 0;
@@ -304,11 +313,13 @@ export class OffroadFx {
         BODY_ACC.v -= 1;
         const p = bodyPts[(Math.random() * bodyN) | 0];
         const wet = streamWetness(p.x, p.z, this.streams);
+        // Body scrapes: no wheel spin — throttle proxy for kick direction/mag
+        const bodyTread = sample.throttle * 12;
         if (wet > 0.45) {
-          this.emitSplashPuff(p, long, lat, vx, vz);
+          this.emitSplashPuff(p, bodyTread, lat);
         } else {
           const col = this.sampleDustColor(p.x, p.z);
-          this.emitBodyDustPuff(p, long, lat, vx, vz, col);
+          this.emitBodyDustPuff(p, bodyTread, lat, col);
         }
       }
     } else {
@@ -392,30 +403,21 @@ export class OffroadFx {
   /** Scrape puff at a chassis contact (slightly more outward than tire dust). */
   private emitBodyDustPuff(
     pos: { x: number; y: number; z: number },
-    long: number,
+    treadMps: number,
     lat: number,
-    vx: number,
-    vz: number,
     col: Rgb,
   ): void {
-    const kickBack = -Math.sign(long || 1) * (0.8 + Math.abs(long) * 0.15);
+    const kickBack =
+      -Math.sign(treadMps || 1) * (0.8 + Math.abs(treadMps) * 0.15) * 3;
     const sideKick = -Math.sign(lat || 0) * (0.5 + Math.abs(lat) * 0.4);
     const jitter = () => (Math.random() - 0.5) * 1.1;
     this.dust.emit({
       x: pos.x + jitter() * 0.2,
       y: pos.y + 0.03 + Math.random() * 0.08,
       z: pos.z + jitter() * 0.2,
-      vx:
-        this._fwd.x * kickBack +
-        this._right.x * sideKick +
-        vx * 0.3 +
-        jitter(),
+      vx: this._fwd.x * kickBack + this._right.x * sideKick + jitter(),
       vy: 0.9 + Math.random() * 1.8,
-      vz:
-        this._fwd.z * kickBack +
-        this._right.z * sideKick +
-        vz * 0.3 +
-        jitter(),
+      vz: this._fwd.z * kickBack + this._right.z * sideKick + jitter(),
       r: jitterColor(col.r, 0.035),
       g: jitterColor(col.g, 0.035),
       b: jitterColor(col.b, 0.035),
@@ -426,17 +428,54 @@ export class OffroadFx {
     });
   }
 
+  /**
+   * Signed tread speed (m/s) for spray kick.
+   * Prefer d(rotation)/dt × radius; if unknown, map throttle → synthetic tread.
+   */
+  private treadSpeedMps(
+    wheelIndex: number,
+    rotation: number | undefined,
+    dt: number,
+    throttle: number,
+  ): number {
+    // Throttle proxy: full throttle ≈ 12 m/s equivalent tread (burnout on ice)
+    const throttleProxy = throttle * 12;
+
+    if (rotation == null || !Number.isFinite(rotation) || dt <= 1e-6) {
+      return throttleProxy;
+    }
+    const prev = this.prevWheelRot[wheelIndex];
+    this.prevWheelRot[wheelIndex] = rotation;
+    if (!Number.isFinite(prev)) {
+      return throttleProxy;
+    }
+    let dRot = rotation - prev;
+    // Unwrap large jumps (teleport / respawn)
+    if (Math.abs(dRot) > Math.PI * 4) {
+      return throttleProxy;
+    }
+    const omega = dRot / dt; // rad/s
+    const spinMps = omega * VEHICLE_CONFIG.wheelRadius;
+    // If wheel barely spinning but driver is on the gas, still show kick (slip)
+    if (Math.abs(spinMps) < 0.35 && Math.abs(throttle) > 0.15) {
+      return throttleProxy;
+    }
+    return spinMps;
+  }
+
   private emitDustPuff(
     pos: { x: number; y: number; z: number },
-    long: number,
+    /** Signed tread / throttle proxy (m/s), NOT chassis long speed. */
+    treadMps: number,
     lat: number,
-    vx: number,
-    vz: number,
     throttle: number,
     col: Rgb,
   ): void {
-    // Kick opposite to travel + outward from sideslip
-    const kickBack = -Math.sign(long || 1) * (1.2 + Math.abs(long) * 0.12);
+    // Kick opposite to tread spin (forward spin → spray rearward). ×3 kick.
+    const kickBack =
+      -Math.sign(treadMps || throttle || 1) *
+      (1.2 + Math.abs(treadMps) * 0.12) *
+      3;
     const sideKick = -Math.sign(lat || 0) * (0.4 + Math.abs(lat) * 0.35);
     const jitter = () => (Math.random() - 0.5) * 0.9;
     const th = Math.abs(throttle);
@@ -444,17 +483,10 @@ export class OffroadFx {
       x: pos.x + jitter() * 0.15,
       y: pos.y + 0.02 + Math.random() * 0.06,
       z: pos.z + jitter() * 0.15,
-      vx:
-        this._fwd.x * kickBack +
-        this._right.x * sideKick +
-        vx * 0.25 +
-        jitter(),
+      // No chassis-velocity inherit — spray is tire/throttle driven
+      vx: this._fwd.x * kickBack + this._right.x * sideKick + jitter(),
       vy: 0.6 + Math.random() * 1.4 + th * 0.5,
-      vz:
-        this._fwd.z * kickBack +
-        this._right.z * sideKick +
-        vz * 0.25 +
-        jitter(),
+      vz: this._fwd.z * kickBack + this._right.z * sideKick + jitter(),
       // Tight jitter so dust stays in terrain family (no random gray wash)
       r: jitterColor(col.r, 0.035),
       g: jitterColor(col.g, 0.035),
@@ -468,21 +500,20 @@ export class OffroadFx {
 
   private emitSplashPuff(
     pos: { x: number; y: number; z: number },
-    long: number,
+    treadMps: number,
     lat: number,
-    vx: number,
-    vz: number,
   ): void {
-    const kickBack = -Math.sign(long || 1) * (1.8 + Math.abs(long) * 0.2);
+    const kickBack =
+      -Math.sign(treadMps || 1) * (1.8 + Math.abs(treadMps) * 0.2) * 3;
     const sideKick = (Math.random() - 0.5) * 2.2 - Math.sign(lat || 0) * 0.5;
     const col = this.splashColor;
     this.splash.emit({
       x: pos.x + (Math.random() - 0.5) * 0.2,
       y: pos.y + 0.05,
       z: pos.z + (Math.random() - 0.5) * 0.2,
-      vx: this._fwd.x * kickBack + this._right.x * sideKick + vx * 0.2,
+      vx: this._fwd.x * kickBack + this._right.x * sideKick,
       vy: 1.8 + Math.random() * 3.2,
-      vz: this._fwd.z * kickBack + this._right.z * sideKick + vz * 0.2,
+      vz: this._fwd.z * kickBack + this._right.z * sideKick,
       r: jitterColor(col.r, 0.12),
       g: jitterColor(col.g, 0.1),
       b: jitterColor(col.b, 0.08),

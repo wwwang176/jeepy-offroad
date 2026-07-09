@@ -553,6 +553,7 @@ export class GameApp {
       const wheels = wheelVisuals.map((wv, i) => ({
         contact: contacts[i] ?? false,
         suspensionLength: wv.suspensionLength,
+        rotation: wv.rotation,
       }));
       const linvel = this.vehicle.getLinvel();
       if (this.offroadFx) {
@@ -576,7 +577,10 @@ export class GameApp {
           linvel,
           throttle: this.lastDriveActions.throttle,
           brake: this.lastDriveActions.brake,
-          wheels,
+          wheels: wheels.map((w) => ({
+            contact: w.contact,
+            suspensionLength: w.suspensionLength,
+          })),
         });
       }
 
