@@ -88,7 +88,8 @@ export const VEHICLE_CONFIG = {
   rapierSuspStiffness: 24,
   rapierSuspCompression: 4.2,
   rapierSuspRelaxation: 5.0,
-  rapierFrictionSlip: 4.2,
+  /** Peak friction slip; lower = more slide under hard turn. */
+  rapierFrictionSlip: 2.8,
   /**
    * Legacy peak engine force (N) — equals 4H peak.
    * Prefer `DRIVE_RANGES` / `computeDriveForces` for drive torque curves.
@@ -101,9 +102,19 @@ export const VEHICLE_CONFIG = {
    */
   rapierBrakeScale: 0.05,
   maxSteerRad: (32 * Math.PI) / 180,
+  /**
+   * Exponential steer follow rate (1/s). Higher = snappier wheel response.
+   * Applied after maxSteerRad × speed falloff — angle limit unchanged.
+   */
+  steerSmooth: 7,
   tireGripLong: 1.1,
   tireGripLat: 1.0,
   frictionEllipse: true,
+  /**
+   * Rapier lateral grip. Lower → easier to scrub/slide in corners
+   * (steer angle unchanged; feel is slip, not tighter lock).
+   */
+  rapierSideFrictionStiffness: 0.72,
   /** Body collider friction kept low so raycast suspension carries load. */
   chassisFriction: 0.15,
   /**

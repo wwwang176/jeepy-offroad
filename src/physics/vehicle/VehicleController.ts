@@ -37,6 +37,8 @@ export class VehicleController {
   private lastDriveRange: DriveRange = DEFAULT_DRIVE_RANGE;
   private lastDriveLabel = "4H";
   private lastAvailableEngine = 0;
+  /** Smoothed front-wheel steer angle (rad), eases toward input target. */
+  private steerCurrent = 0;
 
   constructor(world: RAPIER.World, pose: Pose2D) {
     this.world = world;
@@ -127,7 +129,10 @@ export class VehicleController {
       this.controller.setWheelMaxSuspensionForce(i, cfg.maxSuspForce);
       this.controller.setWheelMaxSuspensionTravel(i, cfg.suspMaxTravel);
       this.controller.setWheelFrictionSlip(i, cfg.rapierFrictionSlip);
-      this.controller.setWheelSideFrictionStiffness(i, 1.15);
+      this.controller.setWheelSideFrictionStiffness(
+        i,
+        cfg.rapierSideFrictionStiffness,
+      );
     }
     this.numWheels = cfg.wheelPositions.length;
   }
@@ -284,6 +289,7 @@ export class VehicleController {
     );
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.steerCurrent = 0;
     for (let i = 0; i < this.numWheels; i++) {
       this.controller.setWheelEngineForce(i, 0);
       this.controller.setWheelBrake(i, 0);
@@ -318,7 +324,11 @@ export class VehicleController {
     const steerFactor = clamp(1 - Math.abs(speed) / steerRefSpeed, 0.25, 1);
     // Input: +steer = right (D). Rapier vehicle steering is opposite of our
     // keyboard convention, so negate for correct left/right.
-    const steer = -input.steer * cfg.maxSteerRad * steerFactor;
+    const steerTarget = -input.steer * cfg.maxSteerRad * steerFactor;
+    // Exponential LERP: softens instant A/D snaps → more slide-friendly turn-in.
+    const steerK = 1 - Math.exp(-cfg.steerSmooth * Math.max(dt, 0));
+    this.steerCurrent += (steerTarget - this.steerCurrent) * steerK;
+    const steer = this.steerCurrent;
 
     for (let i = 0; i < this.numWheels; i++) {
       const isFront = i < 2;
