@@ -716,12 +716,23 @@ export function createGameScene(
     level.start.position.z - 10,
   );
 
-  // Soft fill light (no shadows) + camera-following sun with local shadow map
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x445544, 0.75);
+  // Soft fill light (no shadows) + camera-following sun with local shadow map.
+  // Sand: mild arid key boost (~half of first pass; keep fog palette).
+  const aridSun = biome.id === "sand";
+  const hemi = new THREE.HemisphereLight(
+    aridSun ? 0xfff8f0 : 0xffffff,
+    aridSun ? 0x554c40 : 0x445544,
+    aridSun ? 0.85 : 0.75,
+  );
   scene.add(hemi);
   const shadows: FollowShadowHandles = createFollowShadows(scene, renderer, {
     radius: 52,
     mapSize: 1024,
+    intensity: aridSun ? 1.22 : 1.0,
+    color: aridSun ? 0xffefcc : undefined,
+    direction: aridSun
+      ? new THREE.Vector3(0.4, 1.08, 0.22)
+      : undefined,
   });
   shadows.update(level.start.position);
 

@@ -14,6 +14,10 @@ export type FollowShadowOptions = {
   mapSize?: number;
   /** Light direction (will be normalized). */
   direction?: THREE.Vector3;
+  /** Directional light intensity. Default 1. */
+  intensity?: number;
+  /** Light color (hex). Default warm sun 0xfff0dd. */
+  color?: number;
 };
 
 /**
@@ -31,11 +35,13 @@ export function createFollowShadows(
   const direction = (options.direction ?? new THREE.Vector3(0.45, 1, 0.25))
     .clone()
     .normalize();
+  const intensity = options.intensity ?? 1.0;
+  const color = options.color ?? 0xfff0dd;
 
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  const light = new THREE.DirectionalLight(0xfff0dd, 1.0);
+  const light = new THREE.DirectionalLight(color, intensity);
   light.castShadow = true;
   light.shadow.mapSize.set(mapSize, mapSize);
   light.shadow.bias = -0.0008;
