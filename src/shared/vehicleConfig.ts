@@ -7,17 +7,37 @@ const hz = wb / 2;
 
 /**
  * Suspension geometry (local chassis space):
- * - COM at origin; chassis box half-height `chassisHalfExtents.y`
+ * - COM at origin; lower-body cuboid half-height `chassisHalfExtents.y`
  * - Wheel hardpoints sit near the chassis underside (negative Y)
  * - Rest length reaches the ground with chassis bottom still clear of terrain
  *
  * At rest (compression ~0): ground is at attachY - restLength below COM.
  * Chassis bottom = -chassisHalfExtents.y. Require:
  *   -attachY + restLength > chassisHalfExtents.y  (positive ground clearance)
+ *
+ * Visual alignment (JeepMesh low-poly Rubicon):
+ * - body width ≈ 1.72 → halfX ≈ 0.86
+ * - rocker length ≈ 2.6, bumper≈+1.4 / rear≈-1.3 → halfZ ≈ 1.35
+ * - tub+doors roughly y∈[-0.35, 0.45]; cabin/hardtop y∈[0.45, 1.42]
+ * Wheel attach must stay strictly outside every chassis cuboid.
  */
 export const VEHICLE_CONFIG = {
   massKg: 1400,
-  chassisHalfExtents: { x: 0.9, y: 0.4, z: 1.3 },
+  /**
+   * Lower body / tub collider (COM-centered).
+   * Matched to JeepMesh body envelope, not the tall hardtop.
+   */
+  chassisHalfExtents: { x: 0.88, y: 0.4, z: 1.35 },
+  /**
+   * Upper cabin / hardtop collider (local offset from body origin / COM).
+   * Collision shape only — mass is 0 so cabin volume does not raise COM.
+   * Covers greenhouse so rocks/trees hit the cabin, not only the lower box.
+   */
+  cabinCollider: {
+    halfExtents: { x: 0.84, y: 0.48, z: 1.0 },
+    /** Center of cabin box in chassis local space (COM stays at origin). */
+    center: { x: 0, y: 0.9, z: -0.12 },
+  },
   /**
    * Suspension ray origins — MUST be outside the chassis cuboid
    * (half-height 0.4 → bottom at y=-0.4). Origins inside the body with

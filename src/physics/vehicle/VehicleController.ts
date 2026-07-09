@@ -27,8 +27,8 @@ export class VehicleController {
   constructor(world: RAPIER.World, pose: Pose2D) {
     this.world = world;
     const he = VEHICLE_CONFIG.chassisHalfExtents;
-    const volume = he.x * 2 * (he.y * 2) * (he.z * 2);
-    const density = VEHICLE_CONFIG.massKg / Math.max(volume, 1e-6);
+    const cabin = VEHICLE_CONFIG.cabinCollider;
+    const mass = VEHICLE_CONFIG.massKg;
 
     const rbDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(pose.position.x, pose.position.y, pose.position.z)
@@ -44,15 +44,38 @@ export class VehicleController {
       .setCcdEnabled(true);
     this.body = world.createRigidBody(rbDesc);
 
+    // Lower tub / doors — all mass lives here so COM stays at body origin
+    // (Cannon-style: shape offset free, COM controlled separately from cabin volume).
+    // setMass auto-computes box inertia about the collider center (0,0,0).
     world.createCollider(
       RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z)
-        .setDensity(density)
+        .setMass(mass)
         .setFriction(VEHICLE_CONFIG.chassisFriction)
         .setRestitution(0)
         .setCollisionGroups(VEHICLE_COLLIDER_GROUPS)
         .setSolverGroups(VEHICLE_COLLIDER_GROUPS),
       this.body,
     );
+
+    // Cabin / hardtop — collision only (mass 0). Offset up for roof hits;
+    // must not contain wheel hardpoints (center.y - halfY > attachY).
+    world.createCollider(
+      RAPIER.ColliderDesc.cuboid(
+        cabin.halfExtents.x,
+        cabin.halfExtents.y,
+        cabin.halfExtents.z,
+      )
+        .setTranslation(cabin.center.x, cabin.center.y, cabin.center.z)
+        .setMass(0)
+        .setFriction(VEHICLE_CONFIG.chassisFriction)
+        .setRestitution(0)
+        .setCollisionGroups(VEHICLE_COLLIDER_GROUPS)
+        .setSolverGroups(VEHICLE_COLLIDER_GROUPS),
+      this.body,
+    );
+
+    // Ensure compound mass props reflect colliders (COM at lower-body origin).
+    this.body.recomputeMassPropertiesFromColliders();
 
     this.controller = world.createVehicleController(this.body);
     // Local axes: up = Y (1), forward = Z (2)
