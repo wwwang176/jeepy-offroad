@@ -21,11 +21,16 @@ const FP_PITCH_MAX = 1.2;
 /** First-person free-look follow rate (higher = snappier). */
 const FP_LOOK_SMOOTH = 14;
 
+/** Third-person follow / look smoothing rate (higher = snappier). */
+const TP_FOLLOW_SMOOTH = 10;
+
 export class CameraRig {
   mode: CameraMode = "third";
   private readonly desired = new THREE.Vector3();
+  private readonly lookDesired = new THREE.Vector3();
   private readonly look = new THREE.Vector3();
   private readonly current = new THREE.Vector3();
+  private lookInitialized = false;
   /** Cabin eye in chassis local space (+Z = vehicle forward). */
   private readonly eyeLocal = new THREE.Vector3(0, 1.25, 0.25);
   private readonly tmp = new THREE.Vector3();
@@ -65,6 +70,8 @@ export class CameraRig {
     // Snap follow camera when entering third person
     if (mode === "third") {
       this.current.copy(this.camera.position);
+      // Next update will hard-snap look to vehicle (avoid stale look from FP)
+      this.lookInitialized = false;
     } else {
       // Entering FP: no lag from previous third-person session
       this.fpYaw = this.fpYawTarget;
@@ -144,16 +151,21 @@ export class CameraRig {
         pose.position.y + dist * sinP,
         pose.position.z - Math.cos(yaw) * horiz,
       );
-      this.look.set(
+      // Look target tracks chassis with same smoothing as camera position —
+      // raw pose.y chatter was causing distant ghosting / micro-shake.
+      this.lookDesired.set(
         pose.position.x,
         pose.position.y + 1.2,
         pose.position.z,
       );
-      if (opts?.snap || dt <= 0) {
+      if (opts?.snap || dt <= 0 || !this.lookInitialized) {
         this.current.copy(this.desired);
+        this.look.copy(this.lookDesired);
+        this.lookInitialized = true;
       } else {
-        const k = 1 - Math.exp(-10 * dt);
+        const k = 1 - Math.exp(-TP_FOLLOW_SMOOTH * dt);
         this.current.lerp(this.desired, k);
+        this.look.lerp(this.lookDesired, k);
       }
       this.camera.position.copy(this.current);
       // Third person: world-up lookAt (stable chase)
