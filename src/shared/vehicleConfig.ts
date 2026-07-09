@@ -30,12 +30,12 @@ export const VEHICLE_CONFIG = {
     { x: hx, y: -0.42, z: -hz },
   ],
   /** Distance from hardpoint to contact at zero compression. */
-  suspRestLength: 0.45,
+  suspRestLength: 0.52, // was 0.45; +~15% for longer visual spring / travel
   /**
    * Extra travel past rest — longer extension helps wheels stay planted on
    * small bumps / articulation (slightly more "grounded time").
    */
-  suspMaxTravel: 0.34,
+  suspMaxTravel: 0.39, // was 0.34; +~15%
   /** Legacy SI-ish spring (unused by Rapier vehicle controller; kept for docs/tests). */
   springStiffness: 28000,
   springDamping: 3200,

@@ -85,6 +85,183 @@ function cyl(
   return m;
 }
 
+// Scratch vectors for lateral suspension placement (no per-frame alloc).
+const _suspFrom = new THREE.Vector3();
+const _suspTo = new THREE.Vector3();
+const _suspMid = new THREE.Vector3();
+const _suspDir = new THREE.Vector3();
+const _suspY = new THREE.Vector3(0, 1, 0);
+const _suspQuat = new THREE.Quaternion();
+
+/**
+ * Shared wheel-arch / flare lip geometry (chassis local).
+ * Spring upper anchor = underside center of the main top lip.
+ */
+const FLARE_LIP = {
+  /** Lip center X offset from body half-width (toward outside). */
+  xOff: 0.02,
+  /** Lip box height. */
+  h: 0.1,
+  /** Lip center Y. */
+  yCenter: 0.3,
+  w: 0.16,
+  d: 0.72,
+} as const;
+
+/** Underside of main flare top lip (where spring seats). */
+function flareLipUndersideY(): number {
+  return FLARE_LIP.yCenter - FLARE_LIP.h * 0.5;
+}
+
+/** Flare lip center X for a given side (+1 right / -1 left). */
+function flareLipCenterX(side: number, bodyHalfW: number): number {
+  return side * (bodyHalfW + FLARE_LIP.xOff);
+}
+
+/**
+ * Place a unit-Y cylinder (height 1 centered at origin) so it spans from→to.
+ */
+function placeUnitCylinder(
+  mesh: THREE.Object3D,
+  from: THREE.Vector3,
+  to: THREE.Vector3,
+  lengthScale = 1,
+): number {
+  _suspDir.subVectors(to, from);
+  const len = _suspDir.length();
+  if (len < 1e-4) {
+    mesh.visible = false;
+    return 0;
+  }
+  mesh.visible = true;
+  _suspMid.copy(from).add(to).multiplyScalar(0.5);
+  mesh.position.copy(_suspMid);
+  _suspDir.multiplyScalar(1 / len);
+  _suspQuat.setFromUnitVectors(_suspY, _suspDir);
+  mesh.quaternion.copy(_suspQuat);
+  mesh.scale.set(1, len * lengthScale, 1);
+  return len;
+}
+
+/**
+ * Lateral suspension visuals:
+ * - One thick crossbar: chassis body → **exact tire center**
+ * - Coil spring: **fixed wheel-arch mount** → **exact tire center**
+ *
+ * Tire center each frame = (hard.x, hard.y + yOff, hard.z)
+ * where yOff = -(suspensionLength - wheelRadius) — same as wheel mesh.
+ * Arch mount is chassis-fixed and never moves (so the spring top doesn't bob).
+ */
+function createSuspensionLink(
+  parent: THREE.Group,
+  index: number,
+  hard: { x: number; y: number; z: number },
+  side: number,
+  bodyHalfW: number,
+): THREE.Group {
+  const link = new THREE.Group();
+  link.name = `susp-link-${index}`;
+  link.userData.wheelIndex = index;
+  link.userData.side = side;
+  link.userData.hardpoint = { x: hard.x, y: hard.y, z: hard.z };
+  link.userData.restHubTravel =
+    VEHICLE_CONFIG.suspRestLength - VEHICLE_CONFIG.wheelRadius;
+
+  // FIXED spring upper anchor = exact underside center of flare top lip.
+  // Same constants as the flare mesh so the spring seats on the arch.
+  link.userData.archLocal = {
+    x: flareLipCenterX(side, bodyHalfW),
+    y: flareLipUndersideY(),
+    z: hard.z,
+  };
+  // FIXED body root deep inboard so the bar reads as a long lateral tube.
+  link.userData.barRootLocal = {
+    x: side * 0.22,
+    y: hard.y + 0.05,
+    z: hard.z,
+  };
+
+  // Thick lateral crossbar (body → exact tire center)
+  const bar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.055, 0.055, 1, 10),
+    mat(PAL.chrome),
+  );
+  bar.name = "crossbar";
+  link.add(bar);
+
+  // Slightly thinner twin bar below for readability
+  const bar2 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.032, 0.032, 1, 8),
+    mat(PAL.black),
+  );
+  bar2.name = "crossbar-2";
+  link.add(bar2);
+
+  // Coil spring: arch → tire center
+  const spring = new THREE.Group();
+  spring.name = "spring";
+  const sleeve = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03, 0.034, 1, 8),
+    mat(PAL.blackSoft),
+  );
+  sleeve.name = "sleeve";
+  spring.add(sleeve);
+  // Coils span nearly full unit strut: local -Y = arch end, +Y = hub end
+  // (placeUnitCylinder aligns +Y with arch→hub). Keep baseY fixed forever.
+  const coils = 10;
+  for (let k = 0; k < coils; k++) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.072, 0.02, 6, 12),
+      mat(PAL.orange),
+    );
+    ring.name = "coil";
+    ring.rotation.x = Math.PI / 2;
+    const baseY = -0.48 + (k / (coils - 1)) * 0.96;
+    ring.userData.baseY = baseY;
+    ring.position.y = baseY;
+    spring.add(ring);
+  }
+  link.add(spring);
+
+  // Thin plate on the lip underside (sits flush under the flare mesh)
+  const archPlate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.04, 0.14),
+    mat(PAL.black),
+  );
+  archPlate.name = "arch-plate";
+  // Slightly below underside so it doesn't z-fight the lip
+  archPlate.position.set(
+    link.userData.archLocal.x,
+    link.userData.archLocal.y - 0.02,
+    link.userData.archLocal.z,
+  );
+  link.add(archPlate);
+
+  // Hub ball at exact tire center
+  const hubBall = new THREE.Mesh(
+    new THREE.SphereGeometry(0.055, 10, 8),
+    mat(PAL.chrome),
+  );
+  hubBall.name = "hub-ball";
+  link.add(hubBall);
+
+  // Body root ball (crossbar inner end)
+  const rootBall = new THREE.Mesh(
+    new THREE.SphereGeometry(0.045, 8, 6),
+    mat(PAL.black),
+  );
+  rootBall.name = "root-ball";
+  rootBall.position.set(
+    link.userData.barRootLocal.x,
+    link.userData.barRootLocal.y,
+    link.userData.barRootLocal.z,
+  );
+  link.add(rootBall);
+
+  parent.add(link);
+  return link;
+}
+
 /**
  * Low-poly Jeep Wrangler Rubicon Unlimited.
  * Local: +Z forward, +Y up, +X right. Physics collider unchanged.
@@ -280,16 +457,43 @@ export function createJeepMesh(): THREE.Group {
     box(g, 0.08, 0.09, 0.08, PAL.light, sx * (halfW - 0.14), roofY + 0.08, 0.54);
   }
 
-  // ===== Fender flares / wheel arches (inset toward body so tires poke out) =====
-  // Arch sits near body skin; tires use visual track outset past this.
+  // ===== Fender flares / wheel arches (geometry shared with spring anchors) =====
   for (const z of [wb2, -wb2]) {
     for (const sx of [-1, 1]) {
-      // Main arch: slightly inside body half-width (inset wheel well)
-      box(g, 0.18, 0.38, 0.7, PAL.black, sx * (halfW - 0.02), 0.1, z);
-      // Thin outer lip (does not cover tire outer face)
-      box(g, 0.1, 0.08, 0.76, PAL.blackSoft, sx * (halfW + 0.06), 0.32, z);
-      // Inner well wall (defines inset arch pocket)
-      box(g, 0.08, 0.36, 0.66, PAL.blackSoft, sx * (halfW - 0.16), 0.08, z);
+      // Main top lip — spring seats on its underside (see FLARE_LIP / archLocal)
+      box(
+        g,
+        FLARE_LIP.w,
+        FLARE_LIP.h,
+        FLARE_LIP.d,
+        PAL.black,
+        sx * (halfW + FLARE_LIP.xOff),
+        FLARE_LIP.yCenter,
+        z,
+      );
+      // Outer secondary lip
+      box(g, 0.12, 0.08, 0.76, PAL.blackSoft, sx * (halfW + 0.08), 0.36, z);
+      // Front/rear arch cheeks (mid open so spring/bar stay visible)
+      box(
+        g,
+        0.14,
+        0.28,
+        0.14,
+        PAL.black,
+        sx * (halfW + FLARE_LIP.xOff),
+        0.12,
+        z + 0.28,
+      );
+      box(
+        g,
+        0.14,
+        0.28,
+        0.14,
+        PAL.black,
+        sx * (halfW + FLARE_LIP.xOff),
+        0.12,
+        z - 0.28,
+      );
     }
   }
 
@@ -379,7 +583,21 @@ export function createJeepMesh(): THREE.Group {
     pivot.add(rim);
     pivot.add(cap);
     g.add(pivot);
+
+    // Lateral suspension: crossbars + spring arch↔hub
+    createSuspensionLink(g, i, hardpoint, side, halfW);
   });
+
+  // Initial pose at rest (before first physics sample)
+  const restYOff = -(rest - r);
+  for (const link of getSuspensionLinks(g)) {
+    const hard = link.userData.hardpoint as {
+      x: number;
+      y: number;
+      z: number;
+    };
+    updateSuspensionLink(link, hard, restYOff);
+  }
 
   return g;
 }
@@ -396,6 +614,93 @@ function getWheelPivots(mesh: THREE.Group): THREE.Group[] {
       (a.userData.wheelIndex as number) - (b.userData.wheelIndex as number),
   );
   return pivots;
+}
+
+function getSuspensionLinks(mesh: THREE.Group): THREE.Group[] {
+  const links: THREE.Group[] = [];
+  for (const child of mesh.children) {
+    if (child.name.startsWith("susp-link-")) {
+      links.push(child as THREE.Group);
+    }
+  }
+  links.sort(
+    (a, b) =>
+      (a.userData.wheelIndex as number) - (b.userData.wheelIndex as number),
+  );
+  return links;
+}
+
+/**
+ * Each frame:
+ *   tireCenter = hardpoint + (0, yOff, 0)  — exact wheel mesh center
+ *   spring: fixed arch → tireCenter
+ *   crossbar: fixed body root → tireCenter
+ *
+ * Arch never moves; only the tire-center end tracks suspension.
+ */
+function updateSuspensionLink(
+  link: THREE.Group,
+  hard: { x: number; y: number; z: number },
+  yOff: number,
+): void {
+  const arch = link.userData.archLocal as { x: number; y: number; z: number };
+  const root = link.userData.barRootLocal as {
+    x: number;
+    y: number;
+    z: number;
+  };
+
+  // Exact tire / wheel center (matches tire mesh: hard + (0, yOff, 0))
+  const tireCx = hard.x;
+  const tireCy = hard.y + yOff;
+  const tireCz = hard.z;
+
+  // --- Hub marker at true tire center ---
+  const hubBall = link.getObjectByName("hub-ball");
+  if (hubBall) {
+    hubBall.position.set(tireCx, tireCy, tireCz);
+  }
+
+  // Arch plate stays fixed on lip underside (do not follow suspension)
+  const archPlate = link.getObjectByName("arch-plate");
+  if (archPlate) {
+    archPlate.position.set(arch.x, arch.y - 0.02, arch.z);
+  }
+  const rootBall = link.getObjectByName("root-ball");
+  if (rootBall) {
+    rootBall.position.set(root.x, root.y, root.z);
+  }
+
+  // --- Spring: FIXED arch → tire center ---
+  // Ends always span arch→hub. Do NOT re-pack coil local Y toward center —
+  // that pulled the orange rings off the arch when compressed. Compression is
+  // already shown by placeUnitCylinder shortening the whole strut (scale.y=len).
+  _suspFrom.set(arch.x, arch.y, arch.z);
+  _suspTo.set(tireCx, tireCy, tireCz);
+  const spring = link.getObjectByName("spring");
+  if (spring) {
+    placeUnitCylinder(spring, _suspFrom, _suspTo, 1);
+    for (const child of spring.children) {
+      if (child.name !== "coil") continue;
+      const baseY = (child.userData.baseY as number) ?? 0;
+      child.position.y = baseY; // fixed local seats; world spacing follows strut length
+    }
+  }
+
+  // --- Thick crossbar: FIXED body → tire center ---
+  const bar = link.getObjectByName("crossbar");
+  if (bar) {
+    _suspFrom.set(root.x, root.y, root.z);
+    _suspTo.set(tireCx, tireCy, tireCz);
+    placeUnitCylinder(bar, _suspFrom, _suspTo, 1);
+  }
+  // Parallel bar slightly below for readability
+  const bar2 = link.getObjectByName("crossbar-2");
+  if (bar2) {
+    _suspFrom.set(root.x, root.y - 0.05, root.z);
+    _suspTo.set(tireCx, tireCy - 0.02, tireCz);
+    placeUnitCylinder(bar2, _suspFrom, _suspTo, 1);
+  }
 }
 
 export function syncJeepMesh(
@@ -419,6 +724,7 @@ export function syncJeepMesh(
   const r = VEHICLE_CONFIG.wheelRadius;
   const rest = VEHICLE_CONFIG.suspRestLength;
   const pivots = getWheelPivots(mesh);
+  const links = getSuspensionLinks(mesh);
 
   for (let i = 0; i < pivots.length; i++) {
     const pivot = pivots[i];
@@ -446,6 +752,12 @@ export function syncJeepMesh(
       m.rotation.z = Math.PI / 2;
       const base = (m.userData.baseSpin as number | undefined) ?? 0;
       m.rotation.x = spin + base;
+    }
+
+    // Spring/damper follow wheel hub
+    const link = links[i];
+    if (link) {
+      updateSuspensionLink(link, hard, yOff);
     }
   }
 }
