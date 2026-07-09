@@ -584,6 +584,8 @@ export class GameApp {
         }
         // Palm wind (island-conquest style vertex sway)
         this.gameScene.updatePalmSway(t * 0.001);
+        // Rainforest light rain + ground splash (camera-local)
+        this.gameScene.updateRain(dt, this.gameScene.camera.position);
         // Local shadow cascade tracks camera (cheap open-world shadows)
         this.gameScene.updateShadows(this.gameScene.camera.position);
         if (this.hud && this.level && this.state.name === "playing") {

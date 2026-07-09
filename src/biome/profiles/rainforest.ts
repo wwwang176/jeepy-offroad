@@ -4,7 +4,7 @@ import type { BiomeProfile } from "../types";
 export const rainforestBiome: BiomeProfile = {
   id: "rainforest",
   displayName: "雨林",
-  description: "潮濕綠泥與成片椰子樹",
+  description: "潮濕綠泥、小雨與成片椰子樹",
   skyColor: "#6a8a78",
   fogColor: "#5a7060",
   fogDensity: 0.022,

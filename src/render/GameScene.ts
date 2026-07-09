@@ -13,6 +13,7 @@ import {
   setShadowFlags,
   type FollowShadowHandles,
 } from "./followShadows";
+import { RainVFX } from "./RainVFX";
 
 export type GameSceneHandles = {
   scene: THREE.Scene;
@@ -25,6 +26,11 @@ export type GameSceneHandles = {
   updateShadows: (follow: { x: number; y: number; z: number }) => void;
   /** Vegetation wind clock (palms + grass). Seconds. No-op if none. */
   updatePalmSway: (elapsedSec: number) => void;
+  /** Light rain + ground splash (rainforest). No-op if none. */
+  updateRain: (
+    dt: number,
+    camPos: { x: number; y: number; z: number },
+  ) => void;
   dispose: () => void;
 };
 
@@ -754,6 +760,14 @@ export function createGameScene(
   setShadowFlags(jeepMesh, { cast: true, receive: true });
   scene.add(jeepMesh);
 
+  // Rainforest: light rain + ground splash (½ island-conquest storm density)
+  let rain: RainVFX | null = null;
+  if (biome.id === "rainforest") {
+    rain = new RainVFX(scene, {
+      getHeightAt: (x, z) => sampleHeight(level, x, z),
+    });
+  }
+
   const onResize = (): void => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -777,8 +791,13 @@ export function createGameScene(
         | undefined;
       if (u) u.value = elapsedSec;
     },
+    updateRain: (dt, camPos) => {
+      rain?.update(dt, camPos);
+    },
     dispose: () => {
       window.removeEventListener("resize", onResize);
+      rain?.dispose();
+      rain = null;
       shadows.dispose();
       terrainMesh.geometry.dispose();
       (terrainMesh.material as THREE.Material).dispose();
