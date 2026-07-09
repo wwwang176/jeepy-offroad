@@ -15,12 +15,18 @@ import {
   SUSPENSION_RAY_GROUPS,
   VEHICLE_COLLIDER_GROUPS,
 } from "@/physics/collisionGroups";
+import type { BiomeTraction } from "@/biome/types";
 
 function yawFromQuat(q: { x: number; y: number; z: number; w: number }): number {
   const siny = 2 * (q.w * q.y + q.z * q.x);
   const cosy = 1 - 2 * (q.y * q.y + q.x * q.x);
   return Math.atan2(siny, cosy);
 }
+
+export type VehicleControllerOptions = {
+  /** Biome surface grip (sand = ice-like). Omit = baseline. */
+  traction?: BiomeTraction;
+};
 
 /**
  * Rapier built-in raycast vehicle — avoids hand-rolled force bugs that
@@ -39,8 +45,14 @@ export class VehicleController {
   private lastAvailableEngine = 0;
   /** Smoothed front-wheel steer angle (rad), eases toward input target. */
   private steerCurrent = 0;
+  /** Effective brake scale after biome traction (vs VEHICLE_CONFIG). */
+  private readonly rapierBrakeScale: number;
 
-  constructor(world: RAPIER.World, pose: Pose2D) {
+  constructor(
+    world: RAPIER.World,
+    pose: Pose2D,
+    opts?: VehicleControllerOptions,
+  ) {
     this.world = world;
     const he = VEHICLE_CONFIG.chassisHalfExtents;
     const cabin = VEHICLE_CONFIG.cabinCollider;
@@ -112,6 +124,14 @@ export class VehicleController {
     ).setIndexForwardAxis = 2;
 
     const cfg = VEHICLE_CONFIG;
+    const t = opts?.traction;
+    const slipScale = t?.frictionSlipScale ?? 1;
+    const sideScale = t?.sideFrictionScale ?? 1;
+    const brakeScale = t?.brakeScale ?? 1;
+    this.rapierBrakeScale = cfg.rapierBrakeScale * brakeScale;
+    const frictionSlip = cfg.rapierFrictionSlip * slipScale;
+    const sideFriction = cfg.rapierSideFrictionStiffness * sideScale;
+
     for (let i = 0; i < cfg.wheelPositions.length; i++) {
       const p = cfg.wheelPositions[i];
       // Suspension ray direction in chassis space (toward ground)
@@ -128,11 +148,8 @@ export class VehicleController {
       this.controller.setWheelSuspensionRelaxation(i, cfg.rapierSuspRelaxation);
       this.controller.setWheelMaxSuspensionForce(i, cfg.maxSuspForce);
       this.controller.setWheelMaxSuspensionTravel(i, cfg.suspMaxTravel);
-      this.controller.setWheelFrictionSlip(i, cfg.rapierFrictionSlip);
-      this.controller.setWheelSideFrictionStiffness(
-        i,
-        cfg.rapierSideFrictionStiffness,
-      );
+      this.controller.setWheelFrictionSlip(i, frictionSlip);
+      this.controller.setWheelSideFrictionStiffness(i, sideFriction);
     }
     this.numWheels = cfg.wheelPositions.length;
   }
@@ -313,7 +330,7 @@ export class VehicleController {
       range,
       wheelCount: this.numWheels,
       baseBrakeForce: cfg.brakeForce,
-      rapierBrakeScale: cfg.rapierBrakeScale,
+      rapierBrakeScale: this.rapierBrakeScale,
     });
     this.lastDriveRange = drive.range;
     this.lastDriveLabel = drive.label;

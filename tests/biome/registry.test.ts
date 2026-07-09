@@ -18,6 +18,14 @@ describe("biome registry", () => {
     expect(sand.groundPalette.mid.toLowerCase()).toMatch(/a89880|#a89880/i);
   });
 
+  it("sand traction is icy; rainforest uses baseline grip", () => {
+    const sand = getBiome("sand");
+    expect(sand.traction?.frictionSlipScale ?? 1).toBeLessThan(0.6);
+    expect(sand.traction?.sideFrictionScale ?? 1).toBeLessThan(0.55);
+    const rf = getBiome("rainforest");
+    expect(rf.traction).toBeUndefined();
+  });
+
   it("rainforest has green palette, palms, and ground cover", () => {
     const rf = getBiome("rainforest");
     expect(rf.displayName).toBe("雨林");

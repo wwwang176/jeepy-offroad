@@ -17,6 +17,12 @@ export const sandBiome: BiomeProfile = {
   waterColor: "#4a7a8c",
   streamDensity: 0.35,
   offPathRoughness: 0.85,
+  /** Whole map skate-slippery; rainforest leaves traction unset (= baseline). */
+  traction: {
+    frictionSlipScale: 0.48,
+    sideFrictionScale: 0.4,
+    brakeScale: 0.75,
+  },
   propDensity: 0.45,
   /** Rocks/pillars budget (×2 again; cactus comes from ensureProps). */
   propCountScale: 8,

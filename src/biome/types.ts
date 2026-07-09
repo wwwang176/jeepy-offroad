@@ -6,6 +6,19 @@ export interface PropSpawnRule {
   collides: boolean;
 }
 
+/**
+ * Multipliers on VEHICLE_CONFIG wheel grip (1 = baseline).
+ * Sand uses low values for ice-skate feel; rainforest omits / stays 1.
+ */
+export interface BiomeTraction {
+  /** Scales rapierFrictionSlip. */
+  frictionSlipScale?: number;
+  /** Scales rapierSideFrictionStiffness. */
+  sideFrictionScale?: number;
+  /** Optional scale on rapierBrakeScale (service brake). */
+  brakeScale?: number;
+}
+
 export interface BiomeProfile {
   id: BiomeId;
   displayName: string;
@@ -19,6 +32,8 @@ export interface BiomeProfile {
   offPathRoughness: number;
   propDensity: number;
   propTable: PropSpawnRule[];
+  /** Surface grip vs baseline vehicle config. */
+  traction?: BiomeTraction;
   /**
    * Multiplier on decorative prop count (default 1).
    * Rainforest uses >1 for dense palm groves.

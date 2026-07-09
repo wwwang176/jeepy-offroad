@@ -337,7 +337,9 @@ export class GameApp {
       },
       yaw: level.start.yaw,
     };
-    this.vehicle = new VehicleController(this.physics.getWorld(), spawnPose);
+    this.vehicle = new VehicleController(this.physics.getWorld(), spawnPose, {
+      traction: biome.traction,
+    });
 
     this.finishSystem = new FinishSystem(level.finish);
     this.checkpointSystem = new CheckpointSystem(spawnPose, level.checkpoints);
