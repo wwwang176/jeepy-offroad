@@ -18,9 +18,12 @@ export interface DriveRangeConfig {
    * - `< 1`: drops earlier (softer launch)
    */
   falloffPower: number;
-  /** Coasting engine-brake force when throttle ~0 (N, total). */
+  /**
+   * Legacy engine-brake when coasting (unused: release throttle = freewheel).
+   * Kept for config docs / possible future crawl assist.
+   */
   engineBrakeForce: number;
-  /** Multiplier on service brake (W+S). */
+  /** Multiplier on service brake (opposite-throttle or explicit brake). */
   brakeScale: number;
 }
 
@@ -90,33 +93,45 @@ export function torqueAvailable(speed: number, range: DriveRange): number {
 }
 
 /**
+ * Speed below this (m/s) while holding opposite input switches to reverse/drive
+ * instead of staying in brake-only (arcade stop-then-go).
+ */
+export const OPPOSITE_BRAKE_SPEED_EPS = 0.55;
+
+/**
  * Map throttle/brake/range/speed → per-wheel engine + brake for Rapier.
  *
- * - Engine: throttle × torque curve (signed)
- * - Service brake (brake > 0.1): brakes only, no engine
- * - Coast: engine-brake opposing motion (stronger in 4L)
+ * - No input → freewheel (no engine brake)
+ * - Throttle same way as motion (or nearly stopped) → drive torque
+ * - Throttle against motion while |speed| is significant → service brake only
+ * - Explicit `brake` still works if set by input layer
  */
 export function computeDriveForces(cmd: DriveCommand): DriveForces {
   const cfg = DRIVE_RANGES[cmd.range];
   const n = Math.max(1, cmd.wheelCount);
-  const rapierBrakeScale = cmd.rapierBrakeScale ?? 0.4;
+  const rapierBrakeScale = cmd.rapierBrakeScale ?? 0.08;
   const available = torqueAvailable(cmd.speed, cmd.range);
+  const throttle = clamp(cmd.throttle, -1, 1);
+  const speed = cmd.speed;
 
   let engineTotal = 0;
   let brakeTotal = 0;
 
-  if (cmd.brake > 0.1) {
+  const explicitBrake = cmd.brake > 0.1;
+  // Forward + reverse key (or reverse + forward key) while still rolling that way
+  const oppositeThrottle =
+    Math.abs(throttle) > 0.05 &&
+    Math.abs(speed) > OPPOSITE_BRAKE_SPEED_EPS &&
+    Math.sign(throttle) !== Math.sign(speed);
+
+  if (explicitBrake || oppositeThrottle) {
+    const brakeAmt = explicitBrake ? clamp(cmd.brake, 0, 1) : 1;
     brakeTotal =
-      cmd.baseBrakeForce * cfg.brakeScale * clamp(cmd.brake, 0, 1) * rapierBrakeScale;
-  } else {
-    const throttle = clamp(cmd.throttle, -1, 1);
-    if (Math.abs(throttle) > 0.05) {
-      engineTotal = throttle * available;
-    } else if (Math.abs(cmd.speed) > 0.4) {
-      // Engine braking: oppose travel direction (no drive torque while coasting).
-      brakeTotal = cfg.engineBrakeForce * rapierBrakeScale;
-    }
+      cmd.baseBrakeForce * cfg.brakeScale * brakeAmt * rapierBrakeScale;
+  } else if (Math.abs(throttle) > 0.05) {
+    engineTotal = throttle * available;
   }
+  // else: coast — zeros
 
   return {
     enginePerWheel: engineTotal / n,

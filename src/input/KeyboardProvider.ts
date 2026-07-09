@@ -83,16 +83,16 @@ export class KeyboardProvider implements InputProvider {
     const left = this.keys.has("KeyA") || this.keys.has("ArrowLeft");
     const right = this.keys.has("KeyD") || this.keys.has("ArrowRight");
 
+    // W/S are drive intent only. Brake is derived in driveTrain from
+    // opposite-to-motion throttle (forward+S or reverse+W). No input = coast.
     let throttle = 0;
-    let brake = 0;
-    if (up && down) {
-      throttle = 0;
-      brake = 1;
-    } else if (up) {
+    const brake = 0;
+    if (up && !down) {
       throttle = 1;
-    } else if (down) {
+    } else if (down && !up) {
       throttle = -1;
     }
+    // both pressed → treat as coast (no fight between keys)
 
     let steer = 0;
     if (left) steer -= 1;

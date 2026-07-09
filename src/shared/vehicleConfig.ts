@@ -97,9 +97,9 @@ export const VEHICLE_CONFIG = {
   brakeForce: 12000,
   /**
    * Rapier setWheelBrake scale on total brake force.
-   * 0.02 was far too weak (~0.17 m/s²); 0.4 ≈ firm service brakes.
+   * Opposite-throttle service brake (tuned by feel).
    */
-  rapierBrakeScale: 0.4,
+  rapierBrakeScale: 0.08,
   maxSteerRad: (32 * Math.PI) / 180,
   tireGripLong: 1.1,
   tireGripLat: 1.0,

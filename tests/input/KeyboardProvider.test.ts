@@ -82,19 +82,29 @@ describe("KeyboardProvider", () => {
     provider.dispose();
   });
 
-  it("maps W+S to brake and S alone to reverse", () => {
+  it("maps W/S to throttle only (brake is speed-opposite in driveTrain)", () => {
     const win = createFakeWindow();
     const provider = new KeyboardProvider(win as unknown as Window);
 
     win.dispatch("keydown", { code: "KeyW", repeat: false });
-    win.dispatch("keydown", { code: "KeyS", repeat: false });
     let a = provider.sample();
+    expect(a.throttle).toBe(1);
+    expect(a.brake).toBe(0);
+
+    win.dispatch("keydown", { code: "KeyS", repeat: false });
+    a = provider.sample();
+    // both → coast at input layer
     expect(a.throttle).toBe(0);
-    expect(a.brake).toBe(1);
+    expect(a.brake).toBe(0);
 
     win.dispatch("keyup", { code: "KeyW" });
     a = provider.sample();
     expect(a.throttle).toBe(-1);
+    expect(a.brake).toBe(0);
+
+    win.dispatch("keyup", { code: "KeyS" });
+    a = provider.sample();
+    expect(a.throttle).toBe(0);
     expect(a.brake).toBe(0);
 
     provider.dispose();

@@ -106,7 +106,7 @@ describe("driveTrain torque curves (4H / 4L)", () => {
     expect(l.brakePerWheel).toBeGreaterThan(h.brakePerWheel);
   });
 
-  it("coasting applies stronger engine brake in 4L than 4H", () => {
+  it("coasting freewheels (no engine brake) in both ranges", () => {
     const h = computeDriveForces({
       speed: 8,
       throttle: 0,
@@ -114,7 +114,7 @@ describe("driveTrain torque curves (4H / 4L)", () => {
       range: "H",
       wheelCount: 4,
       baseBrakeForce: 12000,
-      rapierBrakeScale: 0.02,
+      rapierBrakeScale: 0.4,
     });
     const l = computeDriveForces({
       speed: 8,
@@ -123,25 +123,67 @@ describe("driveTrain torque curves (4H / 4L)", () => {
       range: "L",
       wheelCount: 4,
       baseBrakeForce: 12000,
-      rapierBrakeScale: 0.02,
+      rapierBrakeScale: 0.4,
     });
     expect(h.enginePerWheel).toBe(0);
     expect(l.enginePerWheel).toBe(0);
-    expect(l.brakePerWheel).toBeGreaterThan(h.brakePerWheel);
-    expect(h.brakePerWheel).toBeGreaterThan(0);
+    expect(h.brakePerWheel).toBe(0);
+    expect(l.brakePerWheel).toBe(0);
   });
 
-  it("static hold needs no engine brake at near-zero speed", () => {
+  it("opposite throttle while rolling applies service brake, not reverse torque", () => {
+    // Going forward, press reverse
     const f = computeDriveForces({
-      speed: 0.1,
-      throttle: 0,
+      speed: 6,
+      throttle: -1,
       brake: 0,
-      range: "L",
+      range: "H",
       wheelCount: 4,
       baseBrakeForce: 12000,
-      rapierBrakeScale: 0.02,
+      rapierBrakeScale: 0.4,
+    });
+    expect(f.enginePerWheel).toBe(0);
+    expect(f.brakePerWheel).toBeGreaterThan(0);
+
+    // Going reverse, press forward
+    const r = computeDriveForces({
+      speed: -6,
+      throttle: 1,
+      brake: 0,
+      range: "H",
+      wheelCount: 4,
+      baseBrakeForce: 12000,
+      rapierBrakeScale: 0.4,
+    });
+    expect(r.enginePerWheel).toBe(0);
+    expect(r.brakePerWheel).toBeGreaterThan(0);
+  });
+
+  it("opposite throttle near stop becomes reverse/forward drive", () => {
+    const f = computeDriveForces({
+      speed: 0.2,
+      throttle: -1,
+      brake: 0,
+      range: "H",
+      wheelCount: 4,
+      baseBrakeForce: 12000,
+      rapierBrakeScale: 0.4,
     });
     expect(f.brakePerWheel).toBe(0);
-    expect(f.enginePerWheel).toBe(0);
+    expect(f.enginePerWheel).toBeLessThan(0);
+  });
+
+  it("same-direction throttle still drives", () => {
+    const f = computeDriveForces({
+      speed: 5,
+      throttle: 1,
+      brake: 0,
+      range: "H",
+      wheelCount: 4,
+      baseBrakeForce: 12000,
+      rapierBrakeScale: 0.4,
+    });
+    expect(f.brakePerWheel).toBe(0);
+    expect(f.enginePerWheel).toBeGreaterThan(0);
   });
 });
