@@ -38,6 +38,7 @@ import {
   OffroadFx,
   SANDBOX_DUST_COLOR,
 } from "@/render/particles/OffroadFx";
+import { TireTrackSystem } from "@/render/TireTrackSystem";
 
 const FIXED_DT = 1 / 60;
 
@@ -67,6 +68,7 @@ export class GameApp {
   private hud: HudHandles | null = null;
   private uiUnmount: (() => void) | null = null;
   private offroadFx: OffroadFx | null = null;
+  private tireTracks: TireTrackSystem | null = null;
   private acc = 0;
   private lastT = 0;
   private sessionActive = false;
@@ -162,6 +164,10 @@ export class GameApp {
     if (this.offroadFx) {
       this.offroadFx.dispose();
       this.offroadFx = null;
+    }
+    if (this.tireTracks) {
+      this.tireTracks.dispose();
+      this.tireTracks = null;
     }
     if (this.hud) {
       this.hud.dispose();
@@ -342,18 +348,23 @@ export class GameApp {
     this.cameraRig = new CameraRig(this.gameScene.camera);
     // Snap third-person follow to spawn so first frame is not lerping from origin.
     this.cameraRig.update(1, spawnPose);
+    const terrainFx = {
+      heightmap: level.heightmap,
+      resolution: level.resolution,
+      worldSize: level.worldSize,
+      pathPolyline: level.pathPolyline,
+      groundPalette: biome.groundPalette,
+      pathWidth: biome.pathWidth,
+    };
     this.offroadFx = new OffroadFx(this.gameScene.scene, {
       streams: level.streams,
       waterColor: biome.waterColor,
       // Dust samples same height/path blend as TerrainMesh vertex colors
-      terrain: {
-        heightmap: level.heightmap,
-        resolution: level.resolution,
-        worldSize: level.worldSize,
-        pathPolyline: level.pathPolyline,
-        groundPalette: biome.groundPalette,
-        pathWidth: biome.pathWidth,
-      },
+      terrain: terrainFx,
+    });
+    this.tireTracks = new TireTrackSystem(this.gameScene.scene, {
+      streams: level.streams,
+      terrain: terrainFx,
     });
     this.sessionMode = "level";
   }
@@ -401,6 +412,9 @@ export class GameApp {
     this.offroadFx = new OffroadFx(this.three.scene, {
       fallbackDustColor: SANDBOX_DUST_COLOR,
       waterColor: "#4a7a8c",
+    });
+    this.tireTracks = new TireTrackSystem(this.three.scene, {
+      flatGroundY: 0.1,
     });
     this.sessionMode = "sandbox";
     this.sessionActive = true;
@@ -518,22 +532,34 @@ export class GameApp {
         });
       }
 
+      const contacts = this.vehicle.getWheelContacts();
+      const wheels = wheelVisuals.map((wv, i) => ({
+        contact: contacts[i] ?? false,
+        suspensionLength: wv.suspensionLength,
+      }));
+      const linvel = this.vehicle.getLinvel();
       if (this.offroadFx) {
-        const contacts = this.vehicle.getWheelContacts();
-        const wheels = wheelVisuals.map((wv, i) => ({
-          contact: contacts[i] ?? false,
-          suspensionLength: wv.suspensionLength,
-        }));
         this.offroadFx.update(dt, {
           position: pose.position,
           yaw: pose.yaw,
           rotation: pose.rotation,
-          linvel: this.vehicle.getLinvel(),
+          linvel,
           throttle: this.lastDriveActions.throttle,
           brake: this.lastDriveActions.brake,
           driveRange: this.vehicle.getDriveRange(),
           wheels,
           bodyContacts: this.vehicle.getBodyContactPoints(),
+        });
+      }
+      if (this.tireTracks) {
+        this.tireTracks.update(dt, {
+          position: pose.position,
+          yaw: pose.yaw,
+          rotation: pose.rotation,
+          linvel,
+          throttle: this.lastDriveActions.throttle,
+          brake: this.lastDriveActions.brake,
+          wheels,
         });
       }
 
