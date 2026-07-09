@@ -73,14 +73,14 @@ export class VehicleController {
         cfg.suspRestLength,
         cfg.wheelRadius,
       );
-      // Bullet-style params (not SI spring N/m)
-      this.controller.setWheelSuspensionStiffness(i, 30);
-      this.controller.setWheelSuspensionCompression(i, 2.3);
-      this.controller.setWheelSuspensionRelaxation(i, 3.5);
+      // Soften spring + stronger dampers → less hop, longer tire contact on chatter
+      this.controller.setWheelSuspensionStiffness(i, cfg.rapierSuspStiffness);
+      this.controller.setWheelSuspensionCompression(i, cfg.rapierSuspCompression);
+      this.controller.setWheelSuspensionRelaxation(i, cfg.rapierSuspRelaxation);
       this.controller.setWheelMaxSuspensionForce(i, cfg.maxSuspForce);
       this.controller.setWheelMaxSuspensionTravel(i, cfg.suspMaxTravel);
-      this.controller.setWheelFrictionSlip(i, 3.5);
-      this.controller.setWheelSideFrictionStiffness(i, 1.0);
+      this.controller.setWheelFrictionSlip(i, cfg.rapierFrictionSlip);
+      this.controller.setWheelSideFrictionStiffness(i, 1.15);
     }
     this.numWheels = cfg.wheelPositions.length;
   }

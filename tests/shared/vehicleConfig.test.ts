@@ -27,7 +27,7 @@ describe("vehicle suspension geometry", () => {
     const attachY = VEHICLE_CONFIG.wheelPositions[0].y;
     const distToGround = comY + attachY - groundY;
     expect(distToGround).toBeCloseTo(
-      VEHICLE_CONFIG.suspRestLength * 0.92,
+      VEHICLE_CONFIG.suspRestLength * VEHICLE_CONFIG.spawnRestFactor,
       5,
     );
     const bottomClearance =
