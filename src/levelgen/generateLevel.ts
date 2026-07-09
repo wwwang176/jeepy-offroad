@@ -106,23 +106,44 @@ export function carveAndDecorate(
   stampPathRibbon(hm, resolution, mapSize, path, carveHalf, 3);
 
   // Streams
-  const streams: { polyline: Vec3[]; width: number }[] = [];
+  const streams: {
+    polyline: Vec3[];
+    width: number;
+    depthOnPath: number;
+  }[] = [];
   const density = isFallback
     ? biome.streamDensity * 0.15
     : biome.streamDensity;
   // Place 0–2 streams based on density
   const streamCount = density > 0.5 ? 2 : density > 0.15 ? 1 : 0;
+  // Ford depth on path: real dip, under STREAM_MAX_DEPTH and step safety
+  const fordDepth = Math.min(
+    STREAM_MAX_DEPTH_ON_PATH_M * 0.85,
+    vehicle.maxStepHeight * 0.75 * 0.9,
+  );
   for (let s = 0; s < streamCount; s++) {
     const poly = generateStreamPolyline(mapSize, path, rng, s);
     if (poly.length < 2) continue;
     const width = 2 + rng() * 2;
-    // Carve shallow depression; keep path-crossing depth under limit
-    carveStream(hm, resolution, mapSize, poly, width, path, halfW);
-    streams.push({ polyline: poly, width });
+    // Carve off-path beds + shallow path fords
+    carveStream(hm, resolution, mapSize, poly, width, path, halfW, fordDepth);
+    streams.push({ polyline: poly, width, depthOnPath: fordDepth });
   }
 
-  // Re-stamp path ribbon so streams don't dig the road too deep
+  // Re-stamp path ribbon to grade, then re-apply fords so depth is real on path
   stampPathRibbon(hm, resolution, mapSize, path, carveHalf, 2.5);
+  for (const s of streams) {
+    applyStreamFordsOnPath(
+      hm,
+      resolution,
+      mapSize,
+      s.polyline,
+      s.width,
+      path,
+      halfW,
+      s.depthOnPath,
+    );
+  }
 
   // Attach streams on the heightmap object via side channel? Return only hm;
   // streams recorded in buildLevelData by re-running or storing externally.
@@ -138,7 +159,7 @@ export function carveAndDecorate(
 
 const streamCache = new WeakMap<
   Float32Array,
-  { polyline: Vec3[]; width: number }[]
+  { polyline: Vec3[]; width: number; depthOnPath?: number }[]
 >();
 
 function generateStreamPolyline(
@@ -168,6 +189,10 @@ function generateStreamPolyline(
   return points;
 }
 
+/**
+ * Carve stream beds. On-path cells target pathY - fordDepth (≤ STREAM_MAX_DEPTH);
+ * off-path digs deeper. Fords are re-applied after path re-stamp via applyStreamFordsOnPath.
+ */
 function carveStream(
   hm: Float32Array,
   resolution: number,
@@ -176,23 +201,60 @@ function carveStream(
   width: number,
   path: Vec3[],
   pathHalf: number,
+  fordDepth: number,
 ): void {
   const half = width / 2;
+  const onPathDepth = Math.min(fordDepth, STREAM_MAX_DEPTH_ON_PATH_M);
   for (let r = 0; r < resolution; r++) {
     for (let c = 0; c < resolution; c++) {
       const { x, z } = gridToWorld(c, r, worldSize, resolution);
       const dStream = pathDistXZ(x, z, poly);
       if (dStream > half + 1.5) continue;
       const dPath = pathDistXZ(x, z, path);
-      // On path ribbon: very shallow; off-path: deeper bed
-      const maxDepth =
-        dPath <= pathHalf + 1
-          ? STREAM_MAX_DEPTH_ON_PATH_M * 0.5
-          : 1.2 + (1 - Math.min(1, dPath / 20)) * 0.5;
       const fall = Math.max(0, 1 - dStream / (half + 1.5));
-      const cut = maxDepth * fall * fall;
       const i = idx(resolution, c, r);
-      hm[i] -= cut;
+      if (dPath <= pathHalf + 1) {
+        // Explicit ford: pathY - min(depth, STREAM_MAX_DEPTH)
+        const pathY = pathClosestY(x, z, path);
+        const target = pathY - onPathDepth * fall * fall;
+        if (hm[i] > target) hm[i] = target;
+      } else {
+        const maxDepth = 1.2 + (1 - Math.min(1, dPath / 20)) * 0.5;
+        hm[i] -= maxDepth * fall * fall;
+      }
+    }
+  }
+}
+
+/**
+ * After path ribbon stamp, re-cut fords so stream crossings keep a real dip
+ * of up to STREAM_MAX_DEPTH_ON_PATH_M (validator measures pathY − bed).
+ */
+function applyStreamFordsOnPath(
+  hm: Float32Array,
+  resolution: number,
+  worldSize: number,
+  poly: Vec3[],
+  width: number,
+  path: Vec3[],
+  pathHalf: number,
+  fordDepth: number,
+): void {
+  const half = width / 2;
+  const depth = Math.min(Math.max(0, fordDepth), STREAM_MAX_DEPTH_ON_PATH_M);
+  if (depth <= 0) return;
+  for (let r = 0; r < resolution; r++) {
+    for (let c = 0; c < resolution; c++) {
+      const { x, z } = gridToWorld(c, r, worldSize, resolution);
+      const dStream = pathDistXZ(x, z, poly);
+      if (dStream > half) continue;
+      const dPath = pathDistXZ(x, z, path);
+      if (dPath > pathHalf + 0.5) continue;
+      const fall = Math.max(0, 1 - dStream / half);
+      const pathY = pathClosestY(x, z, path);
+      const target = pathY - depth * fall * fall;
+      const i = idx(resolution, c, r);
+      if (hm[i] > target) hm[i] = target;
     }
   }
 }
@@ -248,10 +310,14 @@ export function buildLevelData(
   usedFallback: boolean,
   repairAttempts: number,
 ): LevelData {
-  const points = path.points.map((p) => ({
-    ...p,
-    y: sampleBilinear(heightmap, resolution, mapSize, p.x, p.z),
-  }));
+  // Keep design path grade Y when fords dip the heightmap so validators can
+  // measure depth as pathCenterY − bed; never pull centerline below grade.
+  const points = path.points.map((p) => {
+    const sampleY = sampleBilinear(heightmap, resolution, mapSize, p.x, p.z);
+    const y =
+      Number.isFinite(sampleY) && sampleY > p.y ? sampleY : p.y;
+    return { ...p, y };
+  });
 
   const startPos = {
     x: points[0].x,
@@ -305,6 +371,7 @@ export function buildLevelData(
     streams: streams.map((s) => ({
       polyline: s.polyline.map((p) => ({ ...p })),
       width: s.width,
+      depthOnPath: s.depthOnPath,
     })),
     killY: minH - 20,
     meta: {
@@ -373,7 +440,9 @@ export function generateLevel(input: GenerateLevelInput): LevelData {
     level = forceFallbackLevel({ ...input, seed }, attempts);
     v = validateLevel(level, vehicle);
     if (!v.ok) {
+      // flattenFallbackUntilValid re-validates and extreme-flattens until ok
       level = flattenFallbackUntilValid(level, vehicle);
+      v = validateLevel(level, vehicle);
     }
   }
   return level;
@@ -439,7 +508,9 @@ export function forceFallbackLevel(
     }
   }
   if (!v.ok) {
+    // flattenFallbackUntilValid re-validates after each flatten; extreme corridor last
     level = flattenFallbackUntilValid(level, input.vehicle);
+    v = validateLevel(level, input.vehicle);
   }
   // Ensure flag stays true
   if (!level.meta.usedFallback) {

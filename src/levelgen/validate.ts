@@ -10,7 +10,8 @@ import {
 
 const EPS = 1e-6;
 const PATH_NEAR_M = 6;
-const RIBBON_HEIGHT_TOL_FACTOR = 1.25;
+/** Ribbon height consistency vs centerline; slightly above pure step, below 1.25 legacy. */
+const RIBBON_HEIGHT_TOL_FACTOR = 1.15;
 
 function finite(n: number): boolean {
   return Number.isFinite(n);
@@ -252,7 +253,7 @@ export function validateLevel(
       };
       const yaw = segmentHeading(path[i - 1], path[i]);
       const n = pathNormal(yaw);
-      for (const lat of [-halfRibbon * 0.9, halfRibbon * 0.9]) {
+      for (const lat of [-halfRibbon * 0.95, halfRibbon * 0.95]) {
         const x = mid.x + n.x * lat;
         const z = mid.z + n.z * lat;
         // Ensure sample is on map
@@ -297,7 +298,19 @@ export function validateLevel(
   }
 
   // 6. Stream depth on path samples
+  // Measure path-center grade vs heightmap bed at crossings (ford dip must be real).
+  // Prefer pathCenterY - bed; also sample along-path banks and optional depthOnPath.
   if (level.streams && level.streams.length > 0 && hm) {
+    for (const stream of level.streams) {
+      if (
+        stream.depthOnPath != null &&
+        stream.depthOnPath > STREAM_MAX_DEPTH_ON_PATH_M + 1e-3
+      ) {
+        reasons.push(
+          `stream depthOnPath ${stream.depthOnPath.toFixed(3)} > ${STREAM_MAX_DEPTH_ON_PATH_M}`,
+        );
+      }
+    }
     for (let i = 0; i < path.length; i++) {
       const p = path[i];
       for (const stream of level.streams) {
@@ -311,28 +324,42 @@ export function validateLevel(
             p.x,
             p.z,
           );
+          if (!finite(bed)) {
+            reasons.push(`stream bed sample not finite at path ${i}`);
+            continue;
+          }
           let yaw = 0;
           if (i < path.length - 1) yaw = segmentHeading(p, path[i + 1]);
           else yaw = segmentHeading(path[i - 1], p);
-          const n = pathNormal(yaw);
+          // Sample along path tangent (out of stream when stream ⟂ path)
+          const fx = Math.sin(yaw);
+          const fz = Math.cos(yaw);
           const bankR = stream.width * 0.5 + 1;
-          const yL = sampleBilinear(
+          const yA = sampleBilinear(
             hm,
             level.resolution,
             level.worldSize,
-            p.x + n.x * bankR,
-            p.z + n.z * bankR,
+            p.x + fx * bankR,
+            p.z + fz * bankR,
           );
-          const yR = sampleBilinear(
+          const yB = sampleBilinear(
             hm,
             level.resolution,
             level.worldSize,
-            p.x - n.x * bankR,
-            p.z - n.z * bankR,
+            p.x - fx * bankR,
+            p.z - fz * bankR,
           );
-          // Depth ≈ max(bank, pathY) − bed under sample
-          const surface = Math.max(yL, yR, p.y);
-          const depth = Math.max(0, surface - bed, p.y - bed);
+          // pathCenterY (polyline grade) − bed; banks as grade fallback if path was resynced to bed
+          const pathCenterY = p.y;
+          const surface = Math.max(
+            pathCenterY,
+            finite(yA) ? yA : -Infinity,
+            finite(yB) ? yB : -Infinity,
+          );
+          let depth = Math.max(0, pathCenterY - bed, surface - bed);
+          if (stream.depthOnPath != null) {
+            depth = Math.max(depth, stream.depthOnPath);
+          }
           if (depth > STREAM_MAX_DEPTH_ON_PATH_M + 1e-3) {
             reasons.push(
               `stream depth ${depth.toFixed(3)} > ${STREAM_MAX_DEPTH_ON_PATH_M} at path ${i}`,

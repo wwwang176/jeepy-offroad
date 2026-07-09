@@ -33,7 +33,12 @@ export interface LevelData {
     halfExtents: Vec3;
   };
   checkpoints: { id: string; position: Vec3; yaw: number; radius: number }[];
-  streams: { polyline: Vec3[]; width: number }[];
+  streams: {
+    polyline: Vec3[];
+    width: number;
+    /** Carved ford depth on path (m); used by validate when present. */
+    depthOnPath?: number;
+  }[];
   killY: number;
   meta: {
     usedFallback: boolean;
