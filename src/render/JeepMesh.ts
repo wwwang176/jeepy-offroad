@@ -394,7 +394,8 @@ export function createJeepMesh(): THREE.Group {
     new THREE.BoxGeometry(bodyW * 0.84, Math.max(0.2, wsH - 0.06), 0.05),
     mat(PAL.glass, { opacity: 0.58 }),
   );
-  ws.name = "windshield";
+  ws.name = "glass-windshield";
+  ws.userData.isGlass = true;
   ws.position.set(0, wsMidY + 0.01, wsZ + 0.03);
   ws.rotation.x = -0.08;
   g.add(ws);
@@ -440,6 +441,8 @@ export function createJeepMesh(): THREE.Group {
         new THREE.BoxGeometry(0.05, sideGlassH, p.d),
         mat(PAL.glassTint, { opacity: 0.58 }),
       );
+      pane.name = "glass-side";
+      pane.userData.isGlass = true;
       pane.position.set(sx * (halfW + 0.04), sideGlassY, p.z);
       g.add(pane);
     }
@@ -449,6 +452,8 @@ export function createJeepMesh(): THREE.Group {
     new THREE.BoxGeometry(bodyW * 0.74, sideGlassH - 0.02, 0.05),
     mat(PAL.glassTint, { opacity: 0.58 }),
   );
+  rearGlass.name = "glass-rear";
+  rearGlass.userData.isGlass = true;
   rearGlass.position.set(0, sideGlassY, -1.25);
   g.add(rearGlass);
 
@@ -712,6 +717,16 @@ function updateSuspensionLink(
     _suspTo.set(hubX, hubY - 0.02, hubZ);
     placeUnitCylinder(bar2, _suspFrom, _suspTo, 1);
   }
+}
+
+/**
+ * Hide greenhouse glass in first person so the cabin view is not fogged.
+ * Tagged with `userData.isGlass` at mesh build time.
+ */
+export function setJeepGlassVisible(mesh: THREE.Object3D, visible: boolean): void {
+  mesh.traverse((o) => {
+    if (o.userData?.isGlass) o.visible = visible;
+  });
 }
 
 export function syncJeepMesh(

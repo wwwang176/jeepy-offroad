@@ -44,8 +44,11 @@ export function drawMinimap(
   const p = toMap(model.player.x, model.player.z);
   ctx.save();
   ctx.translate(p.px, p.py);
-  // yaw 0 = +Z = up on minimap; screen up is -Y so rotate -yaw
-  ctx.rotate(-model.player.yaw);
+  // Map: +X right, +Z up. Triangle tip is local (0,-1) = screen up = +Z.
+  // Canvas rotate() is clockwise for positive angles; world yaw is CCW from +Z
+  // toward +X — same numeric sense as clockwise when Y is flipped, so use +yaw.
+  // (Old -yaw pointed left when facing +X.)
+  ctx.rotate(model.player.yaw);
   ctx.fillStyle = "#fff";
   ctx.beginPath();
   ctx.moveTo(0, -6);

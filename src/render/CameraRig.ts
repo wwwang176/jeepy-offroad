@@ -18,6 +18,8 @@ const TP_PITCH_MIN = 0.08;
 const TP_PITCH_MAX = 1.35;
 const FP_PITCH_MIN = -1.2;
 const FP_PITCH_MAX = 1.2;
+/** First-person free-look follow rate (higher = snappier). */
+const FP_LOOK_SMOOTH = 14;
 
 export class CameraRig {
   mode: CameraMode = "third";
@@ -45,9 +47,12 @@ export class CameraRig {
   private orbitPitch = TP_DEFAULT_PITCH;
   /** Spring-arm length (m). */
   private orbitDist = TP_DIST_DEFAULT;
-  /** First-person free look relative to chassis (rad). */
+  /** First-person free look (smoothed) relative to chassis (rad). */
   private fpYaw = 0;
   private fpPitch = 0;
+  /** Mouse target angles; `update` eases `fpYaw`/`fpPitch` toward these. */
+  private fpYawTarget = 0;
+  private fpPitchTarget = 0;
 
   constructor(private camera: THREE.PerspectiveCamera) {
     this.setMode("third");
@@ -60,6 +65,10 @@ export class CameraRig {
     // Snap follow camera when entering third person
     if (mode === "third") {
       this.current.copy(this.camera.position);
+    } else {
+      // Entering FP: no lag from previous third-person session
+      this.fpYaw = this.fpYawTarget;
+      this.fpPitch = this.fpPitchTarget;
     }
   }
 
@@ -84,10 +93,11 @@ export class CameraRig {
       );
       return;
     }
-    this.fpYaw -= dx * LOOK_SENS;
-    // Drag up → look up (negative pitch around X for -Z-facing camera).
-    this.fpPitch = clamp(
-      this.fpPitch + dy * LOOK_SENS,
+    // Drive targets only; smoothed angles catch up in update().
+    this.fpYawTarget -= dx * LOOK_SENS;
+    // Drag up (dy < 0) → look up (standard mouse-look).
+    this.fpPitchTarget = clamp(
+      this.fpPitchTarget - dy * LOOK_SENS,
       FP_PITCH_MIN,
       FP_PITCH_MAX,
     );
@@ -99,6 +109,8 @@ export class CameraRig {
     this.orbitPitch = TP_DEFAULT_PITCH;
     this.fpYaw = 0;
     this.fpPitch = 0;
+    this.fpYawTarget = 0;
+    this.fpPitchTarget = 0;
   }
 
   /**
@@ -172,6 +184,16 @@ export class CameraRig {
       pose.position.y + this.tmp.y,
       pose.position.z + this.tmp.z,
     );
+
+    // Ease free-look toward mouse targets (exponential, frame-rate independent)
+    if (opts?.snap || dt <= 0) {
+      this.fpYaw = this.fpYawTarget;
+      this.fpPitch = this.fpPitchTarget;
+    } else {
+      const k = 1 - Math.exp(-FP_LOOK_SMOOTH * dt);
+      this.fpYaw += (this.fpYawTarget - this.fpYaw) * k;
+      this.fpPitch += (this.fpPitchTarget - this.fpPitch) * k;
+    }
 
     // Chassis shake + facing fix (-Z = vehicle forward) + free look
     this.lookEuler.set(this.fpPitch, this.fpYaw, 0, "YXZ");

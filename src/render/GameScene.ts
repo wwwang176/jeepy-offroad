@@ -4,6 +4,7 @@ import type { BiomeProfile, PropSpawnRule } from "@/biome/types";
 import { mulberry32 } from "@/levelgen/rng";
 import { idx, worldToGrid } from "@/shared/coords";
 import { clamp, lerp } from "@/shared/math";
+import { FINISH_COLUMN_HEIGHT_M } from "@/shared/finishMarker";
 import { createTerrainMesh } from "./TerrainMesh";
 import { createJeepMesh, syncJeepMesh } from "./JeepMesh";
 import {
@@ -43,17 +44,14 @@ function sampleHeight(level: LevelData, x: number, z: number): number {
   return lerp(hx0, hx1, fz);
 }
 
-function createFinishPillar(
-  finish: LevelData["finish"],
-  waterColor: string,
-): THREE.Group {
+/** Super-tall soft green finish column (XZ from level, Y from FINISH_COLUMN_HEIGHT_M). */
+function createFinishMarker(finish: LevelData["finish"]): THREE.Group {
   const group = new THREE.Group();
   group.name = "finish-marker";
 
-  // Soft finish volume (existing trigger visual)
   const volGeo = new THREE.BoxGeometry(
     finish.halfExtents.x * 2,
-    finish.halfExtents.y * 2,
+    FINISH_COLUMN_HEIGHT_M,
     finish.halfExtents.z * 2,
   );
   const volMat = new THREE.MeshLambertMaterial({
@@ -63,39 +61,10 @@ function createFinishPillar(
     depthWrite: false,
   });
   const volume = new THREE.Mesh(volGeo, volMat);
+  volume.name = "finish-volume";
+  // Centered on finish.position so it matches FinishSystem AABB
   volume.position.set(0, 0, 0);
   group.add(volume);
-
-  // Low-poly pillar beacon
-  const pillarH = 10;
-  const pillarGeo = new THREE.CylinderGeometry(0.45, 0.7, pillarH, 6);
-  const pillarMat = new THREE.MeshLambertMaterial({
-    color: 0x9dffb0,
-    flatShading: true,
-  });
-  const pillar = new THREE.Mesh(pillarGeo, pillarMat);
-  pillar.position.y = pillarH * 0.5 + finish.halfExtents.y * 0.15;
-  group.add(pillar);
-
-  const capGeo = new THREE.ConeGeometry(1.1, 1.6, 5);
-  const capMat = new THREE.MeshLambertMaterial({
-    color: 0xffee66,
-    flatShading: true,
-  });
-  const cap = new THREE.Mesh(capGeo, capMat);
-  cap.position.y = pillarH + 0.9;
-  group.add(cap);
-
-  // Thin arch ring for read at distance
-  const ringGeo = new THREE.TorusGeometry(2.2, 0.18, 4, 10);
-  const ringMat = new THREE.MeshLambertMaterial({
-    color: hexToNumber(waterColor),
-    flatShading: true,
-  });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = 3.2;
-  group.add(ring);
 
   group.position.set(finish.position.x, finish.position.y, finish.position.z);
   group.rotation.y = finish.yaw;
@@ -346,8 +315,9 @@ export function createGameScene(
   setShadowFlags(terrainMesh, { cast: false, receive: true });
   scene.add(terrainMesh);
 
-  const finishMesh = createFinishPillar(level.finish, biome.waterColor);
-  setShadowFlags(finishMesh, { cast: true, receive: true });
+  const finishMesh = createFinishMarker(level.finish);
+  // Translucent volume only — no shadow casting
+  setShadowFlags(finishMesh, { cast: false, receive: false });
   scene.add(finishMesh);
 
   const streamGroup = createStreamMeshes(level, biome.waterColor);

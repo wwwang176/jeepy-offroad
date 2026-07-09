@@ -10,7 +10,11 @@ import { createTerrainCollider } from "@/physics/createTerrainCollider";
 import { InputRouter } from "@/input/InputRouter";
 import { KeyboardProvider } from "@/input/KeyboardProvider";
 import { createRenderer } from "@/render/createRenderer";
-import { createJeepMesh, syncJeepMesh } from "@/render/JeepMesh";
+import {
+  createJeepMesh,
+  setJeepGlassVisible,
+  syncJeepMesh,
+} from "@/render/JeepMesh";
 import {
   createGameScene,
   type GameSceneHandles,
@@ -481,6 +485,13 @@ export class GameApp {
 
         if (actions.cameraToggle && this.cameraRig) {
           this.cameraRig.toggle();
+          // FP cabin view: hide windshield / side / rear glass
+          if (this.jeepMesh) {
+            setJeepGlassVisible(
+              this.jeepMesh,
+              this.cameraRig.mode !== "first",
+            );
+          }
         }
         if (this.cameraRig) {
           this.cameraRig.applyLookDelta(
@@ -522,6 +533,10 @@ export class GameApp {
       const pose = this.vehicle.getPose();
       const wheelVisuals = this.vehicle.getWheelVisuals();
       syncJeepMesh(this.jeepMesh, pose, wheelVisuals);
+      // Keep glass visibility in sync if mode changed elsewhere
+      if (this.cameraRig) {
+        setJeepGlassVisible(this.jeepMesh, this.cameraRig.mode !== "first");
+      }
 
       // Speed + range badges (level + sandbox).
       const speedMps = this.vehicle.getSpeedMps();
