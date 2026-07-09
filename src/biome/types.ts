@@ -25,6 +25,11 @@ export interface BiomeProfile {
    */
   propCountScale?: number;
   /**
+   * After the weighted pass, keep placing until each meshKey reaches `count`
+   * (path/start/finish exclusions still apply). Used e.g. for sand cacti.
+   */
+  ensureProps?: readonly { meshKey: string; count: number }[];
+  /**
    * Extra low ground-cover pass (short grass clumps via InstancedMesh).
    * Count ≈ (20 + density×40) × this scale. Omit / 0 = none.
    */

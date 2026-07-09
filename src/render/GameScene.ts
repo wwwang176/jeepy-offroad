@@ -187,6 +187,64 @@ function createPropMesh(
       m.position.y = 1.1;
       return m;
     }
+    case "cactus": {
+      // Low-poly saguaro: main column + 0–2 arms (decorative, no collision).
+      const g = new THREE.Group();
+      g.name = "cactus";
+      const mat = new THREE.MeshLambertMaterial({
+        color: 0x3d7a3a,
+        flatShading: true,
+      });
+      const tipMat = new THREE.MeshLambertMaterial({
+        color: 0x4a8f42,
+        flatShading: true,
+      });
+      const h = 1.4 + rng() * 1.1;
+      const r = 0.16 + rng() * 0.06;
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(r * 0.92, r, h, 6),
+        mat,
+      );
+      trunk.position.y = h * 0.5;
+      g.add(trunk);
+      // Soft top dome
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(r * 0.95, 5, 4), tipMat);
+      tip.position.y = h;
+      tip.scale.y = 0.7;
+      g.add(tip);
+
+      const arms = rng() < 0.35 ? 0 : rng() < 0.55 ? 1 : 2;
+      for (let a = 0; a < arms; a++) {
+        const side = a === 0 ? 1 : -1;
+        const armH = 0.45 + rng() * 0.45;
+        const attachY = h * (0.4 + rng() * 0.25);
+        const out = r + 0.12 + rng() * 0.08;
+        // Horizontal stub
+        const stub = new THREE.Mesh(
+          new THREE.CylinderGeometry(r * 0.55, r * 0.6, out, 5),
+          mat,
+        );
+        stub.rotation.z = (side * Math.PI) / 2;
+        stub.position.set((side * out) * 0.5, attachY, (rng() - 0.5) * 0.08);
+        g.add(stub);
+        // Upward arm
+        const arm = new THREE.Mesh(
+          new THREE.CylinderGeometry(r * 0.5, r * 0.55, armH, 5),
+          mat,
+        );
+        arm.position.set(side * out, attachY + armH * 0.5, stub.position.z);
+        g.add(arm);
+        const armTip = new THREE.Mesh(
+          new THREE.SphereGeometry(r * 0.52, 5, 4),
+          tipMat,
+        );
+        armTip.position.set(side * out, attachY + armH, stub.position.z);
+        armTip.scale.y = 0.65;
+        g.add(armTip);
+      }
+      // Lean applied at place time (tiny random tilt + yaw).
+      return g;
+    }
     case "coconut_palm": {
       // Single-tree path (tests / rare); decorative spawn merges instead.
       const parts = buildCoconutPalmParts(rng);
@@ -601,44 +659,85 @@ function createDecorativeProps(
     return false;
   };
 
-  for (let i = 0; i < count; i++) {
-    const x = (rng() * 2 - 1) * half;
-    const z = (rng() * 2 - 1) * half;
-    if (nearPath(x, z)) continue;
+  const placedCount = new Map<string, number>();
+  const bumpPlaced = (key: string): void => {
+    placedCount.set(key, (placedCount.get(key) ?? 0) + 1);
+  };
+
+  const tryPlaceAt = (
+    meshKey: string,
+    x: number,
+    z: number,
+    yaw: number,
+  ): boolean => {
+    if (nearPath(x, z)) return false;
     if (
       Math.hypot(x - level.start.position.x, z - level.start.position.z) < 10
     ) {
-      continue;
+      return false;
     }
     if (
       Math.hypot(x - level.finish.position.x, z - level.finish.position.z) < 12
     ) {
-      continue;
+      return false;
     }
-    // High-density biomes accept most candidates; sparse biomes stay sparse
-    const accept = density >= 0.95 ? 0.92 : density * 0.85 + 0.15;
-    if (rng() > accept) continue;
-
-    const rule = pickProp(table, rng);
-    if (!rule) continue;
     const y = sampleHeight(level, x, z);
-    const yaw = rng() * Math.PI * 2;
-
-    if (rule.meshKey === "coconut_palm") {
+    if (meshKey === "coconut_palm") {
       const s = 0.75 + rng() * 0.7;
       const parts = buildCoconutPalmParts(rng);
       palmTrunks.push(bakePalmWorld(parts.trunk, x, y, z, yaw, s));
       for (const f of parts.fronds) {
         palmFronds.push(bakePalmWorld(f, x, y, z, yaw, s));
       }
-      continue;
+      bumpPlaced(meshKey);
+      return true;
     }
-
-    const prop = createPropMesh(rule.meshKey, rng);
+    const prop = createPropMesh(meshKey, rng);
     prop.position.set(x, y, z);
+    // Random facing + tilt so props don't look stamped
+    prop.rotation.order = "YXZ";
     prop.rotation.y = yaw;
+    if (meshKey === "cactus") {
+      // Noticeable but still mostly upright (~±7°)
+      prop.rotation.x = (rng() - 0.5) * 0.24;
+      prop.rotation.z = (rng() - 0.5) * 0.24;
+    } else {
+      // Rocks / pillars: freer tumble (~±20°)
+      prop.rotation.x = (rng() - 0.5) * 0.7;
+      prop.rotation.z = (rng() - 0.5) * 0.7;
+    }
     prop.scale.setScalar(0.85 + rng() * 0.5);
     group.add(prop);
+    bumpPlaced(meshKey);
+    return true;
+  };
+
+  for (let i = 0; i < count; i++) {
+    const x = (rng() * 2 - 1) * half;
+    const z = (rng() * 2 - 1) * half;
+    // High-density biomes accept most candidates; sparse biomes stay sparse
+    const accept = density >= 0.95 ? 0.92 : density * 0.85 + 0.15;
+    if (rng() > accept) continue;
+
+    const rule = pickProp(table, rng);
+    if (!rule) continue;
+    tryPlaceAt(rule.meshKey, x, z, rng() * Math.PI * 2);
+  }
+
+  // Fill quotas (e.g. sand ≈ 50 cacti) without path/start/finish placements.
+  for (const goal of biome.ensureProps ?? []) {
+    if (goal.count <= 0) continue;
+    let placed = placedCount.get(goal.meshKey) ?? 0;
+    let attempts = 0;
+    const maxAttempts = goal.count * 40;
+    while (placed < goal.count && attempts < maxAttempts) {
+      attempts++;
+      const x = (rng() * 2 - 1) * half;
+      const z = (rng() * 2 - 1) * half;
+      if (tryPlaceAt(goal.meshKey, x, z, rng() * Math.PI * 2)) {
+        placed++;
+      }
+    }
   }
 
   // --- Merged palm batches (2–3 draw calls) + shared wind materials ---
