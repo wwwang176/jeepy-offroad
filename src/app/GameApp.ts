@@ -131,9 +131,14 @@ export class GameApp {
             onStart: ({ biomeId, seed }) => {
               this.dispatch({ type: "START", biomeId, seed });
             },
-            onFlatTest: () => {
-              void this.startFlatSandbox();
-            },
+            // Dev-only flat sandbox; never exposed in production builds
+            ...(import.meta.env.DEV
+              ? {
+                  onFlatTest: () => {
+                    void this.startFlatSandbox();
+                  },
+                }
+              : {}),
           });
         }
         break;

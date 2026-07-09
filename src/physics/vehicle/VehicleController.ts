@@ -57,7 +57,8 @@ export class VehicleController {
     this.body = world.createRigidBody(rbDesc);
     const coll = RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z)
       .setMass(VEHICLE_CONFIG.massKg)
-      .setFriction(0.8)
+      // Low body friction: raycast suspension + tires provide support/grip
+      .setFriction(VEHICLE_CONFIG.chassisFriction)
       .setRestitution(0.0);
     world.createCollider(coll, this.body);
 

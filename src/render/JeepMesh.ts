@@ -15,13 +15,19 @@ export function createJeepMesh(): THREE.Group {
   );
   cabin.position.set(0, he.y * 1.2, -he.z * 0.1);
   g.add(cabin);
+  const r = VEHICLE_CONFIG.wheelRadius;
   for (const w of VEHICLE_CONFIG.wheelPositions) {
     const wheel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.35, 0.35, 0.25, 10),
+      new THREE.CylinderGeometry(r, r, 0.25, 10),
       new THREE.MeshLambertMaterial({ color: 0x222222 }),
     );
     wheel.rotation.z = Math.PI / 2;
-    wheel.position.set(w.x, w.y - 0.35, w.z);
+    // Rest contact ~ attachY - restLength; draw wheel center near that
+    wheel.position.set(
+      w.x,
+      w.y - VEHICLE_CONFIG.suspRestLength + r,
+      w.z,
+    );
     g.add(wheel);
   }
   return g;

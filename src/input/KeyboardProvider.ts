@@ -6,6 +6,8 @@ export class KeyboardProvider implements InputProvider {
   private respawnPressed = false;
   private readonly target: Window;
   private onDown = (e: KeyboardEvent) => {
+    // Ignore OS key auto-repeat for edge actions and held-key bookkeeping
+    if (e.repeat) return;
     this.keys.add(e.code);
     if (e.code === "KeyC") this.cameraPressed = true;
     if (e.code === "KeyR") this.respawnPressed = true;
