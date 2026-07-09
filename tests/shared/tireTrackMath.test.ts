@@ -111,14 +111,13 @@ describe("trackHalfWidth / color / life", () => {
     expect(slipW).toBeGreaterThan(mudW);
   });
 
-  it("marks are dark coffee tones", () => {
-    const c = trackMarkColor(
-      "mud",
-      { r: 0.7, g: 0.6, b: 0.45 },
-      0.8,
-    );
-    expect(c.r).toBeLessThan(0.35);
-    expect(c.g).toBeLessThan(c.r + 0.05);
+  it("marks are mid coffee tones (readable, not black)", () => {
+    const ground = { r: 0.7, g: 0.6, b: 0.45 };
+    const c = trackMarkColor("mud", ground, 0.8);
+    expect(c.r).toBeGreaterThan(0.12);
+    expect(c.r).toBeLessThan(0.5);
+    expect(c.r).toBeLessThan(ground.r);
+    expect(c.g).toBeLessThan(c.r + 0.08);
   });
 
   it("mud lasts longer than path", () => {

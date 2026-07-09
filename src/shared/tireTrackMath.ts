@@ -74,33 +74,38 @@ export function trackMarkColor(
   groundAlbedo: Rgb,
   strength: number,
 ): Rgb {
-  // Pull toward dark tire/mud
-  const dark = { r: 0.12, g: 0.09, b: 0.07 };
-  const pathGrey = { r: 0.22, g: 0.19, b: 0.15 };
-  const mudDark = { r: 0.1, g: 0.075, b: 0.055 };
+  // Mid depth: between original near-black and the too-pale pass
+  const dark = { r: 0.18, g: 0.14, b: 0.11 };
+  const pathGrey = { r: 0.3, g: 0.26, b: 0.21 };
+  const mudDark = { r: 0.16, g: 0.12, b: 0.09 };
 
   let target: Rgb;
   if (surface === "path") {
     target = {
-      r: lerp(groundAlbedo.r * 0.35, pathGrey.r, 0.55),
-      g: lerp(groundAlbedo.g * 0.35, pathGrey.g, 0.55),
-      b: lerp(groundAlbedo.b * 0.35, pathGrey.b, 0.55),
+      r: lerp(groundAlbedo.r * 0.48, pathGrey.r, 0.45),
+      g: lerp(groundAlbedo.g * 0.48, pathGrey.g, 0.45),
+      b: lerp(groundAlbedo.b * 0.48, pathGrey.b, 0.45),
     };
   } else {
-    // mud: deeper imprint
     target = {
-      r: lerp(groundAlbedo.r * 0.28, mudDark.r, 0.65),
-      g: lerp(groundAlbedo.g * 0.28, mudDark.g, 0.65),
-      b: lerp(groundAlbedo.b * 0.28, mudDark.b, 0.65),
+      r: lerp(groundAlbedo.r * 0.4, mudDark.r, 0.55),
+      g: lerp(groundAlbedo.g * 0.4, mudDark.g, 0.55),
+      b: lerp(groundAlbedo.b * 0.4, mudDark.b, 0.55),
     };
   }
 
-  // Stronger slip/brake → closer to pure dark
-  const t = 0.35 + strength * 0.65;
-  return {
+  // Stronger slip/brake → darker
+  const t = 0.42 + strength * 0.5;
+  const deep = {
     r: clamp(lerp(dark.r, target.r, t), 0, 1),
     g: clamp(lerp(dark.g, target.g, t), 0, 1),
     b: clamp(lerp(dark.b, target.b, t), 0, 1),
+  };
+  // Keep a little ground warmth (~25% toward ground, not 50%)
+  return {
+    r: clamp(lerp(groundAlbedo.r, deep.r, 0.75), 0, 1),
+    g: clamp(lerp(groundAlbedo.g, deep.g, 0.75), 0, 1),
+    b: clamp(lerp(groundAlbedo.b, deep.b, 0.75), 0, 1),
   };
 }
 
@@ -109,8 +114,9 @@ export function trackSpawnAlpha(
   strength: number,
   surface: TrackSurface,
 ): number {
-  const base = surface === "mud" ? 0.72 : 0.48;
-  return clamp(base * (0.35 + strength * 0.75), 0.12, 0.85);
+  // Between original (~0.72/0.48) and the too-faint half
+  const base = surface === "mud" ? 0.55 : 0.38;
+  return clamp(base * (0.35 + strength * 0.75), 0.1, 0.65);
 }
 
 /** Life seconds for a segment. Mud lasts longer. */
