@@ -23,6 +23,12 @@ const FP_LOOK_SMOOTH = 14;
 
 /** Third-person follow / look smoothing rate (higher = snappier). */
 const TP_FOLLOW_SMOOTH = 10;
+/**
+ * EXP: hard-mount TP position + look to pose (no LERP).
+ * Used to A/B test vehicle/camera "out of phase" vs smooth follow.
+ * Set false to restore exponential follow.
+ */
+const TP_HARD_FOLLOW = true;
 
 export class CameraRig {
   mode: CameraMode = "third";
@@ -158,7 +164,7 @@ export class CameraRig {
         pose.position.y + 1.2,
         pose.position.z,
       );
-      if (opts?.snap || dt <= 0 || !this.lookInitialized) {
+      if (TP_HARD_FOLLOW || opts?.snap || dt <= 0 || !this.lookInitialized) {
         this.current.copy(this.desired);
         this.look.copy(this.lookDesired);
         this.lookInitialized = true;
