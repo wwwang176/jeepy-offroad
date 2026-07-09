@@ -1,4 +1,5 @@
-import type { InputActions, InputProvider } from "./types";
+import type { DriveRange, InputActions, InputProvider } from "./types";
+import { DEFAULT_DRIVE_RANGE, toggleDriveRange } from "@/shared/driveTrain";
 
 /**
  * Desktop keyboard + left-drag look.
@@ -8,6 +9,7 @@ export class KeyboardProvider implements InputProvider {
   private keys = new Set<string>();
   private cameraPressed = false;
   private respawnPressed = false;
+  private driveRange: DriveRange = DEFAULT_DRIVE_RANGE;
   private lookX = 0;
   private lookY = 0;
   private dragging = false;
@@ -21,6 +23,10 @@ export class KeyboardProvider implements InputProvider {
     this.keys.add(e.code);
     if (e.code === "KeyC") this.cameraPressed = true;
     if (e.code === "KeyR") this.respawnPressed = true;
+    // Shift = transfer-case toggle (4H ↔ 4L)
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
+      this.driveRange = toggleDriveRange(this.driveRange);
+    }
   };
   private onUp = (e: KeyboardEvent) => {
     this.keys.delete(e.code);
@@ -96,6 +102,7 @@ export class KeyboardProvider implements InputProvider {
       throttle,
       steer,
       brake,
+      driveRange: this.driveRange,
       cameraToggle: this.cameraPressed,
       respawn: this.respawnPressed,
       lookDeltaX: this.lookX,

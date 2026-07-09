@@ -1,7 +1,15 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import type { InputActions } from "@/input/types";
 import type { Pose2D, Vec3 } from "@/shared/types";
-import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
+import {
+  chassisPrincipalInertia,
+  VEHICLE_CONFIG,
+} from "@/shared/vehicleConfig";
+import {
+  computeDriveForces,
+  DEFAULT_DRIVE_RANGE,
+  type DriveRange,
+} from "@/shared/driveTrain";
 import { clamp } from "@/shared/math";
 import {
   SUSPENSION_RAY_GROUPS,
@@ -23,6 +31,10 @@ export class VehicleController {
   private readonly body: RAPIER.RigidBody;
   private readonly controller: RAPIER.DynamicRayCastVehicleController;
   private readonly numWheels: number;
+  /** Last applied transfer-case range (for HUD / debug). */
+  private lastDriveRange: DriveRange = DEFAULT_DRIVE_RANGE;
+  private lastDriveLabel = "4H";
+  private lastAvailableEngine = 0;
 
   constructor(world: RAPIER.World, pose: Pose2D) {
     this.world = world;
@@ -44,12 +56,18 @@ export class VehicleController {
       .setCcdEnabled(true);
     this.body = world.createRigidBody(rbDesc);
 
-    // Lower tub / doors — all mass lives here so COM stays at body origin
-    // (Cannon-style: shape offset free, COM controlled separately from cabin volume).
-    // setMass auto-computes box inertia about the collider center (0,0,0).
+    // Lower tub / doors — all mass lives here. Shape stays body-centered;
+    // COM is pinned to the tub underside (Cannon-style: shape ≠ COM).
+    const com = VEHICLE_CONFIG.centerOfMassLocal;
+    const inertia = chassisPrincipalInertia(mass, he, com);
     world.createCollider(
       RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z)
-        .setMass(mass)
+        .setMassProperties(
+          mass,
+          { x: com.x, y: com.y, z: com.z },
+          { x: inertia.x, y: inertia.y, z: inertia.z },
+          { x: 0, y: 0, z: 0, w: 1 },
+        )
         .setFriction(VEHICLE_CONFIG.chassisFriction)
         .setRestitution(0)
         .setCollisionGroups(VEHICLE_COLLIDER_GROUPS)
@@ -74,7 +92,7 @@ export class VehicleController {
       this.body,
     );
 
-    // Ensure compound mass props reflect colliders (COM at lower-body origin).
+    // Compound mass props: COM at tub underside, cabin massless.
     this.body.recomputeMassPropertiesFromColliders();
 
     this.controller = world.createVehicleController(this.body);
@@ -122,6 +140,34 @@ export class VehicleController {
       if (this.controller.wheelIsInContact(i)) n++;
     }
     return n;
+  }
+
+  /** Active transfer-case range after last update(). */
+  getDriveRange(): DriveRange {
+    return this.lastDriveRange;
+  }
+
+  getDriveLabel(): string {
+    return this.lastDriveLabel;
+  }
+
+  /** Peak available engine force (N) at current speed/range before throttle. */
+  getAvailableEngineForce(): number {
+    return this.lastAvailableEngine;
+  }
+
+  /**
+   * Ground-plane speed (m/s) for HUD speedometer.
+   * Uses horizontal linvel so airborne / sideways still reads.
+   */
+  getSpeedMps(): number {
+    const v = this.body.linvel();
+    return Math.hypot(v.x, v.z);
+  }
+
+  /** Signed chassis-forward speed from Rapier vehicle controller (m/s). */
+  getForwardSpeedMps(): number {
+    return this.controller.currentVehicleSpeed();
   }
 
   getPose(): {
@@ -197,30 +243,38 @@ export class VehicleController {
 
   /**
    * Apply engine/brake/steer then integrate vehicle rays.
+   * Drive uses transfer-case range + torque–speed curve (see driveTrain.ts).
    * Caller still runs world.step() after this.
    */
   update(dt: number, input: InputActions, _world: RAPIER.World): void {
     const cfg = VEHICLE_CONFIG;
     const speed = this.controller.currentVehicleSpeed();
-    const steerFactor = clamp(1 - Math.abs(speed) / 25, 0.25, 1);
+    const range = input.driveRange ?? DEFAULT_DRIVE_RANGE;
+    const drive = computeDriveForces({
+      speed,
+      throttle: input.throttle,
+      brake: input.brake,
+      range,
+      wheelCount: this.numWheels,
+      baseBrakeForce: cfg.brakeForce,
+      rapierBrakeScale: cfg.rapierBrakeScale,
+    });
+    this.lastDriveRange = drive.range;
+    this.lastDriveLabel = drive.label;
+    this.lastAvailableEngine = drive.availableEngineForce;
+
+    // Steering still eases off with speed (road feel in 4H; 4L stays agile).
+    const steerRefSpeed = range === "L" ? 12 : 25;
+    const steerFactor = clamp(1 - Math.abs(speed) / steerRefSpeed, 0.25, 1);
     // Input: +steer = right (D). Rapier vehicle steering is opposite of our
     // keyboard convention, so negate for correct left/right.
     const steer = -input.steer * cfg.maxSteerRad * steerFactor;
 
-    let enginePerWheel = 0;
-    let brakePerWheel = 0;
-    if (input.brake > 0.1) {
-      brakePerWheel = (cfg.brakeForce / this.numWheels) * input.brake * 0.02;
-    } else {
-      // Engine force: modest — controller applies as continuous force
-      enginePerWheel = input.throttle * (cfg.engineForce / this.numWheels);
-    }
-
     for (let i = 0; i < this.numWheels; i++) {
       const isFront = i < 2;
       this.controller.setWheelSteering(i, isFront ? steer : 0);
-      this.controller.setWheelEngineForce(i, enginePerWheel);
-      this.controller.setWheelBrake(i, brakePerWheel);
+      this.controller.setWheelEngineForce(i, drive.enginePerWheel);
+      this.controller.setWheelBrake(i, drive.brakePerWheel);
     }
 
     this.controller.updateVehicle(

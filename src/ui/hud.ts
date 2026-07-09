@@ -4,6 +4,10 @@ export interface HudModel {
   biomeId: string;
   seed: number;
   usedFallback?: boolean;
+  /** Transfer-case label, e.g. "4H" / "4L". */
+  driveLabel?: string;
+  /** Ground speed in m/s (converted to km/h for display). */
+  speedMps?: number;
   worldSize: number;
   player: { x: number; z: number; yaw: number };
   finish: { x: number; z: number };
@@ -16,22 +20,43 @@ export interface HudHandles {
   minimapCtx: CanvasRenderingContext2D;
   goalArrow: HTMLElement;
   infoEl: HTMLElement;
+  gearEl: HTMLElement;
+  speedEl: HTMLElement;
   dispose: () => void;
 }
 
 const MINIMAP_SIZE = 180;
+/** m/s → km/h */
+const MPS_TO_KMH = 3.6;
 
 /**
- * Mount play HUD: biome/seed label, goal arrow, and north-up minimap.
+ * Mount play HUD: biome/seed, speed, transfer-case, goal arrow, minimap.
  */
 export function createHud(
   parent: HTMLElement,
-  opts: { biomeId: string; seed: number; usedFallback?: boolean },
+  opts: {
+    biomeId: string;
+    seed: number;
+    usedFallback?: boolean;
+    driveLabel?: string;
+    speedMps?: number;
+  },
 ): HudHandles {
   const root = document.createElement("div");
   root.className = "hud";
   root.innerHTML = `
     <div class="hud-info panel"></div>
+    <div class="hud-drive">
+      <div class="hud-speed panel" aria-live="off">
+        <span class="hud-speed-value">0</span>
+        <span class="hud-speed-unit">km/h</span>
+      </div>
+      <div class="hud-gear panel" aria-live="polite" title="Shift: toggle 4H / 4L">
+        <span class="hud-gear-label">RANGE</span>
+        <span class="hud-gear-value">4H</span>
+        <span class="hud-gear-hint">Shift</span>
+      </div>
+    </div>
     <div class="hud-goal" aria-hidden="true">
       <div class="hud-goal-arrow">▲</div>
       <div class="hud-goal-label">FINISH</div>
@@ -41,6 +66,11 @@ export function createHud(
 
   const infoEl = root.querySelector<HTMLElement>(".hud-info")!;
   infoEl.textContent = formatInfo(opts.biomeId, opts.seed, opts.usedFallback);
+
+  const gearEl = root.querySelector<HTMLElement>(".hud-gear")!;
+  const speedEl = root.querySelector<HTMLElement>(".hud-speed")!;
+  setGearDisplay(gearEl, opts.driveLabel || "4H");
+  setSpeedDisplay(speedEl, opts.speedMps ?? 0);
 
   const goalArrow = root.querySelector<HTMLElement>(".hud-goal-arrow")!;
   const minimapCanvas = root.querySelector<HTMLCanvasElement>(".hud-minimap")!;
@@ -55,6 +85,8 @@ export function createHud(
     minimapCtx,
     goalArrow,
     infoEl,
+    gearEl,
+    speedEl,
     dispose: () => {
       root.remove();
     },
@@ -67,6 +99,8 @@ export function updateHud(hud: HudHandles, model: HudModel): void {
     model.seed,
     model.usedFallback,
   );
+  setGearDisplay(hud.gearEl, model.driveLabel || "4H");
+  setSpeedDisplay(hud.speedEl, model.speedMps ?? 0);
 
   const dx = model.finish.x - model.player.x;
   const dz = model.finish.z - model.player.z;
@@ -82,6 +116,40 @@ export function updateHud(hud: HudHandles, model: HudModel): void {
     checkpoints: model.checkpoints,
   };
   drawMinimap(hud.minimapCtx, minimapModel);
+}
+
+/** Update speed + transfer-case (level + sandbox). */
+export function updateHudDrive(
+  hud: HudHandles,
+  opts: { driveLabel: string; speedMps: number },
+): void {
+  setGearDisplay(hud.gearEl, opts.driveLabel || "4H");
+  setSpeedDisplay(hud.speedEl, opts.speedMps);
+}
+
+/** @deprecated use updateHudDrive */
+export function updateHudGear(hud: HudHandles, driveLabel: string): void {
+  setGearDisplay(hud.gearEl, driveLabel || "4H");
+}
+
+export function speedMpsToKmh(mps: number): number {
+  return Math.max(0, mps) * MPS_TO_KMH;
+}
+
+function setGearDisplay(gearEl: HTMLElement, label: string): void {
+  const value = gearEl.querySelector<HTMLElement>(".hud-gear-value");
+  if (value) value.textContent = label;
+  gearEl.dataset.range = label === "4L" ? "L" : "H";
+  gearEl.classList.toggle("hud-gear--low", label === "4L");
+}
+
+function setSpeedDisplay(speedEl: HTMLElement, speedMps: number): void {
+  const value = speedEl.querySelector<HTMLElement>(".hud-speed-value");
+  if (!value) return;
+  const kmh = Math.round(speedMpsToKmh(speedMps));
+  value.textContent = String(kmh);
+  // Mild emphasis when moving
+  speedEl.classList.toggle("hud-speed--moving", kmh >= 3);
 }
 
 function formatInfo(

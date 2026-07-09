@@ -9,6 +9,7 @@ describe("InputRouter", () => {
         throttle: 1,
         steer: -0.5,
         brake: 0,
+        driveRange: "H" as const,
         cameraToggle: false,
         respawn: false,
         lookDeltaX: 0,

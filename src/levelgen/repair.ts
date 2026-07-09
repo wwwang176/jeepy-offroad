@@ -98,10 +98,17 @@ export function repairHeightmap(
   return hm;
 }
 
-/** Set path/start/checkpoint/finish Y from bilinear sample of heightmap. */
-export function resyncPathHeights(level: LevelData): LevelData {
+/**
+ * Refresh start/finish/checkpoint Y from the heightmap.
+ * Path centerline Y is re-sampled then grade-clamped when `vehicle` is provided
+ * (raw bilinear alone reintroduces undrivable slopes and triggers fallback).
+ */
+export function resyncPathHeights(
+  level: LevelData,
+  vehicle?: VehicleCapabilities,
+): LevelData {
   const { heightmap, resolution, worldSize } = level;
-  const syncedPath = level.pathPolyline.map((p) => {
+  let syncedPath = level.pathPolyline.map((p) => {
     const y = sampleBilinear(heightmap, resolution, worldSize, p.x, p.z);
     return {
       x: p.x,
@@ -109,35 +116,71 @@ export function resyncPathHeights(level: LevelData): LevelData {
       y: Number.isFinite(y) ? y : p.y,
     };
   });
+  if (vehicle) {
+    syncedPath = assignPathHeights(syncedPath, vehicle);
+  }
 
-  const startY = sampleBilinear(
-    heightmap,
-    resolution,
-    worldSize,
-    level.start.position.x,
-    level.start.position.z,
-  );
-  const finishY = sampleBilinear(
-    heightmap,
-    resolution,
-    worldSize,
-    level.finish.position.x,
-    level.finish.position.z,
-  );
+  const startY = syncedPath[0]?.y ??
+    sampleBilinear(
+      heightmap,
+      resolution,
+      worldSize,
+      level.start.position.x,
+      level.start.position.z,
+    );
+  const finishY = syncedPath[syncedPath.length - 1]?.y ??
+    sampleBilinear(
+      heightmap,
+      resolution,
+      worldSize,
+      level.finish.position.x,
+      level.finish.position.z,
+    );
 
-  const checkpoints = level.checkpoints.map((cp) => ({
-    ...cp,
-    position: {
-      ...cp.position,
-      y: sampleBilinear(
-        heightmap,
-        resolution,
-        worldSize,
-        cp.position.x,
-        cp.position.z,
-      ),
-    },
-  }));
+  // Place checkpoints on the graded path polyline (XZ + Y), not a raw HM sample
+  // that can drift off the meander or break grade.
+  const totalLen = (() => {
+    let len = 0;
+    for (let i = 1; i < syncedPath.length; i++) {
+      len += Math.hypot(
+        syncedPath[i].x - syncedPath[i - 1].x,
+        syncedPath[i].z - syncedPath[i - 1].z,
+      );
+    }
+    return len;
+  })();
+  const cpCount = level.checkpoints.length;
+  const checkpoints = level.checkpoints.map((cp, i) => {
+    // Keep relative arc spacing: evenly re-sample along graded path if possible
+    const t = cpCount <= 1 ? 0.5 : (i + 1) / (cpCount + 1);
+    const dist = t * totalLen;
+    let remain = dist;
+    let pos = syncedPath[0] ?? cp.position;
+    let yaw = 0;
+    for (let j = 1; j < syncedPath.length; j++) {
+      const a = syncedPath[j - 1];
+      const b = syncedPath[j];
+      const seg = Math.hypot(b.x - a.x, b.z - a.z) || 1e-6;
+      if (remain <= seg) {
+        const u = remain / seg;
+        pos = {
+          x: a.x + (b.x - a.x) * u,
+          y: a.y + (b.y - a.y) * u,
+          z: a.z + (b.z - a.z) * u,
+        };
+        yaw = Math.atan2(b.x - a.x, b.z - a.z);
+        break;
+      }
+      remain -= seg;
+      pos = b;
+      yaw = Math.atan2(b.x - a.x, b.z - a.z);
+    }
+    return {
+      ...cp,
+      position: pos,
+      yaw,
+    };
+  });
 
   let minH = Infinity;
   for (let i = 0; i < heightmap.length; i++) {
@@ -149,11 +192,19 @@ export function resyncPathHeights(level: LevelData): LevelData {
     pathPolyline: syncedPath,
     start: {
       ...level.start,
-      position: { ...level.start.position, y: startY },
+      position: {
+        x: syncedPath[0]?.x ?? level.start.position.x,
+        y: startY,
+        z: syncedPath[0]?.z ?? level.start.position.z,
+      },
     },
     finish: {
       ...level.finish,
-      position: { ...level.finish.position, y: finishY },
+      position: {
+        x: syncedPath[syncedPath.length - 1]?.x ?? level.finish.position.x,
+        y: finishY,
+        z: syncedPath[syncedPath.length - 1]?.z ?? level.finish.position.z,
+      },
     },
     checkpoints,
     killY: minH - 20,
@@ -236,16 +287,19 @@ function extremeFlattenCorridor(
     }
   }
 
-  return resyncPathHeights({
-    ...level,
-    heightmap: hm,
-    pathPolyline: path,
-    streams: [],
-    meta: {
-      usedFallback: true,
-      repairAttempts: level.meta.repairAttempts + 1,
+  return resyncPathHeights(
+    {
+      ...level,
+      heightmap: hm,
+      pathPolyline: path,
+      streams: [],
+      meta: {
+        usedFallback: true,
+        repairAttempts: level.meta.repairAttempts + 1,
+      },
     },
-  });
+    vehicle,
+  );
 }
 
 /**
@@ -347,16 +401,19 @@ export function flattenFallbackUntilValid(
     // On later iters drop streams entirely (still valid LevelData)
     const finalStreams = iter >= 5 ? [] : streams;
 
-    current = resyncPathHeights({
-      ...current,
-      heightmap: hm,
-      pathPolyline: path,
-      streams: finalStreams,
-      meta: {
-        usedFallback: true,
-        repairAttempts: current.meta.repairAttempts + 1,
+    current = resyncPathHeights(
+      {
+        ...current,
+        heightmap: hm,
+        pathPolyline: path,
+        streams: finalStreams,
+        meta: {
+          usedFallback: true,
+          repairAttempts: current.meta.repairAttempts + 1,
+        },
       },
-    });
+      vehicle,
+    );
   }
 
   // Always re-validate after soft loop (including last soft mutation)
@@ -384,28 +441,38 @@ export function flattenFallbackUntilValid(
   return current;
 }
 
-/** Utility used by generate/carve to stamp a path ribbon into a heightmap. */
+/**
+ * Blend a drivable ribbon toward path grade.
+ *
+ * Path Y must already be terrain-sampled + grade-limited (see fitPathToHeightmap).
+ * Full halfWidth is stamped hard enough for wheel-track / ribbon validation;
+ * only the outer shoulder is soft so we don't cut a canyon-wall highway edge.
+ */
 export function stampPathRibbon(
   heightmap: Float32Array,
   resolution: number,
   worldSize: number,
   path: Vec3[],
   halfWidth: number,
-  blendOuter = 2,
+  blendOuter = 3.5,
 ): void {
   const res = resolution;
   for (let r = 0; r < res; r++) {
     for (let c = 0; c < res; c++) {
       const { x, z } = gridToWorld(c, r, worldSize, res);
       const d = distToPathXZ(x, z, path);
+      if (d > halfWidth + blendOuter) continue;
       const i = idx(res, c, r);
+      const target = closestPathY(x, z, path);
+      let strength = 0;
       if (d <= halfWidth) {
-        heightmap[i] = closestPathY(x, z, path);
-      } else if (d <= halfWidth + blendOuter) {
-        const t = 1 - (d - halfWidth) / blendOuter;
-        const target = closestPathY(x, z, path);
-        heightmap[i] = heightmap[i] * (1 - t) + target * t;
+        // On-ribbon: full grade match (path already follows terrain undulation)
+        strength = 1;
+      } else {
+        const u = 1 - (d - halfWidth) / blendOuter;
+        strength = 0.45 * u;
       }
+      heightmap[i] = heightmap[i] * (1 - strength) + target * strength;
     }
   }
 }

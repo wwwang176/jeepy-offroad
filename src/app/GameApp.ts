@@ -26,7 +26,12 @@ import { chassisSpawnY } from "@/shared/vehicleConfig";
 import { FinishSystem } from "@/gameplay/FinishSystem";
 import { CheckpointSystem } from "@/gameplay/CheckpointSystem";
 import { RespawnSystem } from "@/gameplay/RespawnSystem";
-import { createHud, updateHud, type HudHandles } from "@/ui/hud";
+import {
+  createHud,
+  updateHud,
+  updateHudDrive,
+  type HudHandles,
+} from "@/ui/hud";
 import type { BiomeId } from "@/shared/types";
 import type { InputActions } from "@/input/types";
 
@@ -36,6 +41,7 @@ const ZERO_DRIVE: Pick<InputActions, "throttle" | "steer" | "brake"> = {
   throttle: 0,
   steer: 0,
   brake: 0,
+  // driveRange intentionally not cleared — transfer case stays in last range
 };
 
 export class GameApp {
@@ -91,7 +97,12 @@ export class GameApp {
           yaw: pose.yaw,
           vy: lv.y,
           mass: body.mass(),
+          comLocal: body.localCom?.() ?? null,
           grounded: this.vehicle.getGroundedCount?.() ?? -1,
+          driveRange: this.vehicle.getDriveRange?.() ?? null,
+          driveLabel: this.vehicle.getDriveLabel?.() ?? null,
+          speedMps: this.vehicle.getSpeedMps?.() ?? null,
+          availableEngine: this.vehicle.getAvailableEngineForce?.() ?? null,
           orbit: this.cameraRig?.getOrbit() ?? null,
         };
       };
@@ -365,15 +376,27 @@ export class GameApp {
     this.lastT = performance.now();
     this.acc = 0;
     clearUi();
+    if (this.hud) {
+      this.hud.dispose();
+      this.hud = null;
+    }
     const root = document.querySelector<HTMLElement>("#ui-root");
     if (root) {
-      const hint = document.createElement("div");
-      hint.className = "hud-info panel";
-      hint.style.cssText = "position:absolute;top:8px;left:8px;padding:8px 12px";
-      hint.textContent =
-        "Flat test · drag look · C camera · Esc not bound · reload for menu";
-      root.appendChild(hint);
-      this.uiUnmount = () => hint.remove();
+      // Reuse play HUD chrome so RANGE badge is visible in flat test too.
+      this.hud = createHud(root, {
+        biomeId: "flat-test",
+        seed: 0,
+        driveLabel: "4H",
+      });
+      this.hud.infoEl.textContent =
+        "Flat test · Shift 4H/4L · drag look · C camera · reload for menu";
+      // Hide level-only widgets in sandbox.
+      this.hud.root.querySelector(".hud-goal")?.setAttribute("hidden", "");
+      this.hud.minimapCanvas.style.display = "none";
+      this.uiUnmount = () => {
+        this.hud?.dispose();
+        this.hud = null;
+      };
     }
   }
 
@@ -449,6 +472,15 @@ export class GameApp {
       const pose = this.vehicle.getPose();
       syncJeepMesh(this.jeepMesh, pose, this.vehicle.getWheelVisuals());
 
+      // Speed + range badges (level + sandbox).
+      const speedMps = this.vehicle.getSpeedMps();
+      if (this.hud) {
+        updateHudDrive(this.hud, {
+          driveLabel: this.vehicle.getDriveLabel(),
+          speedMps,
+        });
+      }
+
       if (this.sessionMode === "level" && this.gameScene) {
         if (this.cameraRig) {
           this.cameraRig.update(dt, pose);
@@ -460,6 +492,8 @@ export class GameApp {
             biomeId: this.level.biomeId,
             seed: this.level.seed,
             usedFallback: this.level.meta.usedFallback,
+            driveLabel: this.vehicle.getDriveLabel(),
+            speedMps,
             worldSize: this.level.worldSize,
             player: {
               x: pose.position.x,

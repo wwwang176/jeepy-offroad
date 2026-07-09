@@ -100,6 +100,24 @@ describe("KeyboardProvider", () => {
     provider.dispose();
   });
 
+  it("defaults to 4H and toggles transfer case on Shift (no auto-repeat)", () => {
+    const win = createFakeWindow();
+    const provider = new KeyboardProvider(win as unknown as Window);
+
+    expect(provider.sample().driveRange).toBe("H");
+
+    win.dispatch("keydown", { code: "ShiftLeft", repeat: false });
+    expect(provider.sample().driveRange).toBe("L");
+
+    win.dispatch("keydown", { code: "ShiftLeft", repeat: true });
+    expect(provider.sample().driveRange).toBe("L");
+
+    win.dispatch("keydown", { code: "ShiftRight", repeat: false });
+    expect(provider.sample().driveRange).toBe("H");
+
+    provider.dispose();
+  });
+
   it("accumulates left-drag look deltas from the canvas and clears on sample", () => {
     const win = createFakeWindow();
     const canvas = createFakeCanvas();

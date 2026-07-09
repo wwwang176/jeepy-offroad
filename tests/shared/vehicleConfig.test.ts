@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   VEHICLE_CONFIG,
+  chassisPrincipalInertia,
   chassisSpawnY,
 } from "@/shared/vehicleConfig";
 
@@ -54,10 +55,39 @@ describe("vehicle suspension geometry", () => {
     expect(cabinTop).toBeGreaterThan(1.2);
   });
 
-  it("cabin sits above COM origin (shape offset, mass stays low on tub)", () => {
-    // Policy: cabin is collision offset only; COM policy documented as body origin.
+  it("cabin sits above body origin (shape offset, mass stays on tub)", () => {
+    // Policy: cabin is collision offset only; mass/COM live on the lower tub.
     expect(VEHICLE_CONFIG.cabinCollider.center.y).toBeGreaterThan(
       VEHICLE_CONFIG.chassisHalfExtents.y,
     );
+  });
+
+  it("pins COM at the lower edge of the body tub", () => {
+    const he = VEHICLE_CONFIG.chassisHalfExtents;
+    const com = VEHICLE_CONFIG.centerOfMassLocal;
+    expect(com.x).toBe(0);
+    expect(com.z).toBe(0);
+    // Underside of lower cuboid (body origin is tub center)
+    expect(com.y).toBeCloseTo(-he.y, 5);
+    // Still at/above wheel hardpoints so mass isn't below the axles in a weird way
+    for (const w of VEHICLE_CONFIG.wheelPositions) {
+      expect(com.y).toBeGreaterThanOrEqual(w.y - 0.05);
+    }
+  });
+
+  it("chassisPrincipalInertia grows when COM is shifted off the geometric center", () => {
+    const he = VEHICLE_CONFIG.chassisHalfExtents;
+    const m = VEHICLE_CONFIG.massKg;
+    const atCenter = chassisPrincipalInertia(m, he, { x: 0, y: 0, z: 0 });
+    const atBottom = chassisPrincipalInertia(
+      m,
+      he,
+      VEHICLE_CONFIG.centerOfMassLocal,
+    );
+    // Pitch/roll inertia (x/z) must increase with vertical COM offset
+    expect(atBottom.x).toBeGreaterThan(atCenter.x);
+    expect(atBottom.z).toBeGreaterThan(atCenter.z);
+    // Yaw about vertical axis through center is unchanged for pure Y shift
+    expect(atBottom.y).toBeCloseTo(atCenter.y, 5);
   });
 });

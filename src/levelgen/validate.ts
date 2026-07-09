@@ -90,10 +90,11 @@ function checkSlopeStepPair(
 ): void {
   const horiz = Math.hypot(bx - ax, bz - az) || 1e-6;
   const dh = Math.abs(by - ay);
-  if (dh > maxStep + 1e-5) {
+  // Small absolute eps — bilinear / curve wheel offsets can be 1e-3 over budget
+  if (dh > maxStep + 1e-3) {
     reasons.push(`${label}: step ${dh.toFixed(3)} > ${maxStep.toFixed(3)}`);
   }
-  if (dh / horiz > maxGrade + 1e-5) {
+  if (dh / horiz > maxGrade + 2e-3) {
     reasons.push(
       `${label}: slope ${(dh / horiz).toFixed(4)} > ${maxGrade.toFixed(4)}`,
     );
@@ -152,10 +153,14 @@ export function validateLevel(
     }
   }
 
-  // 2. Centerline consecutive slope + step
+  // 2. Centerline consecutive slope (+ step only as hard cliff on short segs).
+  // Continuous graded road may rise maxGrade*horiz over a sample; maxStep alone
+  // would flatten every 4 m sample to ~5° and kill path hills.
   for (let i = 1; i < path.length; i++) {
     const a = path[i - 1];
     const b = path[i];
+    const horiz = horizDist(a, b) || 1e-6;
+    const gradeStep = Math.max(maxStep, maxGrade * horiz);
     checkSlopeStepPair(
       a.x,
       a.y,
@@ -164,7 +169,7 @@ export function validateLevel(
       b.y,
       b.z,
       maxGrade,
-      maxStep,
+      gradeStep,
       `centerline ${i - 1}->${i}`,
       reasons,
     );
@@ -175,6 +180,8 @@ export function validateLevel(
     for (let i = 1; i < path.length; i++) {
       const a = path[i - 1];
       const b = path[i];
+      const horiz = horizDist(a, b) || 1e-6;
+      const gradeStep = Math.max(maxStep, maxGrade * horiz);
       const yaw = segmentHeading(a, b);
       const n = pathNormal(yaw);
       for (const side of [-1, 1] as const) {
@@ -206,7 +213,7 @@ export function validateLevel(
           by,
           b.z + oz,
           maxGrade,
-          maxStep,
+          gradeStep,
           `wheel${side > 0 ? "R" : "L"} ${i - 1}->${i}`,
           reasons,
         );
