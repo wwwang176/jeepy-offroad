@@ -21,10 +21,19 @@ import { normalizeSeed, parseSeedInput } from "@/shared/seed";
 import { VEHICLE_CAPABILITIES } from "@/shared/vehicleCapabilities";
 import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
 import { FinishSystem } from "@/gameplay/FinishSystem";
+import { CheckpointSystem } from "@/gameplay/CheckpointSystem";
+import { RespawnSystem } from "@/gameplay/RespawnSystem";
 import type { BiomeId } from "@/shared/types";
+import type { InputActions } from "@/input/types";
 
 const FIXED_DT = 1 / 60;
 const SPAWN_Y_OFFSET = 1.2;
+
+const ZERO_DRIVE: Pick<InputActions, "throttle" | "steer" | "brake"> = {
+  throttle: 0,
+  steer: 0,
+  brake: 0,
+};
 
 export class GameApp {
   private state: GameState = { name: "boot" };
@@ -39,6 +48,8 @@ export class GameApp {
   private gameScene: GameSceneHandles | null = null;
   private level: LevelData | null = null;
   private finishSystem: FinishSystem | null = null;
+  private checkpointSystem: CheckpointSystem | null = null;
+  private respawnSystem: RespawnSystem | null = null;
   private acc = 0;
   private lastT = 0;
   private sessionActive = false;
@@ -68,6 +79,8 @@ export class GameApp {
     this.three = null;
     this.level = null;
     this.finishSystem = null;
+    this.checkpointSystem = null;
+    this.respawnSystem = null;
     if (this.gameScene) {
       this.gameScene.dispose();
       this.gameScene = null;
@@ -238,16 +251,23 @@ export class GameApp {
       level.start.position.y +
       VEHICLE_CONFIG.chassisHalfExtents.y +
       SPAWN_Y_OFFSET;
-    this.vehicle = new VehicleController(this.physics.getWorld(), {
+    const spawnPose = {
       position: {
         x: level.start.position.x,
         y: spawnY,
         z: level.start.position.z,
       },
       yaw: level.start.yaw,
-    });
+    };
+    this.vehicle = new VehicleController(this.physics.getWorld(), spawnPose);
 
     this.finishSystem = new FinishSystem(level.finish);
+    this.checkpointSystem = new CheckpointSystem(spawnPose, level.checkpoints);
+    this.respawnSystem = new RespawnSystem(
+      level.killY,
+      this.checkpointSystem,
+      this.vehicle,
+    );
     this.input = new InputRouter(new KeyboardProvider());
     this.gameScene = createGameScene(canvas, level, biome);
     this.jeepMesh = this.gameScene.jeepMesh;
@@ -298,7 +318,28 @@ export class GameApp {
       this.acc += dt;
       while (this.acc >= FIXED_DT) {
         const actions = this.input.sample();
-        this.vehicle.update(FIXED_DT, actions, this.physics.getWorld());
+        const poseBefore = this.vehicle.getPose();
+
+        if (this.sessionMode === "level" && this.checkpointSystem) {
+          this.checkpointSystem.update(poseBefore.position);
+        }
+        if (this.sessionMode === "level" && this.respawnSystem) {
+          this.respawnSystem.update(
+            FIXED_DT,
+            poseBefore.position,
+            actions,
+          );
+        }
+
+        const drive: InputActions =
+          this.respawnSystem?.inputLocked()
+            ? {
+                ...actions,
+                ...ZERO_DRIVE,
+              }
+            : actions;
+
+        this.vehicle.update(FIXED_DT, drive, this.physics.getWorld());
         this.physics.step();
         if (
           this.sessionMode === "level" &&
