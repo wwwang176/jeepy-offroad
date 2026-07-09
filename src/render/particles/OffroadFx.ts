@@ -1,0 +1,543 @@
+import * as THREE from "three";
+import { sampleBilinear } from "@/levelgen/heightmap";
+import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
+import {
+  bodyContactEmitRate,
+  bodyImpactBurstCount,
+  dustEmitRate,
+  exhaustEmitRate,
+  landingBurstCount,
+  lateralSpeedMps,
+  longitudinalSpeedMps,
+  parseHexRgb,
+  splashEmitRate,
+  streamWetness,
+  waterSplashColor,
+  type Rgb,
+  type StreamSegmentInput,
+} from "@/shared/offroadFxMath";
+import {
+  buildTerrainColorContext,
+  dustColorFromTerrainAlbedo,
+  terrainAlbedoAt,
+  type GroundPalette,
+  type TerrainColorContext,
+} from "@/shared/terrainColor";
+import { ParticlePool } from "./ParticlePool";
+import { createSoftDiscTexture } from "./softDiscTexture";
+
+export type OffroadFxWheelSample = {
+  contact: boolean;
+  suspensionLength: number;
+};
+
+export type OffroadFxSample = {
+  position: { x: number; y: number; z: number };
+  yaw: number;
+  rotation: { x: number; y: number; z: number; w: number };
+  linvel: { x: number; y: number; z: number };
+  throttle: number;
+  brake: number;
+  /** "H" | "L" — 4L boosts dust */
+  driveRange: "H" | "L";
+  wheels: readonly OffroadFxWheelSample[];
+  /** Chassis/cabin terrain contacts (world space). */
+  bodyContacts?: readonly { x: number; y: number; z: number }[];
+};
+
+export type OffroadFxOptions = {
+  /** Max live particles (default 900). */
+  capacity?: number;
+  streams?: readonly StreamSegmentInput[];
+  waterColor?: string;
+  /**
+   * Level terrain for dust that matches vertex-colored ground.
+   * When omitted (sandbox), falls back to `fallbackDustColor`.
+   */
+  terrain?: {
+    heightmap: Float32Array;
+    resolution: number;
+    worldSize: number;
+    pathPolyline: readonly { x: number; z: number }[];
+    groundPalette: GroundPalette;
+    pathWidth?: number;
+  };
+  /** Sandbox / no heightmap */
+  fallbackDustColor?: Rgb;
+};
+
+const VISUAL_TRACK_OUTSET = 0.16;
+const DUST_ACC = new Float32Array(4);
+const SPLASH_ACC = new Float32Array(4);
+const EXHAUST_ACC = { v: 0 };
+const BODY_ACC = { v: 0 };
+
+/**
+ * Off-road VFX: tire dust tinted from terrain albedo (same as mesh), landing
+ * bursts, stream splash, side-slip plumes, and light exhaust.
+ */
+export class OffroadFx {
+  private readonly group = new THREE.Group();
+  private readonly dust: ParticlePool;
+  private readonly splash: ParticlePool;
+  private readonly exhaust: ParticlePool;
+  private readonly sharedTex: THREE.CanvasTexture;
+  private streams: readonly StreamSegmentInput[] = [];
+  private splashColor: Rgb = { r: 0.72, g: 0.82, b: 0.88 };
+  private fallbackDust: Rgb = dustColorFromTerrainAlbedo(
+    parseHexRgb("#9a8f78"),
+  );
+  private terrainCtx: TerrainColorContext | null = null;
+  private heightmap: Float32Array | null = null;
+  private resolution = 0;
+  private worldSize = 0;
+  private prevContact: boolean[] = [false, false, false, false];
+  private prevBodyContactCount = 0;
+  private readonly _q = new THREE.Quaternion();
+  private readonly _local = new THREE.Vector3();
+  private readonly _world = new THREE.Vector3();
+  private readonly _fwd = new THREE.Vector3();
+  private readonly _right = new THREE.Vector3();
+
+  constructor(scene: THREE.Scene, opts?: OffroadFxOptions) {
+    this.group.name = "offroad-fx";
+    this.sharedTex = createSoftDiscTexture(64);
+    // Higher pool for denser small puffs (rates ×2 → keep headroom)
+    const cap = opts?.capacity ?? 3600;
+    // Budget: dust bulk, splash medium, exhaust thin
+    this.dust = new ParticlePool(Math.floor(cap * 0.62), this.sharedTex);
+    this.splash = new ParticlePool(Math.floor(cap * 0.28), this.sharedTex);
+    this.exhaust = new ParticlePool(Math.floor(cap * 0.1), this.sharedTex);
+    this.dust.points.name = "fx-dust";
+    this.splash.points.name = "fx-splash";
+    this.exhaust.points.name = "fx-exhaust";
+    this.group.add(this.dust.points);
+    this.group.add(this.splash.points);
+    this.group.add(this.exhaust.points);
+    scene.add(this.group);
+
+    if (opts?.streams) this.streams = opts.streams;
+    if (opts?.waterColor) {
+      this.splashColor = waterSplashColor(opts.waterColor);
+    }
+    if (opts?.fallbackDustColor) {
+      this.fallbackDust = dustColorFromTerrainAlbedo(opts.fallbackDustColor);
+    }
+    if (opts?.terrain) {
+      this.setTerrain(opts.terrain);
+    }
+  }
+
+  setStreams(streams: readonly StreamSegmentInput[]): void {
+    this.streams = streams;
+  }
+
+  setTerrain(terrain: NonNullable<OffroadFxOptions["terrain"]>): void {
+    this.heightmap = terrain.heightmap;
+    this.resolution = terrain.resolution;
+    this.worldSize = terrain.worldSize;
+    this.terrainCtx = buildTerrainColorContext({
+      groundPalette: terrain.groundPalette,
+      heightmap: terrain.heightmap,
+      pathPolyline: terrain.pathPolyline,
+      pathWidth: terrain.pathWidth,
+    });
+  }
+
+  /**
+   * Sample dust RGB under world XZ (matches TerrainMesh vertex color, shaded
+   * for unlit sprites).
+   */
+  sampleDustColor(x: number, z: number): Rgb {
+    if (!this.terrainCtx || !this.heightmap) {
+      return this.fallbackDust;
+    }
+    const h = sampleBilinear(
+      this.heightmap,
+      this.resolution,
+      this.worldSize,
+      x,
+      z,
+    );
+    const albedo = terrainAlbedoAt(x, z, h, this.terrainCtx);
+    return dustColorFromTerrainAlbedo(albedo);
+  }
+
+  /**
+   * Simulate + emit for one render frame. Call after mesh/vehicle sync.
+   */
+  update(dt: number, sample: OffroadFxSample): void {
+    const dtClamped = Math.min(0.05, Math.max(0, dt));
+    if (dtClamped <= 0) return;
+
+    this._q.set(
+      sample.rotation.x,
+      sample.rotation.y,
+      sample.rotation.z,
+      sample.rotation.w,
+    );
+
+    const yaw = sample.yaw;
+    const vx = sample.linvel.x;
+    const vy = sample.linvel.y;
+    const vz = sample.linvel.z;
+    const speed = Math.hypot(vx, vz);
+    const long = longitudinalSpeedMps(vx, vz, yaw);
+    const lat = lateralSpeedMps(vx, vz, yaw);
+    const latAbs = Math.abs(lat);
+    const rangeBoost = sample.driveRange === "L" ? 1.35 : 1;
+
+    // Chassis axes in world XZ for spray direction
+    this._fwd.set(Math.sin(yaw), 0, Math.cos(yaw));
+    this._right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+
+    const nWheels = Math.min(4, sample.wheels.length);
+    const radius = VEHICLE_CONFIG.wheelRadius;
+
+    for (let i = 0; i < nWheels; i++) {
+      const w = sample.wheels[i];
+      const contactPos = this.wheelContactWorld(
+        i,
+        w.suspensionLength,
+        radius,
+        sample,
+      );
+      const wet = streamWetness(contactPos.x, contactPos.z, this.streams);
+      const dustCol = this.sampleDustColor(contactPos.x, contactPos.z);
+
+      // --- Landing burst ---
+      const burst = landingBurstCount(this.prevContact[i], w.contact, vy);
+      if (burst > 0) {
+        const isWet = wet > 0.35;
+        const pool = isWet ? this.splash : this.dust;
+        const col = isWet ? this.splashColor : dustCol;
+        pool.emitMany(burst, (k) => {
+          const ang = (k / burst) * Math.PI * 2 + i;
+          const outward = 1.2 + Math.random() * 2.5;
+          return {
+            x: contactPos.x + Math.cos(ang) * 0.12,
+            y: contactPos.y + 0.04,
+            z: contactPos.z + Math.sin(ang) * 0.12,
+            vx: Math.cos(ang) * outward + vx * 0.15,
+            vy: 1.5 + Math.random() * 2.8 + Math.min(4, -vy * 0.25),
+            vz: Math.sin(ang) * outward + vz * 0.15,
+            r: jitterColor(col.r, 0.04),
+            g: jitterColor(col.g, 0.04),
+            b: jitterColor(col.b, 0.04),
+            size: isWet
+              ? 0.24 + Math.random() * 0.24
+              : 0.32 + Math.random() * 0.32,
+            life: isWet
+              ? 0.28 + Math.random() * 0.2
+              : 0.4 + Math.random() * 0.35,
+            drag: isWet ? 2.2 : 1.4,
+            gravityScale: isWet ? 1.4 : 0.85,
+          };
+        });
+      }
+
+      // --- Continuous dust (dry) / splash (wet) ---
+      if (w.contact) {
+        const dustR = dustEmitRate({
+          grounded: true,
+          throttle: sample.throttle,
+          brake: sample.brake,
+          speedMps: speed,
+          lateralAbsMps: latAbs,
+          rangeBoost,
+        });
+        // Suppress dry dust when fully wet
+        const dryFactor = 1 - clamp01(wet * 1.15);
+        DUST_ACC[i] += dustR * dryFactor * dtClamped;
+
+        const splashR = splashEmitRate({
+          grounded: true,
+          wetness: wet,
+          speedMps: speed,
+          throttle: sample.throttle,
+        });
+        SPLASH_ACC[i] += splashR * dtClamped;
+
+        while (DUST_ACC[i] >= 1) {
+          DUST_ACC[i] -= 1;
+          this.emitDustPuff(
+            contactPos,
+            long,
+            lat,
+            vx,
+            vz,
+            sample.throttle,
+            dustCol,
+          );
+        }
+        while (SPLASH_ACC[i] >= 1) {
+          SPLASH_ACC[i] -= 1;
+          this.emitSplashPuff(contactPos, long, lat, vx, vz);
+        }
+      } else {
+        DUST_ACC[i] = 0;
+        SPLASH_ACC[i] = 0;
+      }
+
+      this.prevContact[i] = w.contact;
+    }
+
+    // --- Body / cabin scrapes (any collider vs terrain) ---
+    const bodyPts = sample.bodyContacts ?? [];
+    const bodyN = bodyPts.length;
+    const bodyBurst = bodyImpactBurstCount(
+      this.prevBodyContactCount,
+      bodyN,
+      vy,
+    );
+    if (bodyBurst > 0 && bodyN > 0) {
+      this.emitBodyBurst(bodyPts, bodyBurst, vx, vy, vz);
+    }
+    if (bodyN > 0) {
+      const bodyR = bodyContactEmitRate({
+        contactCount: bodyN,
+        speedMps: speed,
+        vy,
+      });
+      BODY_ACC.v += bodyR * dtClamped;
+      while (BODY_ACC.v >= 1) {
+        BODY_ACC.v -= 1;
+        const p = bodyPts[(Math.random() * bodyN) | 0];
+        const wet = streamWetness(p.x, p.z, this.streams);
+        if (wet > 0.45) {
+          this.emitSplashPuff(p, long, lat, vx, vz);
+        } else {
+          const col = this.sampleDustColor(p.x, p.z);
+          this.emitBodyDustPuff(p, long, lat, vx, vz, col);
+        }
+      }
+    } else {
+      BODY_ACC.v = 0;
+    }
+    this.prevBodyContactCount = bodyN;
+
+    // --- Exhaust (rear bumper local) ---
+    const exR = exhaustEmitRate({
+      throttle: sample.throttle,
+      speedMps: speed,
+    });
+    EXHAUST_ACC.v += exR * dtClamped;
+    while (EXHAUST_ACC.v >= 1) {
+      EXHAUST_ACC.v -= 1;
+      this.emitExhaust(sample);
+    }
+
+    this.dust.update(dtClamped);
+    this.splash.update(dtClamped);
+    this.exhaust.update(dtClamped);
+  }
+
+  private wheelContactWorld(
+    wheelIndex: number,
+    suspLen: number,
+    radius: number,
+    sample: OffroadFxSample,
+  ): { x: number; y: number; z: number } {
+    const hard =
+      VEHICLE_CONFIG.wheelPositions[wheelIndex] ??
+      VEHICLE_CONFIG.wheelPositions[0];
+    const side = hard.x >= 0 ? 1 : -1;
+    // Near tire bottom (hardpoint → wheel center = suspLen, then −radius)
+    this._local.set(
+      hard.x + side * VISUAL_TRACK_OUTSET,
+      hard.y - suspLen - radius * 0.92,
+      hard.z,
+    );
+    this._local.applyQuaternion(this._q);
+    this._world.set(
+      sample.position.x + this._local.x,
+      sample.position.y + this._local.y,
+      sample.position.z + this._local.z,
+    );
+    return { x: this._world.x, y: this._world.y, z: this._world.z };
+  }
+
+  private emitBodyBurst(
+    pts: readonly { x: number; y: number; z: number }[],
+    count: number,
+    vx: number,
+    vy: number,
+    vz: number,
+  ): void {
+    const n = pts.length;
+    if (n === 0 || count <= 0) return;
+    this.dust.emitMany(count, (k) => {
+      const p = pts[k % n];
+      const col = this.sampleDustColor(p.x, p.z);
+      const ang = (k / count) * Math.PI * 2;
+      const outward = 1.4 + Math.random() * 2.8;
+      return {
+        x: p.x + Math.cos(ang) * 0.1,
+        y: p.y + 0.05,
+        z: p.z + Math.sin(ang) * 0.1,
+        vx: Math.cos(ang) * outward + vx * 0.2,
+        vy: 1.8 + Math.random() * 3 + Math.min(5, Math.max(0, -vy) * 0.3),
+        vz: Math.sin(ang) * outward + vz * 0.2,
+        r: jitterColor(col.r, 0.04),
+        g: jitterColor(col.g, 0.04),
+        b: jitterColor(col.b, 0.04),
+        size: 0.28 + Math.random() * 0.35,
+        life: 0.4 + Math.random() * 0.4,
+        drag: 1.3,
+        gravityScale: 0.8,
+      };
+    });
+  }
+
+  /** Scrape puff at a chassis contact (slightly more outward than tire dust). */
+  private emitBodyDustPuff(
+    pos: { x: number; y: number; z: number },
+    long: number,
+    lat: number,
+    vx: number,
+    vz: number,
+    col: Rgb,
+  ): void {
+    const kickBack = -Math.sign(long || 1) * (0.8 + Math.abs(long) * 0.15);
+    const sideKick = -Math.sign(lat || 0) * (0.5 + Math.abs(lat) * 0.4);
+    const jitter = () => (Math.random() - 0.5) * 1.1;
+    this.dust.emit({
+      x: pos.x + jitter() * 0.2,
+      y: pos.y + 0.03 + Math.random() * 0.08,
+      z: pos.z + jitter() * 0.2,
+      vx:
+        this._fwd.x * kickBack +
+        this._right.x * sideKick +
+        vx * 0.3 +
+        jitter(),
+      vy: 0.9 + Math.random() * 1.8,
+      vz:
+        this._fwd.z * kickBack +
+        this._right.z * sideKick +
+        vz * 0.3 +
+        jitter(),
+      r: jitterColor(col.r, 0.035),
+      g: jitterColor(col.g, 0.035),
+      b: jitterColor(col.b, 0.035),
+      size: 0.22 + Math.random() * 0.3,
+      life: 0.35 + Math.random() * 0.4,
+      drag: 1.15 + Math.random() * 0.4,
+      gravityScale: 0.6 + Math.random() * 0.35,
+    });
+  }
+
+  private emitDustPuff(
+    pos: { x: number; y: number; z: number },
+    long: number,
+    lat: number,
+    vx: number,
+    vz: number,
+    throttle: number,
+    col: Rgb,
+  ): void {
+    // Kick opposite to travel + outward from sideslip
+    const kickBack = -Math.sign(long || 1) * (1.2 + Math.abs(long) * 0.12);
+    const sideKick = -Math.sign(lat || 0) * (0.4 + Math.abs(lat) * 0.35);
+    const jitter = () => (Math.random() - 0.5) * 0.9;
+    const th = Math.abs(throttle);
+    this.dust.emit({
+      x: pos.x + jitter() * 0.15,
+      y: pos.y + 0.02 + Math.random() * 0.06,
+      z: pos.z + jitter() * 0.15,
+      vx:
+        this._fwd.x * kickBack +
+        this._right.x * sideKick +
+        vx * 0.25 +
+        jitter(),
+      vy: 0.6 + Math.random() * 1.4 + th * 0.5,
+      vz:
+        this._fwd.z * kickBack +
+        this._right.z * sideKick +
+        vz * 0.25 +
+        jitter(),
+      // Tight jitter so dust stays in terrain family (no random gray wash)
+      r: jitterColor(col.r, 0.035),
+      g: jitterColor(col.g, 0.035),
+      b: jitterColor(col.b, 0.035),
+      size: 0.24 + Math.random() * 0.32 + th * 0.12,
+      life: 0.35 + Math.random() * 0.4,
+      drag: 1.1 + Math.random() * 0.5,
+      gravityScale: 0.55 + Math.random() * 0.35,
+    });
+  }
+
+  private emitSplashPuff(
+    pos: { x: number; y: number; z: number },
+    long: number,
+    lat: number,
+    vx: number,
+    vz: number,
+  ): void {
+    const kickBack = -Math.sign(long || 1) * (1.8 + Math.abs(long) * 0.2);
+    const sideKick = (Math.random() - 0.5) * 2.2 - Math.sign(lat || 0) * 0.5;
+    const col = this.splashColor;
+    this.splash.emit({
+      x: pos.x + (Math.random() - 0.5) * 0.2,
+      y: pos.y + 0.05,
+      z: pos.z + (Math.random() - 0.5) * 0.2,
+      vx: this._fwd.x * kickBack + this._right.x * sideKick + vx * 0.2,
+      vy: 1.8 + Math.random() * 3.2,
+      vz: this._fwd.z * kickBack + this._right.z * sideKick + vz * 0.2,
+      r: jitterColor(col.r, 0.12),
+      g: jitterColor(col.g, 0.1),
+      b: jitterColor(col.b, 0.08),
+      size: 0.2 + Math.random() * 0.24,
+      life: 0.22 + Math.random() * 0.22,
+      drag: 2.0,
+      gravityScale: 1.5,
+    });
+  }
+
+  private emitExhaust(sample: OffroadFxSample): void {
+    // Rear center of chassis (local)
+    this._local.set(
+      (Math.random() - 0.5) * 0.25,
+      0.15 + Math.random() * 0.1,
+      -1.45,
+    );
+    this._local.applyQuaternion(this._q);
+    const x = sample.position.x + this._local.x;
+    const y = sample.position.y + this._local.y;
+    const z = sample.position.z + this._local.z;
+    const gray = 0.22 + Math.random() * 0.12;
+    this.exhaust.emit({
+      x,
+      y,
+      z,
+      vx: -this._fwd.x * (0.8 + Math.random()) + sample.linvel.x * 0.3,
+      vy: 0.4 + Math.random() * 0.6,
+      vz: -this._fwd.z * (0.8 + Math.random()) + sample.linvel.z * 0.3,
+      r: gray,
+      g: gray * 0.98,
+      b: gray * 0.95,
+      size: 0.2 + Math.random() * 0.24,
+      life: 0.28 + Math.random() * 0.28,
+      drag: 0.9,
+      gravityScale: -0.15, // slight rise
+    });
+  }
+
+  dispose(): void {
+    this.group.removeFromParent();
+    this.dust.dispose();
+    this.splash.dispose();
+    this.exhaust.dispose();
+    this.sharedTex.dispose();
+  }
+}
+
+function jitterColor(c: number, amt: number): number {
+  return Math.min(1, Math.max(0, c + (Math.random() - 0.5) * 2 * amt));
+}
+
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
+/** Sandbox default ground albedo before dust shade. */
+export const SANDBOX_DUST_COLOR: Rgb = parseHexRgb("#9a8f78");

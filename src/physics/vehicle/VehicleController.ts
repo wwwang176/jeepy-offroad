@@ -31,6 +31,8 @@ export class VehicleController {
   private readonly body: RAPIER.RigidBody;
   private readonly controller: RAPIER.DynamicRayCastVehicleController;
   private readonly numWheels: number;
+  /** Chassis + cabin colliders (for body-contact dust / scrapes). */
+  private readonly colliders: RAPIER.Collider[] = [];
   /** Last applied transfer-case range (for HUD / debug). */
   private lastDriveRange: DriveRange = DEFAULT_DRIVE_RANGE;
   private lastDriveLabel = "4H";
@@ -60,36 +62,40 @@ export class VehicleController {
     // COM is pinned to the tub underside (Cannon-style: shape ≠ COM).
     const com = VEHICLE_CONFIG.centerOfMassLocal;
     const inertia = chassisPrincipalInertia(mass, he, com);
-    world.createCollider(
-      RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z)
-        .setMassProperties(
-          mass,
-          { x: com.x, y: com.y, z: com.z },
-          { x: inertia.x, y: inertia.y, z: inertia.z },
-          { x: 0, y: 0, z: 0, w: 1 },
-        )
-        .setFriction(VEHICLE_CONFIG.chassisFriction)
-        .setRestitution(0)
-        .setCollisionGroups(VEHICLE_COLLIDER_GROUPS)
-        .setSolverGroups(VEHICLE_COLLIDER_GROUPS),
-      this.body,
+    this.colliders.push(
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z)
+          .setMassProperties(
+            mass,
+            { x: com.x, y: com.y, z: com.z },
+            { x: inertia.x, y: inertia.y, z: inertia.z },
+            { x: 0, y: 0, z: 0, w: 1 },
+          )
+          .setFriction(VEHICLE_CONFIG.chassisFriction)
+          .setRestitution(0)
+          .setCollisionGroups(VEHICLE_COLLIDER_GROUPS)
+          .setSolverGroups(VEHICLE_COLLIDER_GROUPS),
+        this.body,
+      ),
     );
 
     // Cabin / hardtop — collision only (mass 0). Offset up for roof hits;
     // must not contain wheel hardpoints (center.y - halfY > attachY).
-    world.createCollider(
-      RAPIER.ColliderDesc.cuboid(
-        cabin.halfExtents.x,
-        cabin.halfExtents.y,
-        cabin.halfExtents.z,
-      )
-        .setTranslation(cabin.center.x, cabin.center.y, cabin.center.z)
-        .setMass(0)
-        .setFriction(VEHICLE_CONFIG.chassisFriction)
-        .setRestitution(0)
-        .setCollisionGroups(VEHICLE_COLLIDER_GROUPS)
-        .setSolverGroups(VEHICLE_COLLIDER_GROUPS),
-      this.body,
+    this.colliders.push(
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(
+          cabin.halfExtents.x,
+          cabin.halfExtents.y,
+          cabin.halfExtents.z,
+        )
+          .setTranslation(cabin.center.x, cabin.center.y, cabin.center.z)
+          .setMass(0)
+          .setFriction(VEHICLE_CONFIG.chassisFriction)
+          .setRestitution(0)
+          .setCollisionGroups(VEHICLE_COLLIDER_GROUPS)
+          .setSolverGroups(VEHICLE_COLLIDER_GROUPS),
+        this.body,
+      ),
     );
 
     // Compound mass props: COM at tub underside, cabin massless.
@@ -140,6 +146,49 @@ export class VehicleController {
       if (this.controller.wheelIsInContact(i)) n++;
     }
     return n;
+  }
+
+  /** Per-wheel ground contact flags (length = wheel count). */
+  getWheelContacts(): boolean[] {
+    const out: boolean[] = [];
+    for (let i = 0; i < this.numWheels; i++) {
+      out.push(!!this.controller.wheelIsInContact(i));
+    }
+    return out;
+  }
+
+  /** Chassis linear velocity in world space (m/s). */
+  getLinvel(): { x: number; y: number; z: number } {
+    const v = this.body.linvel();
+    return { x: v.x, y: v.y, z: v.z };
+  }
+
+  /**
+   * World-space contact points where any chassis/cabin collider touches terrain.
+   * Wheels are raycast-only (not listed) — body scrapes, belly, sides, roof.
+   */
+  getBodyContactPoints(): { x: number; y: number; z: number }[] {
+    const out: { x: number; y: number; z: number }[] = [];
+    const maxPts = 24;
+    for (const col of this.colliders) {
+      if (out.length >= maxPts) break;
+      this.world.contactPairsWith(col, (other) => {
+        if (out.length >= maxPts) return;
+        // Skip other colliders on the same rigid body
+        if (other.parent()?.handle === this.body.handle) return;
+        this.world.contactPair(col, other, (manifold) => {
+          if (out.length >= maxPts) return;
+          const n = manifold.numSolverContacts();
+          for (let i = 0; i < n && out.length < maxPts; i++) {
+            const p = manifold.solverContactPoint(i);
+            if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+              out.push({ x: p.x, y: p.y, z: p.z });
+            }
+          }
+        });
+      });
+    }
+    return out;
   }
 
   /** Active transfer-case range after last update(). */

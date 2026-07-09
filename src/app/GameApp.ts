@@ -34,6 +34,10 @@ import {
 } from "@/ui/hud";
 import type { BiomeId } from "@/shared/types";
 import type { InputActions } from "@/input/types";
+import {
+  OffroadFx,
+  SANDBOX_DUST_COLOR,
+} from "@/render/particles/OffroadFx";
 
 const FIXED_DT = 1 / 60;
 
@@ -62,10 +66,16 @@ export class GameApp {
   private cameraRig: CameraRig | null = null;
   private hud: HudHandles | null = null;
   private uiUnmount: (() => void) | null = null;
+  private offroadFx: OffroadFx | null = null;
   private acc = 0;
   private lastT = 0;
   private sessionActive = false;
   private sessionMode: "sandbox" | "level" | null = null;
+  /** Last drive inputs (for VFX). */
+  private lastDriveActions: {
+    throttle: number;
+    brake: number;
+  } = { throttle: 0, brake: 0 };
 
   async start(): Promise<void> {
     this.running = true;
@@ -149,6 +159,10 @@ export class GameApp {
     this.checkpointSystem = null;
     this.respawnSystem = null;
     this.cameraRig = null;
+    if (this.offroadFx) {
+      this.offroadFx.dispose();
+      this.offroadFx = null;
+    }
     if (this.hud) {
       this.hud.dispose();
       this.hud = null;
@@ -328,6 +342,19 @@ export class GameApp {
     this.cameraRig = new CameraRig(this.gameScene.camera);
     // Snap third-person follow to spawn so first frame is not lerping from origin.
     this.cameraRig.update(1, spawnPose);
+    this.offroadFx = new OffroadFx(this.gameScene.scene, {
+      streams: level.streams,
+      waterColor: biome.waterColor,
+      // Dust samples same height/path blend as TerrainMesh vertex colors
+      terrain: {
+        heightmap: level.heightmap,
+        resolution: level.resolution,
+        worldSize: level.worldSize,
+        pathPolyline: level.pathPolyline,
+        groundPalette: biome.groundPalette,
+        pathWidth: biome.pathWidth,
+      },
+    });
     this.sessionMode = "level";
   }
 
@@ -370,6 +397,10 @@ export class GameApp {
     this.cameraRig.update(1, {
       position: { x: 0, y: 2, z: 0 },
       yaw: 0,
+    });
+    this.offroadFx = new OffroadFx(this.three.scene, {
+      fallbackDustColor: SANDBOX_DUST_COLOR,
+      waterColor: "#4a7a8c",
     });
     this.sessionMode = "sandbox";
     this.sessionActive = true;
@@ -452,6 +483,11 @@ export class GameApp {
               }
             : actions;
 
+        this.lastDriveActions = {
+          throttle: drive.throttle,
+          brake: drive.brake,
+        };
+
         this.vehicle.update(FIXED_DT, drive, this.physics.getWorld());
         this.physics.step();
         if (
@@ -470,7 +506,8 @@ export class GameApp {
       }
 
       const pose = this.vehicle.getPose();
-      syncJeepMesh(this.jeepMesh, pose, this.vehicle.getWheelVisuals());
+      const wheelVisuals = this.vehicle.getWheelVisuals();
+      syncJeepMesh(this.jeepMesh, pose, wheelVisuals);
 
       // Speed + range badges (level + sandbox).
       const speedMps = this.vehicle.getSpeedMps();
@@ -478,6 +515,25 @@ export class GameApp {
         updateHudDrive(this.hud, {
           driveLabel: this.vehicle.getDriveLabel(),
           speedMps,
+        });
+      }
+
+      if (this.offroadFx) {
+        const contacts = this.vehicle.getWheelContacts();
+        const wheels = wheelVisuals.map((wv, i) => ({
+          contact: contacts[i] ?? false,
+          suspensionLength: wv.suspensionLength,
+        }));
+        this.offroadFx.update(dt, {
+          position: pose.position,
+          yaw: pose.yaw,
+          rotation: pose.rotation,
+          linvel: this.vehicle.getLinvel(),
+          throttle: this.lastDriveActions.throttle,
+          brake: this.lastDriveActions.brake,
+          driveRange: this.vehicle.getDriveRange(),
+          wheels,
+          bodyContacts: this.vehicle.getBodyContactPoints(),
         });
       }
 

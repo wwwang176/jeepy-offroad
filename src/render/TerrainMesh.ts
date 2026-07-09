@@ -26,6 +26,9 @@ function pathProximity(
 /**
  * Grid mesh matching heightfield collider: same samples, origin, and world size.
  * Vertex colors from biome palette + path ribbon.
+ *
+ * Uses THREE.Color so hex is converted into the working (linear) color space —
+ * raw 0–1 sRGB channel writes look washed-out / too bright under MeshLambert.
  */
 export function createTerrainMesh(
   level: LevelData,
