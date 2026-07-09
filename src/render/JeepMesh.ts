@@ -108,6 +108,12 @@ const FLARE_LIP = {
   d: 0.72,
 } as const;
 
+/**
+ * Visual tire width along axle (m). Cylinder is rotated so this is local X span.
+ * Lateral suspension seats on the **inner face center** (hub side), not volume mid.
+ */
+const VISUAL_TIRE_WIDTH = 0.5;
+
 /** Underside of main flare top lip (where spring seats). */
 function flareLipUndersideY(): number {
   return FLARE_LIP.yCenter - FLARE_LIP.h * 0.5;
@@ -145,12 +151,12 @@ function placeUnitCylinder(
 
 /**
  * Lateral suspension visuals:
- * - One thick crossbar: chassis body → **exact tire center**
- * - Coil spring: **fixed wheel-arch mount** → **exact tire center**
+ * - One thick crossbar: chassis body → **inner tire face center** (hub side)
+ * - Coil spring: **fixed wheel-arch mount** → **inner tire face center**
  *
- * Tire center each frame = (hard.x, hard.y + yOff, hard.z)
- * where yOff = -(suspensionLength - wheelRadius) — same as wheel mesh.
- * Arch mount is chassis-fixed and never moves (so the spring top doesn't bob).
+ * Wheel volume mid = hard + (0, yOff, 0); inner face is inset toward body by
+ * half visual tire width along X (wide tires would otherwise look mis-seated).
+ * Arch mount is chassis-fixed and never moves.
  */
 function createSuspensionLink(
   parent: THREE.Group,
@@ -158,14 +164,15 @@ function createSuspensionLink(
   hard: { x: number; y: number; z: number },
   side: number,
   bodyHalfW: number,
+  tireWidth: number = VISUAL_TIRE_WIDTH,
 ): THREE.Group {
   const link = new THREE.Group();
   link.name = `susp-link-${index}`;
   link.userData.wheelIndex = index;
   link.userData.side = side;
+  link.userData.tireHalfW = tireWidth * 0.5;
   link.userData.hardpoint = { x: hard.x, y: hard.y, z: hard.z };
-  link.userData.restHubTravel =
-    VEHICLE_CONFIG.suspRestLength - VEHICLE_CONFIG.wheelRadius;
+  link.userData.restHubTravel = VEHICLE_CONFIG.suspRestLength;
 
   // FIXED spring upper anchor = exact underside center of flare top lip.
   // Same constants as the flare mesh so the spring seats on the arch.
@@ -181,7 +188,7 @@ function createSuspensionLink(
     z: hard.z,
   };
 
-  // Thick lateral crossbar (body → exact tire center)
+  // Thick lateral crossbar (body → inner tire face / hub side)
   const bar = new THREE.Mesh(
     new THREE.CylinderGeometry(0.055, 0.055, 1, 10),
     mat(PAL.chrome),
@@ -197,7 +204,7 @@ function createSuspensionLink(
   bar2.name = "crossbar-2";
   link.add(bar2);
 
-  // Coil spring: arch → tire center
+  // Coil spring: arch → inner tire face
   const spring = new THREE.Group();
   spring.name = "spring";
   const sleeve = new THREE.Mesh(
@@ -237,7 +244,7 @@ function createSuspensionLink(
   );
   link.add(archPlate);
 
-  // Hub ball at exact tire center
+  // Hub ball on inner tire face center
   const hubBall = new THREE.Mesh(
     new THREE.SphereGeometry(0.055, 10, 8),
     mat(PAL.chrome),
@@ -540,17 +547,17 @@ export function createJeepMesh(): THREE.Group {
     pivot.userData.hardpoint = hardpoint;
     pivot.position.set(hardpoint.x, hardpoint.y, hardpoint.z);
 
-    // Visually larger / fatter than physics radius for Rubicon stance
-    const tireR = r * 1.2;
-    const tireW = 0.5;
+    // Slightly meatier than physics radius for Rubicon stance
+    const tireR = r * 1.1;
+    const tireW = VISUAL_TIRE_WIDTH;
     const tire = new THREE.Mesh(
       new THREE.CylinderGeometry(tireR, tireR, tireW, 14),
       mat(PAL.tire),
     );
     tire.name = `wheel-mesh-${i}`;
     tire.rotation.z = Math.PI / 2;
-    // Sit contact near physics contact: use physics r for y offset
-    tire.position.set(0, -(rest - r), 0);
+    // Rapier rest length is hardpoint → wheel center (not to ground).
+    tire.position.set(0, -rest, 0);
 
     const rim = new THREE.Mesh(
       new THREE.CylinderGeometry(tireR * 0.5, tireR * 0.56, tireW + 0.02, 10),
@@ -584,12 +591,12 @@ export function createJeepMesh(): THREE.Group {
     pivot.add(cap);
     g.add(pivot);
 
-    // Lateral suspension: crossbars + spring arch↔hub
-    createSuspensionLink(g, i, hardpoint, side, halfW);
+    // Lateral suspension: crossbars + spring → inner tire face (hub side)
+    createSuspensionLink(g, i, hardpoint, side, halfW, tireW);
   });
 
   // Initial pose at rest (before first physics sample)
-  const restYOff = -(rest - r);
+  const restYOff = -rest;
   for (const link of getSuspensionLinks(g)) {
     const hard = link.userData.hardpoint as {
       x: number;
@@ -632,11 +639,11 @@ function getSuspensionLinks(mesh: THREE.Group): THREE.Group[] {
 
 /**
  * Each frame:
- *   tireCenter = hardpoint + (0, yOff, 0)  — exact wheel mesh center
- *   spring: fixed arch → tireCenter
- *   crossbar: fixed body root → tireCenter
+ *   volume mid = hard + (0, yOff, 0)  — matches tire mesh center
+ *   hub seat   = volume mid inset toward body by tireHalfW (inner face)
+ *   spring / crossbar: fixed arch/root → hub seat
  *
- * Arch never moves; only the tire-center end tracks suspension.
+ * Arch never moves; only the hub end tracks suspension.
  */
 function updateSuspensionLink(
   link: THREE.Group,
@@ -649,16 +656,20 @@ function updateSuspensionLink(
     y: number;
     z: number;
   };
+  const side = (link.userData.side as number) ?? 1;
+  const tireHalfW =
+    (link.userData.tireHalfW as number) ?? VISUAL_TIRE_WIDTH * 0.5;
 
-  // Exact tire / wheel center (matches tire mesh: hard + (0, yOff, 0))
-  const tireCx = hard.x;
-  const tireCy = hard.y + yOff;
-  const tireCz = hard.z;
+  // Inner face center: toward chassis (x→0), not mid-volume of the fat tire.
+  // side +1 = right wheel → inner is −X; side −1 = left → inner is +X.
+  const hubX = hard.x - side * tireHalfW;
+  const hubY = hard.y + yOff;
+  const hubZ = hard.z;
 
-  // --- Hub marker at true tire center ---
+  // --- Hub marker on inner tire face ---
   const hubBall = link.getObjectByName("hub-ball");
   if (hubBall) {
-    hubBall.position.set(tireCx, tireCy, tireCz);
+    hubBall.position.set(hubX, hubY, hubZ);
   }
 
   // Arch plate stays fixed on lip underside (do not follow suspension)
@@ -671,12 +682,12 @@ function updateSuspensionLink(
     rootBall.position.set(root.x, root.y, root.z);
   }
 
-  // --- Spring: FIXED arch → tire center ---
+  // --- Spring: FIXED arch → inner hub face ---
   // Ends always span arch→hub. Do NOT re-pack coil local Y toward center —
   // that pulled the orange rings off the arch when compressed. Compression is
   // already shown by placeUnitCylinder shortening the whole strut (scale.y=len).
   _suspFrom.set(arch.x, arch.y, arch.z);
-  _suspTo.set(tireCx, tireCy, tireCz);
+  _suspTo.set(hubX, hubY, hubZ);
   const spring = link.getObjectByName("spring");
   if (spring) {
     placeUnitCylinder(spring, _suspFrom, _suspTo, 1);
@@ -687,18 +698,18 @@ function updateSuspensionLink(
     }
   }
 
-  // --- Thick crossbar: FIXED body → tire center ---
+  // --- Thick crossbar: FIXED body → inner hub face ---
   const bar = link.getObjectByName("crossbar");
   if (bar) {
     _suspFrom.set(root.x, root.y, root.z);
-    _suspTo.set(tireCx, tireCy, tireCz);
+    _suspTo.set(hubX, hubY, hubZ);
     placeUnitCylinder(bar, _suspFrom, _suspTo, 1);
   }
   // Parallel bar slightly below for readability
   const bar2 = link.getObjectByName("crossbar-2");
   if (bar2) {
     _suspFrom.set(root.x, root.y - 0.05, root.z);
-    _suspTo.set(tireCx, tireCy - 0.02, tireCz);
+    _suspTo.set(hubX, hubY - 0.02, hubZ);
     placeUnitCylinder(bar2, _suspFrom, _suspTo, 1);
   }
 }
@@ -721,7 +732,6 @@ export function syncJeepMesh(
 
   if (!wheels || wheels.length === 0) return;
 
-  const r = VEHICLE_CONFIG.wheelRadius;
   const rest = VEHICLE_CONFIG.suspRestLength;
   const pivots = getWheelPivots(mesh);
   const links = getSuspensionLinks(mesh);
@@ -744,7 +754,9 @@ export function syncJeepMesh(
     const steer = state?.steering ?? 0;
     pivot.rotation.y = steer;
 
-    const yOff = -(suspLen - r);
+    // Rapier suspension_length is already hardpoint → wheel center.
+    // Do NOT subtract radius again (that floated tires by ~wheelRadius).
+    const yOff = -suspLen;
     for (const child of pivot.children) {
       child.position.set(0, yOff, 0);
       const m = child as THREE.Mesh;

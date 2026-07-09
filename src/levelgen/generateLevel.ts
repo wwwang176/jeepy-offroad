@@ -2,7 +2,7 @@ import type { BiomeProfile } from "@/biome/types";
 import type { Vec3 } from "@/shared/types";
 import type { VehicleCapabilities } from "@/shared/vehicleCapabilities";
 import { cellSize, gridToWorld, idx } from "@/shared/coords";
-import { createHeightmap, sampleBilinear } from "./heightmap";
+import { createHeightmap } from "./heightmap";
 import {
   fallbackPath,
   fitPathToHeightmap,

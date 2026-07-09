@@ -52,23 +52,30 @@ export const VEHICLE_CONFIG = {
     center: { x: 0, y: 0.9, z: -0.12 },
   },
   /**
-   * Suspension ray origins — MUST be outside the chassis cuboid
-   * (half-height 0.4 → bottom at y=-0.4). Origins inside the body with
-   * solid raycasts yield TOI=0 every frame and launch the vehicle.
+   * Suspension ray origins (chassis local).
+   * May sit slightly inside the tub Y-range: rays only hit terrain
+   * (SUSPENSION_RAY_GROUPS), never the chassis — so no self-hit launch.
+   * Higher hardpoints + shorter rest = lower stance without stilts.
    */
   wheelPositions: [
-    { x: -hx, y: -0.42, z: hz },
-    { x: hx, y: -0.42, z: hz },
-    { x: -hx, y: -0.42, z: -hz },
-    { x: hx, y: -0.42, z: -hz },
+    { x: -hx, y: -0.14, z: hz },
+    { x: hx, y: -0.14, z: hz },
+    { x: -hx, y: -0.14, z: -hz },
+    { x: hx, y: -0.14, z: -hz },
   ],
-  /** Distance from hardpoint to contact at zero compression. */
-  suspRestLength: 0.52, // was 0.45; +~15% for longer visual spring / travel
   /**
-   * Extra travel past rest — longer extension helps wheels stay planted on
-   * small bumps / articulation (slightly more "grounded time").
+   * Rapier suspension rest length: hardpoint → **wheel center** (not ground).
+   * Chassis-bottom clearance target ≈ 0.5 m at rest:
+   *   clearance = -attachY + rest + radius - chassisHalfY
+   * When radius grows, rest shrinks so clearance holds.
+   * Damper coeffs stay independent of rest length.
    */
-  suspMaxTravel: 0.39, // was 0.34; +~15%
+  suspRestLength: 0.344,
+  /**
+   * Travel about rest (compress + droop). Must stay ≤ rest so min length ≥ 0.
+   * Damper coeffs below are unchanged.
+   */
+  suspMaxTravel: 0.28,
   /** Legacy SI-ish spring (unused by Rapier vehicle controller; kept for docs/tests). */
   springStiffness: 28000,
   springDamping: 3200,
@@ -76,7 +83,7 @@ export const VEHICLE_CONFIG = {
   maxSuspForce: 1400 * 9.81 * 2.4,
   /**
    * Rapier/Bullet-style suspension (DynamicRayCastVehicleController).
-   * Higher compression/relaxation = less bounce, more time on the ground.
+   * Damping feel lives here — leave alone when only changing ride height.
    */
   rapierSuspStiffness: 24,
   rapierSuspCompression: 4.2,
@@ -96,20 +103,26 @@ export const VEHICLE_CONFIG = {
   frictionEllipse: true,
   /** Body collider friction kept low so raycast suspension carries load. */
   chassisFriction: 0.15,
-  wheelRadius: 0.35,
+  /**
+   * Physics tire radius (m). +30% vs 0.32 → 0.416; rest adjusted so
+   * chassis-bottom clearance stays ~0.5 m.
+   */
+  wheelRadius: 0.416,
   /** Spawn compression factor: lower = more preload = settles into contact faster. */
-  spawnRestFactor: 0.86,
+  spawnRestFactor: 0.88,
 } as const;
 
 /**
  * Chassis center Y for spawn/respawn given ground sample Y.
- * Slight preload so suspension is already in the contact band at spawn.
+ *
+ * Rapier: contact is hardpoint − rest − radius (rest = hardpoint→wheel center).
+ * Slight preload on rest so suspension starts in the contact band.
  */
 export function chassisSpawnY(groundY: number): number {
   const attachY = VEHICLE_CONFIG.wheelPositions[0].y;
-  return (
-    groundY - attachY + VEHICLE_CONFIG.suspRestLength * VEHICLE_CONFIG.spawnRestFactor
-  );
+  const rest =
+    VEHICLE_CONFIG.suspRestLength * VEHICLE_CONFIG.spawnRestFactor;
+  return groundY - attachY + rest + VEHICLE_CONFIG.wheelRadius;
 }
 
 export type VehicleConfig = typeof VEHICLE_CONFIG;

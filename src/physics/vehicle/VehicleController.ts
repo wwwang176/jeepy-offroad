@@ -186,7 +186,11 @@ export class VehicleController {
 
   /**
    * Per-wheel visuals after updateVehicle(): suspension travel, spin, steer.
-   * suspensionLength is hardpoint → ground contact along the ray.
+   *
+   * Rapier `wheelSuspensionLength` = hardpoint → **wheel center** along the
+   * suspension ray (NOT hardpoint → ground). See ray_cast_vehicle_controller:
+   *   suspension_length = hit_distance - radius
+   *   center = hard_point + direction * suspension_length
    */
   getWheelVisuals(): {
     suspensionLength: number;
@@ -202,12 +206,9 @@ export class VehicleController {
     }[] = [];
     for (let i = 0; i < this.numWheels; i++) {
       const raw = this.controller.wheelSuspensionLength(i);
-      // When airborne Rapier may report null or full extension
+      // Airborne: Rapier leaves rest length (not max droop)
       let susp =
-        raw != null && Number.isFinite(raw)
-          ? raw
-          : rest + maxTravel;
-      // Clamp to physical range
+        raw != null && Number.isFinite(raw) ? raw : rest;
       susp = Math.min(rest + maxTravel, Math.max(rest - maxTravel, susp));
       out.push({
         suspensionLength: susp,

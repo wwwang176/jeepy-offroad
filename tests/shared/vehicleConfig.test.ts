@@ -6,42 +6,51 @@ import {
 } from "@/shared/vehicleConfig";
 
 describe("vehicle suspension geometry", () => {
-  it("places ray origins outside the lower chassis cuboid", () => {
-    const halfY = VEHICLE_CONFIG.chassisHalfExtents.y;
-    for (const w of VEHICLE_CONFIG.wheelPositions) {
-      // Strictly below chassis bottom so solid/self casts cannot start inside
-      expect(w.y).toBeLessThan(-halfY);
-    }
-  });
-
-  it("places ray origins outside the cabin cuboid as well", () => {
+  it("keeps hardpoints below cabin (rays ignore chassis self-hits)", () => {
     const cabin = VEHICLE_CONFIG.cabinCollider;
     const cabinBottom = cabin.center.y - cabin.halfExtents.y;
     for (const w of VEHICLE_CONFIG.wheelPositions) {
+      // May sit inside tub Y; must stay clear of cabin volume
       expect(w.y).toBeLessThan(cabinBottom);
     }
   });
 
-  it("leaves chassis bottom above ground at rest length", () => {
+  it("targets ~0.5 m chassis-bottom ground clearance at rest", () => {
     const attachY = VEHICLE_CONFIG.wheelPositions[0].y;
     const halfY = VEHICLE_CONFIG.chassisHalfExtents.y;
-    const comAboveGround = -attachY + VEHICLE_CONFIG.suspRestLength;
+    // Rapier: COM→ground = −attachY + rest + radius
+    const comAboveGround =
+      -attachY +
+      VEHICLE_CONFIG.suspRestLength +
+      VEHICLE_CONFIG.wheelRadius;
     const chassisBottomAboveGround = comAboveGround - halfY;
-    expect(chassisBottomAboveGround).toBeGreaterThan(0.02);
+    expect(chassisBottomAboveGround).toBeCloseTo(0.5, 2);
   });
 
   it("chassisSpawnY places COM above rest contact with clearance", () => {
     const groundY = 10;
     const comY = chassisSpawnY(groundY);
     const attachY = VEHICLE_CONFIG.wheelPositions[0].y;
+    // hardpoint→center (rest) + center→ground (radius)
     const distToGround = comY + attachY - groundY;
     expect(distToGround).toBeCloseTo(
-      VEHICLE_CONFIG.suspRestLength * VEHICLE_CONFIG.spawnRestFactor,
+      VEHICLE_CONFIG.suspRestLength * VEHICLE_CONFIG.spawnRestFactor +
+        VEHICLE_CONFIG.wheelRadius,
       5,
     );
     const bottomClearance =
       comY - VEHICLE_CONFIG.chassisHalfExtents.y - groundY;
     expect(bottomClearance).toBeGreaterThan(0.02);
+  });
+
+  it("documents rest length as hardpoint→center (not to ground)", () => {
+    // Ground clearance at rest ≈ rest + radius + attachY − chassis bottom
+    const attachY = VEHICLE_CONFIG.wheelPositions[0].y;
+    const contactLocal =
+      attachY - VEHICLE_CONFIG.suspRestLength - VEHICLE_CONFIG.wheelRadius;
+    const chassisBottom = -VEHICLE_CONFIG.chassisHalfExtents.y;
+    // Contact must be below chassis bottom
+    expect(contactLocal).toBeLessThan(chassisBottom);
   });
 
   it("lower body extents roughly match JeepMesh envelope", () => {
@@ -69,9 +78,9 @@ describe("vehicle suspension geometry", () => {
     expect(com.z).toBe(0);
     // Underside of lower cuboid (body origin is tub center)
     expect(com.y).toBeCloseTo(-he.y, 5);
-    // Still at/above wheel hardpoints so mass isn't below the axles in a weird way
+    // Hardpoints sit above tub underside (axles higher than skid) for low stance
     for (const w of VEHICLE_CONFIG.wheelPositions) {
-      expect(com.y).toBeGreaterThanOrEqual(w.y - 0.05);
+      expect(w.y).toBeGreaterThan(com.y);
     }
   });
 
