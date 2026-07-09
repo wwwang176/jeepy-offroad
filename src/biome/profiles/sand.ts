@@ -1,6 +1,6 @@
 import type { BiomeProfile } from "../types";
 
-/** Arid sand / rocky scrub — former "cliffs" look, renamed 沙地. */
+/** Arid sand / rocky terrain — former "cliffs" look, renamed 沙地. */
 export const sandBiome: BiomeProfile = {
   id: "sand",
   displayName: "沙地",
@@ -20,7 +20,6 @@ export const sandBiome: BiomeProfile = {
   propDensity: 0.25,
   propTable: [
     { meshKey: "rock_pile", weight: 1, collides: false },
-    { meshKey: "scrub", weight: 1, collides: false },
     { meshKey: "pillar_rock", weight: 0.4, collides: false },
   ],
 };

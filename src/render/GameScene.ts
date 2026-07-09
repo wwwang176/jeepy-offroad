@@ -173,21 +173,6 @@ function createPropMesh(
       }
       return g;
     }
-    case "scrub": {
-      const g = new THREE.Group();
-      const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.1, 0.5, 5),
-        new THREE.MeshLambertMaterial({ color: 0x5a4030, flatShading: true }),
-      );
-      trunk.position.y = 0.25;
-      const bush = new THREE.Mesh(
-        new THREE.ConeGeometry(0.55, 0.9, 5),
-        new THREE.MeshLambertMaterial({ color: 0x4a6a3a, flatShading: true }),
-      );
-      bush.position.y = 0.85;
-      g.add(trunk, bush);
-      return g;
-    }
     case "pillar_rock": {
       const m = new THREE.Mesh(
         new THREE.CylinderGeometry(0.35, 0.55, 2.2, 6),
