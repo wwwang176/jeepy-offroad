@@ -2,31 +2,34 @@ import * as THREE from "three";
 import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
 
 export type WheelVisualState = {
-  /** Current suspension length along ray (hardpoint → ground contact). */
   suspensionLength: number;
-  /** Spin about axle (radians). */
   rotation: number;
-  /** Steer angle (radians). */
   steering: number;
 };
 
-/** Classic boxy Jeep palette (low-poly, flat). */
+/** Rubicon-inspired palette (white body, black accents). */
 const PAL = {
-  body: 0x4f6328, // olive
-  bodyDark: 0x3a4a1c,
+  body: 0xf2f2f0, // white
+  bodyShade: 0xd8d8d4,
   black: 0x1a1a1a,
-  tire: 0x1c1c1c,
-  hub: 0x555555,
+  blackSoft: 0x2a2a2a,
+  tire: 0x141414,
+  rim: 0x2c2c2c,
   grille: 0x111111,
-  light: 0xffeebb,
-  lightRing: 0x333333,
-  glass: 0x88aacc,
-  bumper: 0x2a2a2a,
-  tail: 0xcc3333,
-  interior: 0x2c2c2c,
+  light: 0xfff5d6,
+  lightRing: 0x222222,
+  glass: 0x1a2228,
+  glassTint: 0x2a3540,
+  bumper: 0x0e0e0e,
+  orange: 0xff6a00, // marker / accent
+  interior: 0x222222,
+  chrome: 0x666666,
 } as const;
 
-function mat(color: number, opts?: { flat?: boolean; opacity?: number }) {
+function mat(
+  color: number,
+  opts?: { flat?: boolean; opacity?: number },
+): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({
     color,
     flatShading: opts?.flat !== false,
@@ -79,137 +82,175 @@ function cyl(
 }
 
 /**
- * Low-poly classic boxy Jeep (Wrangler-ish silhouette).
- * Physics collider stays the chassis AABB; this is visuals only.
- * Wheels keep suspension pivots at VEHICLE_CONFIG.wheelPositions.
+ * Low-poly Jeep in the style of a white Rubicon Unlimited:
+ * boxy 4-door, black flares/grille/top, tubular bumper, big tires.
+ * Physics collider unchanged — visuals only.
  */
 export function createJeepMesh(): THREE.Group {
   const g = new THREE.Group();
   g.name = "jeep";
 
-  const bodyW = 1.55;
+  // Slightly wider visual stance like flared Rubicon
+  const bodyW = 1.62;
   const halfW = bodyW / 2;
+  const wb2 = VEHICLE_CONFIG.wheelPositions[0].z; // front axle z
 
-  // --- Rock sliders / side steps ---
-  box(g, 0.12, 0.1, 1.7, PAL.black, -halfW - 0.08, -0.22, 0.05);
-  box(g, 0.12, 0.1, 1.7, PAL.black, halfW + 0.08, -0.22, 0.05);
+  // ===== Underside / rockers (black) =====
+  box(g, bodyW + 0.05, 0.12, 2.35, PAL.black, 0, -0.28, 0.0, "rocker");
+  // Rock rails / steps
+  box(g, 0.1, 0.08, 1.85, PAL.black, -halfW - 0.1, -0.2, 0.0);
+  box(g, 0.1, 0.08, 1.85, PAL.black, halfW + 0.1, -0.2, 0.0);
 
-  // --- Main tub (door line height) ---
-  box(g, bodyW, 0.55, 2.15, PAL.body, 0, 0.05, -0.05, "tub");
+  // ===== Main white tub (4-door length) =====
+  box(g, bodyW, 0.52, 2.4, PAL.body, 0, 0.08, -0.02, "tub");
 
-  // --- Hood (short, boxy, slight slope via thinner front) ---
-  box(g, bodyW * 0.98, 0.28, 0.72, PAL.body, 0, 0.38, 0.78, "hood");
-  // Hood seam / cowl
-  box(g, bodyW * 0.92, 0.06, 0.08, PAL.bodyDark, 0, 0.52, 0.42);
+  // Door panel lines (4 doors feel)
+  for (const z of [0.55, 0.05, -0.45, -0.9]) {
+    box(g, 0.02, 0.4, 0.04, PAL.bodyShade, -halfW - 0.01, 0.18, z);
+    box(g, 0.02, 0.4, 0.04, PAL.bodyShade, halfW + 0.01, 0.18, z);
+  }
 
-  // --- Classic 7-slot grille ---
-  const grilleZ = 1.12;
-  box(g, bodyW * 0.72, 0.42, 0.08, PAL.grille, 0, 0.28, grilleZ, "grille-plate");
+  // ===== Hood (white, boxy, raised edges) =====
+  box(g, bodyW * 0.98, 0.22, 0.78, PAL.body, 0, 0.4, 0.85, "hood");
+  // Black hood vents / strip
+  box(g, 0.55, 0.04, 0.35, PAL.black, 0, 0.52, 0.85);
+  // Cowl
+  box(g, bodyW * 0.95, 0.08, 0.1, PAL.bodyShade, 0, 0.48, 0.45);
+
+  // ===== Black 7-slot grille =====
+  const gZ = 1.2;
+  box(g, bodyW * 0.7, 0.48, 0.1, PAL.grille, 0, 0.3, gZ, "grille");
   for (let i = 0; i < 7; i++) {
-    const x = -0.38 + i * 0.127;
-    box(g, 0.045, 0.34, 0.04, PAL.black, x, 0.28, grilleZ + 0.04);
+    const x = -0.36 + i * 0.12;
+    box(g, 0.04, 0.4, 0.05, PAL.black, x, 0.3, gZ + 0.05);
   }
+  // Jeep-ish badge plate
+  box(g, 0.28, 0.08, 0.04, PAL.chrome, 0, 0.52, gZ + 0.06);
 
-  // --- Round headlights ---
+  // ===== Round headlights =====
   for (const sx of [-1, 1]) {
-    const hx = sx * 0.58;
-    cyl(g, 0.13, 0.13, 0.08, 10, PAL.lightRing, hx, 0.32, grilleZ + 0.02, Math.PI / 2, 0, 0);
-    cyl(g, 0.1, 0.1, 0.06, 10, PAL.light, hx, 0.32, grilleZ + 0.06, Math.PI / 2, 0, 0);
+    const lx = sx * 0.62;
+    cyl(g, 0.14, 0.14, 0.1, 12, PAL.lightRing, lx, 0.34, gZ + 0.02, Math.PI / 2);
+    cyl(g, 0.11, 0.11, 0.08, 12, PAL.light, lx, 0.34, gZ + 0.07, Math.PI / 2);
   }
+  // Small marker lights
+  box(g, 0.08, 0.05, 0.04, PAL.orange, -0.72, 0.48, gZ + 0.02);
+  box(g, 0.08, 0.05, 0.04, PAL.orange, 0.72, 0.48, gZ + 0.02);
 
-  // --- Front bumper + winch block ---
-  box(g, bodyW + 0.15, 0.14, 0.18, PAL.bumper, 0, -0.18, 1.18, "bumper-f");
-  box(g, 0.28, 0.16, 0.2, PAL.black, 0, -0.08, 1.22);
+  // ===== Tubular front bumper + winch (like reference) =====
+  const bump = new THREE.Group();
+  bump.name = "bumper-front";
+  bump.position.set(0, -0.12, 1.28);
+  // Main tube (horizontal)
+  cyl(bump, 0.05, 0.05, bodyW + 0.25, 8, PAL.bumper, 0, 0, 0, 0, 0, Math.PI / 2);
+  // Outer upright loops
+  for (const sx of [-1, 1]) {
+    cyl(bump, 0.04, 0.04, 0.35, 6, PAL.bumper, sx * (halfW + 0.05), 0.12, 0.05, 0, 0, 0);
+    cyl(bump, 0.04, 0.04, 0.28, 6, PAL.bumper, sx * (halfW + 0.05), 0.08, -0.12, Math.PI / 2, 0, 0);
+  }
+  // Cross bar
+  cyl(bump, 0.035, 0.035, bodyW * 0.7, 6, PAL.bumper, 0, 0.18, 0.08, 0, 0, Math.PI / 2);
+  // Winch block
+  box(bump, 0.35, 0.18, 0.22, PAL.black, 0, 0.05, -0.08);
+  g.add(bump);
 
-  // --- Nearly vertical windshield frame ---
+  // ===== Upright windshield (black frame + dark glass) =====
+  box(g, bodyW * 0.92, 0.08, 0.08, PAL.black, 0, 1.15, 0.38); // header
+  box(g, 0.08, 0.7, 0.08, PAL.black, -halfW + 0.1, 0.85, 0.36);
+  box(g, 0.08, 0.7, 0.08, PAL.black, halfW - 0.1, 0.85, 0.36);
   const glass = new THREE.Mesh(
-    new THREE.BoxGeometry(bodyW * 0.85, 0.55, 0.04),
-    mat(PAL.glass, { opacity: 0.45 }),
+    new THREE.BoxGeometry(bodyW * 0.82, 0.58, 0.04),
+    mat(PAL.glass, { opacity: 0.75 }),
   );
-  glass.name = "windshield";
-  glass.position.set(0, 0.85, 0.32);
-  glass.rotation.x = -0.12; // slightly raked, still "upright Jeep"
+  glass.position.set(0, 0.88, 0.35);
+  glass.rotation.x = -0.08;
   g.add(glass);
 
-  // A-pillars
-  box(g, 0.07, 0.62, 0.07, PAL.black, -halfW + 0.12, 0.82, 0.3);
-  box(g, 0.07, 0.62, 0.07, PAL.black, halfW - 0.12, 0.82, 0.3);
-  // Top header
-  box(g, bodyW * 0.88, 0.06, 0.08, PAL.black, 0, 1.12, 0.28);
-
-  // --- Cabin / soft top ---
-  box(g, bodyW * 0.96, 0.42, 0.95, PAL.bodyDark, 0, 0.95, -0.15, "cabin");
-  // Side windows (flat dark glass panes)
+  // ===== Black hardtop (4-door roof) =====
+  box(g, bodyW * 0.98, 0.14, 1.55, PAL.black, 0, 1.18, -0.35, "hardtop");
+  // Side window black panels (freedom-top style blocks)
   for (const sx of [-1, 1]) {
-    const win = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.28, 0.55),
-      mat(PAL.glass, { opacity: 0.4 }),
-    );
-    win.position.set(sx * (halfW - 0.02), 0.92, -0.05);
-    g.add(win);
+    box(g, 0.06, 0.38, 1.35, PAL.black, sx * (halfW - 0.02), 0.92, -0.25);
   }
-  // Door cut lines (visual only)
-  box(g, 0.03, 0.45, 0.7, PAL.black, -halfW - 0.01, 0.2, 0.05);
-  box(g, 0.03, 0.45, 0.7, PAL.black, halfW + 0.01, 0.2, 0.05);
+  // Rear quarter glass
+  for (const sx of [-1, 1]) {
+    const q = new THREE.Mesh(
+      new THREE.BoxGeometry(0.05, 0.28, 0.4),
+      mat(PAL.glassTint, { opacity: 0.7 }),
+    );
+    q.position.set(sx * (halfW - 0.03), 0.88, -0.85);
+    g.add(q);
+  }
 
-  // Simple roll-bar hoop behind cabin
-  box(g, bodyW * 0.9, 0.07, 0.07, PAL.black, 0, 1.15, -0.55);
-  box(g, 0.07, 0.45, 0.07, PAL.black, -halfW + 0.15, 0.95, -0.55);
-  box(g, 0.07, 0.45, 0.07, PAL.black, halfW - 0.15, 0.95, -0.55);
+  // Door mirrors (black)
+  for (const sx of [-1, 1]) {
+    box(g, 0.18, 0.1, 0.12, PAL.black, sx * (halfW + 0.12), 0.7, 0.25);
+    box(g, 0.06, 0.12, 0.06, PAL.black, sx * (halfW + 0.02), 0.65, 0.28);
+  }
 
-  // --- Rear tub (short cargo / spare mount area) ---
-  box(g, bodyW * 0.96, 0.4, 0.55, PAL.body, 0, 0.12, -0.85, "rear-tub");
-  // Tailgate
-  box(g, bodyW * 0.9, 0.38, 0.06, PAL.bodyDark, 0, 0.18, -1.12);
-
-  // Rear bumper
-  box(g, bodyW + 0.1, 0.12, 0.16, PAL.bumper, 0, -0.18, -1.2, "bumper-r");
-  // Tail lights
-  box(g, 0.12, 0.1, 0.06, PAL.tail, -halfW + 0.15, 0.28, -1.15);
-  box(g, 0.12, 0.1, 0.06, PAL.tail, halfW - 0.15, 0.28, -1.15);
-
-  // --- Spare tire on tailgate ---
-  const spare = new THREE.Group();
-  spare.name = "spare";
-  spare.position.set(0, 0.35, -1.22);
-  cyl(spare, 0.32, 0.32, 0.16, 12, PAL.tire, 0, 0, 0, 0, 0, Math.PI / 2);
-  cyl(spare, 0.14, 0.14, 0.18, 8, PAL.hub, 0, 0, 0, 0, 0, Math.PI / 2);
-  // Mount bracket
-  box(spare, 0.08, 0.35, 0.08, PAL.black, 0, -0.15, 0.05);
-  g.add(spare);
-
-  // --- Fender flares (boxy arches over each wheel) ---
-  const flareY = 0.05;
-  const flareH = 0.28;
-  const flareZ = [
-    VEHICLE_CONFIG.wheelPositions[0].z, // FL
-    VEHICLE_CONFIG.wheelPositions[2].z, // RL
+  // ===== Black fender flares (signature Rubicon look) =====
+  const flarePositions = [
+    { z: wb2, scaleZ: 0.72 }, // front
+    { z: -wb2, scaleZ: 0.72 }, // rear
   ];
-  for (const z of flareZ) {
+  for (const fp of flarePositions) {
     for (const sx of [-1, 1]) {
+      // Outer flare slab
       box(
         g,
-        0.22,
-        flareH,
-        0.55,
-        PAL.bodyDark,
-        sx * (halfW + 0.06),
-        flareY,
-        z,
+        0.28,
+        0.38,
+        fp.scaleZ,
+        PAL.black,
+        sx * (halfW + 0.14),
+        0.08,
+        fp.z,
+      );
+      // Top lip
+      box(
+        g,
+        0.32,
+        0.08,
+        fp.scaleZ + 0.08,
+        PAL.blackSoft,
+        sx * (halfW + 0.14),
+        0.28,
+        fp.z,
       );
     }
   }
 
-  // --- Snorkel (driver side) ---
-  box(g, 0.08, 0.55, 0.08, PAL.black, -halfW + 0.12, 0.55, 0.55);
-  box(g, 0.1, 0.08, 0.2, PAL.black, -halfW + 0.12, 0.85, 0.48);
+  // ===== Rear body / tailgate =====
+  box(g, bodyW * 0.98, 0.55, 0.2, PAL.body, 0, 0.2, -1.18, "tailgate");
+  // High-mount stop strip
+  box(g, 0.5, 0.06, 0.04, PAL.orange, 0, 0.95, -1.2);
+  // Tail lights (vertical blocks)
+  box(g, 0.1, 0.28, 0.08, 0xaa2222, -halfW + 0.12, 0.35, -1.28);
+  box(g, 0.1, 0.28, 0.08, 0xaa2222, halfW - 0.12, 0.35, -1.28);
+  // Rear bumper tube
+  cyl(g, 0.045, 0.045, bodyW + 0.1, 8, PAL.bumper, 0, -0.15, -1.32, 0, 0, Math.PI / 2);
 
-  // --- Interior seat hints (visible in FP slightly) ---
-  box(g, 0.4, 0.25, 0.4, PAL.interior, -0.28, 0.35, 0.0);
-  box(g, 0.4, 0.25, 0.4, PAL.interior, 0.28, 0.35, 0.0);
-  box(g, 0.9, 0.08, 0.25, PAL.black, 0, 0.55, 0.35); // dash
+  // Spare tire (optional Rubicon often has it — keep for silhouette)
+  const spare = new THREE.Group();
+  spare.position.set(0, 0.4, -1.38);
+  cyl(spare, 0.36, 0.36, 0.2, 12, PAL.tire, 0, 0, 0, 0, 0, Math.PI / 2);
+  cyl(spare, 0.16, 0.16, 0.22, 8, PAL.rim, 0, 0, 0, 0, 0, Math.PI / 2);
+  box(spare, 0.1, 0.4, 0.1, PAL.black, 0, -0.2, 0.06);
+  g.add(spare);
 
-  // --- Wheels (suspension pivots — do not rename) ---
+  // ===== A-pillar light bar mounts (like photo) =====
+  for (const sx of [-1, 1]) {
+    box(g, 0.08, 0.12, 0.08, PAL.black, sx * (halfW - 0.15), 1.2, 0.4);
+    cyl(g, 0.05, 0.05, 0.1, 8, PAL.light, sx * (halfW - 0.15), 1.28, 0.4);
+  }
+
+  // ===== Interior (FP peek) =====
+  box(g, 0.42, 0.28, 0.42, PAL.interior, -0.3, 0.32, 0.05);
+  box(g, 0.42, 0.28, 0.42, PAL.interior, 0.3, 0.32, 0.05);
+  box(g, 0.95, 0.1, 0.28, PAL.black, 0, 0.52, 0.38); // dash
+  box(g, 0.15, 0.15, 0.15, PAL.black, 0.2, 0.55, 0.15); // wheel hub hint
+
+  // ===== Wheels: big off-road tires + black rims =====
   const r = VEHICLE_CONFIG.wheelRadius;
   const rest = VEHICLE_CONFIG.suspRestLength;
   VEHICLE_CONFIG.wheelPositions.forEach((w, i) => {
@@ -219,33 +260,49 @@ export function createJeepMesh(): THREE.Group {
     pivot.userData.hardpoint = { x: w.x, y: w.y, z: w.z };
     pivot.position.set(w.x, w.y, w.z);
 
+    // Slightly fatter visual tire
+    const tireR = r * 1.05;
     const tire = new THREE.Mesh(
-      new THREE.CylinderGeometry(r, r, 0.32, 12),
+      new THREE.CylinderGeometry(tireR, tireR, 0.38, 14),
       mat(PAL.tire),
     );
     tire.name = `wheel-mesh-${i}`;
     tire.rotation.z = Math.PI / 2;
     tire.position.set(0, -(rest - r), 0);
 
-    // Hub cap
-    const hub = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 0.4, r * 0.4, 0.34, 8),
-      mat(PAL.hub),
+    // Deep dish black rim
+    const rim = new THREE.Mesh(
+      new THREE.CylinderGeometry(tireR * 0.55, tireR * 0.62, 0.4, 10),
+      mat(PAL.rim),
     );
-    hub.rotation.z = Math.PI / 2;
-    hub.position.copy(tire.position);
+    rim.rotation.z = Math.PI / 2;
+    rim.position.copy(tire.position);
 
-    // Simple lug star (low poly)
-    const lug = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 0.36, 0.36),
+    // Center cap
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(tireR * 0.22, tireR * 0.22, 0.42, 8),
       mat(PAL.black),
     );
-    lug.rotation.z = Math.PI / 2;
-    lug.position.copy(tire.position);
+    cap.rotation.z = Math.PI / 2;
+    cap.position.copy(tire.position);
+
+    // Spoke blocks (5-spoke look)
+    for (let s = 0; s < 5; s++) {
+      const spoke = new THREE.Mesh(
+        new THREE.BoxGeometry(0.42, 0.08, 0.1),
+        mat(PAL.rim),
+      );
+      spoke.name = "spoke";
+      spoke.userData.baseSpin = (s / 5) * Math.PI * 2;
+      spoke.rotation.z = Math.PI / 2;
+      spoke.rotation.x = spoke.userData.baseSpin as number;
+      spoke.position.copy(tire.position);
+      pivot.add(spoke);
+    }
 
     pivot.add(tire);
-    pivot.add(hub);
-    pivot.add(lug);
+    pivot.add(rim);
+    pivot.add(cap);
     g.add(pivot);
   });
 
@@ -266,9 +323,6 @@ function getWheelPivots(mesh: THREE.Group): THREE.Group[] {
   return pivots;
 }
 
-/**
- * Sync chassis pose and optional per-wheel suspension / steer / spin.
- */
 export function syncJeepMesh(
   mesh: THREE.Group,
   pose: {
@@ -312,12 +366,11 @@ export function syncJeepMesh(
     const yOff = -(suspLen - r);
     for (const child of pivot.children) {
       child.position.set(0, yOff, 0);
-      // Spin: tire/hub share axle rotation (cylinder already rotated Z=90°)
-      if (child.name.startsWith("wheel-mesh-") || child instanceof THREE.Mesh) {
-        const m = child as THREE.Mesh;
-        m.rotation.z = Math.PI / 2;
-        m.rotation.x = spin;
-      }
+      const m = child as THREE.Mesh;
+      if (!m.isMesh) continue;
+      m.rotation.z = Math.PI / 2;
+      const base = (m.userData.baseSpin as number | undefined) ?? 0;
+      m.rotation.x = spin + base;
     }
   }
 }
