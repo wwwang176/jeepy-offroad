@@ -19,6 +19,16 @@ export interface BiomeProfile {
   offPathRoughness: number;
   propDensity: number;
   propTable: PropSpawnRule[];
+  /**
+   * Multiplier on decorative prop count (default 1).
+   * Rainforest uses >1 for dense palm groves.
+   */
+  propCountScale?: number;
+  /**
+   * Extra low ground-cover pass (short grass clumps via InstancedMesh).
+   * Count ≈ (20 + density×40) × this scale. Omit / 0 = none.
+   */
+  groundCoverCountScale?: number;
   pathWidth?: number;
   mapSize?: number;
 }

@@ -100,7 +100,7 @@ export function carveAndDecorate(
   const roughness = isFallback
     ? biome.offPathRoughness * 0.25
     : biome.offPathRoughness;
-  // cliffs@0.85 → amp ≈ 38–40 m bulk (another +100%), plus milder ridges
+  // sand@0.85 → amp ≈ 38–40 m bulk (another +100%), plus milder ridges
   const amp = 12.8 + roughness * 30;
   const ridgeAmp = amp * 0.4 * roughness;
 

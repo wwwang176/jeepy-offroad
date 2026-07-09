@@ -1,4 +1,9 @@
-import { listBiomes } from "@/biome/registry";
+import {
+  listBiomes,
+  RANDOM_BIOME_ID,
+  resolveBiomeId,
+  type BiomeSelectId,
+} from "@/biome/registry";
 import { normalizeSeed, parseSeedInput } from "@/shared/seed";
 import type { BiomeId } from "@/shared/types";
 
@@ -13,8 +18,8 @@ export type MenuHandlers = {
 };
 
 /**
- * Mount main menu: biome cards from listBiomes(), seed field, Start.
- * Invalid seed shows inline error; does not throw to the host.
+ * Mount main menu: biome cards (含隨機) from listBiomes(), seed field, Start.
+ * 「隨機」uses seed so the same seed always picks the same biome + level.
  */
 export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => void {
   const biomes = listBiomes();
@@ -23,7 +28,7 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
   root.innerHTML = `
     <div class="panel menu-panel">
       <h1 class="menu-title">Low-Poly Jeep Off-Road</h1>
-      <p class="menu-sub">Pick a biome, set a seed (or leave blank for random), then Start.</p>
+      <p class="menu-sub">Pick a biome (or 隨機), set a seed (or leave blank for random), then Start.</p>
       <div class="menu-biomes" role="list"></div>
       <label class="menu-seed-label">
         Seed
@@ -52,23 +57,37 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
   const startBtn = root.querySelector<HTMLButtonElement>("#menu-start")!;
   const devEl = root.querySelector<HTMLElement>("#menu-dev")!;
 
-  let selectedId: BiomeId | null = biomes[0]?.id ?? null;
+  // Default: random biome at start
+  let selectedId: BiomeSelectId | null = RANDOM_BIOME_ID;
 
-  for (const biome of biomes) {
+  const cards: { id: BiomeSelectId; name: string; desc: string }[] = [
+    {
+      id: RANDOM_BIOME_ID,
+      name: "隨機",
+      desc: "開局隨機 沙地 / 雨林（同 seed 可重現）",
+    },
+    ...biomes.map((b) => ({
+      id: b.id as BiomeSelectId,
+      name: b.displayName,
+      desc: b.description,
+    })),
+  ];
+
+  for (const entry of cards) {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "biome-card";
     card.setAttribute("role", "listitem");
-    card.dataset.biomeId = biome.id;
+    card.dataset.biomeId = entry.id;
     card.innerHTML = `
-      <span class="biome-card-name">${biome.displayName}</span>
-      <span class="biome-card-desc">${biome.description}</span>
+      <span class="biome-card-name">${entry.name}</span>
+      <span class="biome-card-desc">${entry.desc}</span>
     `;
-    if (biome.id === selectedId) {
+    if (entry.id === selectedId) {
       card.classList.add("is-selected");
     }
     card.onclick = () => {
-      selectedId = biome.id;
+      selectedId = entry.id;
       for (const el of biomeList.querySelectorAll(".biome-card")) {
         el.classList.toggle(
           "is-selected",
@@ -98,7 +117,8 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
     clearError();
     try {
       const seed = normalizeSeed(parseSeedInput(seedInput.value));
-      handlers.onStart({ biomeId: selectedId, seed });
+      const biomeId = resolveBiomeId(selectedId, seed);
+      handlers.onStart({ biomeId, seed });
     } catch (e) {
       showError(e instanceof Error ? e.message : String(e));
     }

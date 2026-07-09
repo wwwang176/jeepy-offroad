@@ -582,6 +582,8 @@ export class GameApp {
         if (this.cameraRig) {
           this.cameraRig.update(dt, pose);
         }
+        // Palm wind (island-conquest style vertex sway)
+        this.gameScene.updatePalmSway(t * 0.001);
         // Local shadow cascade tracks camera (cheap open-world shadows)
         this.gameScene.updateShadows(this.gameScene.camera.position);
         if (this.hud && this.level && this.state.name === "playing") {
@@ -631,6 +633,7 @@ export class GameApp {
         this.three.renderer.render(this.three.scene, this.three.camera);
       }
     } else if (renderLevelScene && this.gameScene) {
+      this.gameScene.updatePalmSway(t * 0.001);
       this.gameScene.renderer.render(
         this.gameScene.scene,
         this.gameScene.camera,
