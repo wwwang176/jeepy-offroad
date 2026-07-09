@@ -18,16 +18,20 @@ const hz = wb / 2;
 export const VEHICLE_CONFIG = {
   massKg: 1400,
   chassisHalfExtents: { x: 0.9, y: 0.4, z: 1.3 },
-  /** Suspension mount points (near underside of body). */
+  /**
+   * Suspension ray origins — MUST be outside the chassis cuboid
+   * (half-height 0.4 → bottom at y=-0.4). Origins inside the body with
+   * solid raycasts yield TOI=0 every frame and launch the vehicle.
+   */
   wheelPositions: [
-    { x: -hx, y: -0.2, z: hz },
-    { x: hx, y: -0.2, z: hz },
-    { x: -hx, y: -0.2, z: -hz },
-    { x: hx, y: -0.2, z: -hz },
+    { x: -hx, y: -0.42, z: hz },
+    { x: hx, y: -0.42, z: hz },
+    { x: -hx, y: -0.42, z: -hz },
+    { x: hx, y: -0.42, z: -hz },
   ],
   /** Distance from hardpoint to contact at zero compression. */
-  suspRestLength: 0.5,
-  suspMaxTravel: 0.28,
+  suspRestLength: 0.45,
+  suspMaxTravel: 0.25,
   /** ~1.2–1.5 Hz natural frequency for 1400 kg / 4 wheels — avoid launch spikes. */
   springStiffness: 32000,
   springDamping: 2800,

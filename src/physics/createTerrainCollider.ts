@@ -1,6 +1,7 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import type { LevelData } from "@/levelgen/types";
 import { heightfieldWorldCenter } from "@/shared/coords";
+import { TERRAIN_COLLIDER_GROUPS } from "@/physics/collisionGroups";
 
 /**
  * Rapier heightfield expects column-major heights where columns map to +X and
@@ -42,6 +43,8 @@ export function createTerrainCollider(
   desc.setTranslation(c.x, c.y, c.z);
   desc.setFriction(0.9);
   desc.setRestitution(0);
+  desc.setCollisionGroups(TERRAIN_COLLIDER_GROUPS);
+  desc.setSolverGroups(TERRAIN_COLLIDER_GROUPS);
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
   return world.createCollider(desc, body);
 }

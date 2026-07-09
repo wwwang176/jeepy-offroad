@@ -63,6 +63,34 @@ export class GameApp {
 
   async start(): Promise<void> {
     this.running = true;
+    if (import.meta.env.DEV) {
+      // Playwright / console diagnostics — pose sample while session active
+      (window as unknown as { __JEEP_DEBUG__?: () => unknown }).__JEEP_DEBUG__ =
+        () => {
+          if (!this.vehicle) {
+            return {
+              state: this.state.name,
+              session: this.sessionMode,
+              active: this.sessionActive,
+            };
+          }
+          const pose = this.vehicle.getPose();
+          const body = this.vehicle.getChassisBody();
+          const lv = body.linvel();
+          return {
+            state: this.state.name,
+            session: this.sessionMode,
+            active: this.sessionActive,
+            y: pose.position.y,
+            x: pose.position.x,
+            z: pose.position.z,
+            yaw: pose.yaw,
+            vy: lv.y,
+            mass: body.mass(),
+            grounded: this.vehicle.getGroundedCount?.() ?? -1,
+          };
+        };
+    }
     await this.enter(this.state);
     requestAnimationFrame((t) => this.frame(t));
   }
@@ -87,9 +115,10 @@ export class GameApp {
     this.sessionMode = null;
     this.input?.dispose();
     this.input = null;
+    this.vehicle?.dispose();
+    this.vehicle = null;
     this.physics?.destroy();
     this.physics = null;
-    this.vehicle = null;
     this.jeepMesh = null;
     this.three = null;
     this.level = null;
