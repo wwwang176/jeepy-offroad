@@ -419,7 +419,7 @@ export class GameApp {
       }
 
       const pose = this.vehicle.getPose();
-      syncJeepMesh(this.jeepMesh, pose);
+      syncJeepMesh(this.jeepMesh, pose, this.vehicle.getWheelVisuals());
 
       if (this.sessionMode === "level" && this.gameScene) {
         if (this.cameraRig) {

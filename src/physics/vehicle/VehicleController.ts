@@ -115,6 +115,40 @@ export class VehicleController {
     };
   }
 
+  /**
+   * Per-wheel visuals after updateVehicle(): suspension travel, spin, steer.
+   * suspensionLength is hardpoint → ground contact along the ray.
+   */
+  getWheelVisuals(): {
+    suspensionLength: number;
+    rotation: number;
+    steering: number;
+  }[] {
+    const rest = VEHICLE_CONFIG.suspRestLength;
+    const maxTravel = VEHICLE_CONFIG.suspMaxTravel;
+    const out: {
+      suspensionLength: number;
+      rotation: number;
+      steering: number;
+    }[] = [];
+    for (let i = 0; i < this.numWheels; i++) {
+      const raw = this.controller.wheelSuspensionLength(i);
+      // When airborne Rapier may report null or full extension
+      let susp =
+        raw != null && Number.isFinite(raw)
+          ? raw
+          : rest + maxTravel;
+      // Clamp to physical range
+      susp = Math.min(rest + maxTravel, Math.max(rest - maxTravel, susp));
+      out.push({
+        suspensionLength: susp,
+        rotation: this.controller.wheelRotation(i) ?? 0,
+        steering: this.controller.wheelSteering(i) ?? 0,
+      });
+    }
+    return out;
+  }
+
   reset(pose: Pose2D): void {
     this.body.setTranslation(
       { x: pose.position.x, y: pose.position.y, z: pose.position.z },
