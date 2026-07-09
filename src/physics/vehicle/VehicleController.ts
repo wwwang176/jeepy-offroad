@@ -146,7 +146,9 @@ export class VehicleController {
     const cfg = VEHICLE_CONFIG;
     const speed = this.controller.currentVehicleSpeed();
     const steerFactor = clamp(1 - Math.abs(speed) / 25, 0.25, 1);
-    const steer = input.steer * cfg.maxSteerRad * steerFactor;
+    // Input: +steer = right (D). Rapier vehicle steering is opposite of our
+    // keyboard convention, so negate for correct left/right.
+    const steer = -input.steer * cfg.maxSteerRad * steerFactor;
 
     let enginePerWheel = 0;
     let brakePerWheel = 0;
