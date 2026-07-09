@@ -23,6 +23,7 @@ import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
 import { FinishSystem } from "@/gameplay/FinishSystem";
 import { CheckpointSystem } from "@/gameplay/CheckpointSystem";
 import { RespawnSystem } from "@/gameplay/RespawnSystem";
+import { createHud, updateHud, type HudHandles } from "@/ui/hud";
 import type { BiomeId } from "@/shared/types";
 import type { InputActions } from "@/input/types";
 
@@ -51,6 +52,7 @@ export class GameApp {
   private checkpointSystem: CheckpointSystem | null = null;
   private respawnSystem: RespawnSystem | null = null;
   private cameraRig: CameraRig | null = null;
+  private hud: HudHandles | null = null;
   private acc = 0;
   private lastT = 0;
   private sessionActive = false;
@@ -83,6 +85,10 @@ export class GameApp {
     this.checkpointSystem = null;
     this.respawnSystem = null;
     this.cameraRig = null;
+    if (this.hud) {
+      this.hud.dispose();
+      this.hud = null;
+    }
     if (this.gameScene) {
       this.gameScene.dispose();
       this.gameScene = null;
@@ -173,14 +179,17 @@ export class GameApp {
       }
       case "playing": {
         clearUi();
-        const root = document.querySelector("#ui-root");
+        if (this.hud) {
+          this.hud.dispose();
+          this.hud = null;
+        }
+        const root = document.querySelector<HTMLElement>("#ui-root");
         if (root && this.level) {
-          root.innerHTML = `
-            <div class="panel" style="padding:8px 12px;margin:8px;opacity:0.9;font-size:13px">
-              cliffs · seed ${this.level.seed}
-              ${this.level.meta.usedFallback ? " · fallback path" : ""}
-            </div>
-          `;
+          this.hud = createHud(root, {
+            biomeId: this.level.biomeId,
+            seed: this.level.seed,
+            usedFallback: this.level.meta.usedFallback,
+          });
         }
         this.sessionActive = true;
         this.lastT = performance.now();
@@ -189,6 +198,10 @@ export class GameApp {
       }
       case "result": {
         this.sessionActive = false;
+        if (this.hud) {
+          this.hud.dispose();
+          this.hud = null;
+        }
         const root = document.querySelector("#ui-root");
         if (root) {
           root.innerHTML = `
@@ -371,6 +384,27 @@ export class GameApp {
       if (this.sessionMode === "level" && this.gameScene) {
         if (this.cameraRig) {
           this.cameraRig.update(dt, pose);
+        }
+        if (this.hud && this.level && this.state.name === "playing") {
+          updateHud(this.hud, {
+            biomeId: this.level.biomeId,
+            seed: this.level.seed,
+            usedFallback: this.level.meta.usedFallback,
+            worldSize: this.level.worldSize,
+            player: {
+              x: pose.position.x,
+              z: pose.position.z,
+              yaw: pose.yaw,
+            },
+            finish: {
+              x: this.level.finish.position.x,
+              z: this.level.finish.position.z,
+            },
+            checkpoints: this.level.checkpoints.map((c) => ({
+              x: c.position.x,
+              z: c.position.z,
+            })),
+          });
         }
         this.gameScene.renderer.render(
           this.gameScene.scene,
