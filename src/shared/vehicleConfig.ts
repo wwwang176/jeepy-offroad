@@ -95,8 +95,11 @@ export const VEHICLE_CONFIG = {
    */
   engineForce: 9000,
   brakeForce: 12000,
-  /** Rapier setWheelBrake scale (historical tuning constant). */
-  rapierBrakeScale: 0.02,
+  /**
+   * Rapier setWheelBrake scale on total brake force.
+   * 0.02 was far too weak (~0.17 m/s²); 0.4 ≈ firm service brakes.
+   */
+  rapierBrakeScale: 0.4,
   maxSteerRad: (32 * Math.PI) / 180,
   tireGripLong: 1.1,
   tireGripLat: 1.0,

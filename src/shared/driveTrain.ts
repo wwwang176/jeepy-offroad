@@ -63,7 +63,7 @@ export interface DriveCommand {
   /** Base service brake force before range scale (N, total). */
   baseBrakeForce: number;
   /**
-   * Legacy Rapier brake scale (existing controller used 0.02).
+   * Rapier setWheelBrake scale (matches VEHICLE_CONFIG.rapierBrakeScale).
    * Kept explicit so drive math stays unit-testable.
    */
   rapierBrakeScale?: number;
@@ -99,7 +99,7 @@ export function torqueAvailable(speed: number, range: DriveRange): number {
 export function computeDriveForces(cmd: DriveCommand): DriveForces {
   const cfg = DRIVE_RANGES[cmd.range];
   const n = Math.max(1, cmd.wheelCount);
-  const rapierBrakeScale = cmd.rapierBrakeScale ?? 0.02;
+  const rapierBrakeScale = cmd.rapierBrakeScale ?? 0.4;
   const available = torqueAvailable(cmd.speed, cmd.range);
 
   let engineTotal = 0;
