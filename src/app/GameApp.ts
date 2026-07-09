@@ -607,6 +607,7 @@ export class GameApp {
               x: c.position.x,
               z: c.position.z,
             })),
+            path: this.level.pathPolyline.map((p) => ({ x: p.x, z: p.z })),
           });
         }
         this.gameScene.renderer.render(

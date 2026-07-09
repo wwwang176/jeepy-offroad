@@ -12,6 +12,7 @@ export interface HudModel {
   player: { x: number; z: number; yaw: number };
   finish: { x: number; z: number };
   checkpoints: { x: number; z: number }[];
+  path?: { x: number; z: number }[];
 }
 
 export interface HudHandles {
@@ -114,6 +115,7 @@ export function updateHud(hud: HudHandles, model: HudModel): void {
     player: model.player,
     finish: model.finish,
     checkpoints: model.checkpoints,
+    path: model.path,
   };
   drawMinimap(hud.minimapCtx, minimapModel);
 }
