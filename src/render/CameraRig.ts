@@ -21,14 +21,11 @@ const FP_PITCH_MAX = 1.2;
 /** First-person free-look follow rate (higher = snappier). */
 const FP_LOOK_SMOOTH = 14;
 
-/** Third-person follow / look smoothing rate (higher = snappier). */
-const TP_FOLLOW_SMOOTH = 10;
 /**
- * EXP: hard-mount TP position + look to pose (no LERP).
- * Used to A/B test vehicle/camera "out of phase" vs smooth follow.
- * Set false to restore exponential follow.
+ * Third-person vertical / look-pitch ease rate (higher = snappier).
+ * Horizontal XZ is always hard-tracked so jeep mesh and camera stay in phase.
  */
-const TP_HARD_FOLLOW = true;
+const TP_FOLLOW_SMOOTH = 10;
 
 export class CameraRig {
   mode: CameraMode = "third";
@@ -157,21 +154,26 @@ export class CameraRig {
         pose.position.y + dist * sinP,
         pose.position.z - Math.cos(yaw) * horiz,
       );
-      // Look target tracks chassis with same smoothing as camera position —
-      // raw pose.y chatter was causing distant ghosting / micro-shake.
+      // Look aim at chassis (Y offset for hood framing).
       this.lookDesired.set(
         pose.position.x,
         pose.position.y + 1.2,
         pose.position.z,
       );
-      if (TP_HARD_FOLLOW || opts?.snap || dt <= 0 || !this.lookInitialized) {
+      if (opts?.snap || dt <= 0 || !this.lookInitialized) {
         this.current.copy(this.desired);
         this.look.copy(this.lookDesired);
         this.lookInitialized = true;
       } else {
+        // XZ hard-follow: same phase as jeep mesh (no chase lag / jump).
+        this.current.x = this.desired.x;
+        this.current.z = this.desired.z;
+        this.look.x = this.lookDesired.x;
+        this.look.z = this.lookDesired.z;
+        // Only ease height + look pitch (Y) to absorb suspension hop.
         const k = 1 - Math.exp(-TP_FOLLOW_SMOOTH * dt);
-        this.current.lerp(this.desired, k);
-        this.look.lerp(this.lookDesired, k);
+        this.current.y += (this.desired.y - this.current.y) * k;
+        this.look.y += (this.lookDesired.y - this.look.y) * k;
       }
       this.camera.position.copy(this.current);
       // Third person: world-up lookAt (stable chase)
