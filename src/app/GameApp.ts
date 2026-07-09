@@ -328,8 +328,16 @@ export class GameApp {
       new THREE.MeshLambertMaterial({ color: 0x5a6a4a }),
     );
     ground.position.y = 0;
+    ground.receiveShadow = true;
     this.three.scene.add(ground);
     this.jeepMesh = createJeepMesh();
+    this.jeepMesh.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh) {
+        m.castShadow = true;
+        m.receiveShadow = true;
+      }
+    });
     this.three.scene.add(this.jeepMesh);
     this.sessionMode = "sandbox";
     this.sessionActive = true;
@@ -417,6 +425,8 @@ export class GameApp {
         if (this.cameraRig) {
           this.cameraRig.update(dt, pose);
         }
+        // Local shadow cascade tracks camera (cheap open-world shadows)
+        this.gameScene.updateShadows(this.gameScene.camera.position);
         if (this.hud && this.level && this.state.name === "playing") {
           updateHud(this.hud, {
             biomeId: this.level.biomeId,
@@ -454,6 +464,7 @@ export class GameApp {
           pose.position.y + 1.2,
           pose.position.z,
         );
+        this.three.updateShadows(this.three.camera.position);
         this.three.renderer.render(this.three.scene, this.three.camera);
       }
     } else if (renderLevelScene && this.gameScene) {

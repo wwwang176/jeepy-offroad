@@ -6,6 +6,11 @@ import { idx, worldToGrid } from "@/shared/coords";
 import { clamp, lerp } from "@/shared/math";
 import { createTerrainMesh } from "./TerrainMesh";
 import { createJeepMesh, syncJeepMesh } from "./JeepMesh";
+import {
+  createFollowShadows,
+  setShadowFlags,
+  type FollowShadowHandles,
+} from "./followShadows";
 
 export type GameSceneHandles = {
   scene: THREE.Scene;
@@ -14,6 +19,8 @@ export type GameSceneHandles = {
   jeepMesh: THREE.Group;
   terrainMesh: THREE.Mesh;
   finishMesh: THREE.Object3D;
+  /** Recenters local shadow map around camera / vehicle. */
+  updateShadows: (follow: { x: number; y: number; z: number }) => void;
   dispose: () => void;
 };
 
@@ -325,22 +332,30 @@ export function createGameScene(
     level.start.position.z - 10,
   );
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x445544, 0.95);
+  // Soft fill light (no shadows) + camera-following sun with local shadow map
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x445544, 0.75);
   scene.add(hemi);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.85);
-  dir.position.set(40, 80, 20);
-  scene.add(dir);
+  const shadows: FollowShadowHandles = createFollowShadows(scene, renderer, {
+    radius: 52,
+    mapSize: 1024,
+  });
+  shadows.update(level.start.position);
 
   const terrainMesh = createTerrainMesh(level, biome);
+  // Large terrain: receive only (casting whole map is expensive / low value)
+  setShadowFlags(terrainMesh, { cast: false, receive: true });
   scene.add(terrainMesh);
 
   const finishMesh = createFinishPillar(level.finish, biome.waterColor);
+  setShadowFlags(finishMesh, { cast: true, receive: true });
   scene.add(finishMesh);
 
   const streamGroup = createStreamMeshes(level, biome.waterColor);
+  setShadowFlags(streamGroup, { cast: false, receive: true });
   scene.add(streamGroup);
 
   const propGroup = createDecorativeProps(level, biome);
+  setShadowFlags(propGroup, { cast: true, receive: false });
   scene.add(propGroup);
 
   // Simple path markers (start pad)
@@ -353,9 +368,11 @@ export function createGameScene(
     level.start.position.y + 0.05,
     level.start.position.z,
   );
+  startPad.receiveShadow = true;
   scene.add(startPad);
 
   const jeepMesh = createJeepMesh();
+  setShadowFlags(jeepMesh, { cast: true, receive: true });
   scene.add(jeepMesh);
 
   const onResize = (): void => {
@@ -372,8 +389,12 @@ export function createGameScene(
     jeepMesh,
     terrainMesh,
     finishMesh,
+    updateShadows: (follow) => {
+      shadows.update(follow);
+    },
     dispose: () => {
       window.removeEventListener("resize", onResize);
+      shadows.dispose();
       terrainMesh.geometry.dispose();
       (terrainMesh.material as THREE.Material).dispose();
       disposeObject3D(finishMesh);
