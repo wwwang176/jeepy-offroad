@@ -26,4 +26,12 @@ export const VEHICLE_CONFIG = {
   frictionEllipse: true,
 } as const;
 
+/** Extra clearance above chassis half-extent when placing at a ground Y. */
+export const SPAWN_Y_OFFSET = 1.2;
+
+/** Chassis center Y for spawn/respawn given ground sample Y. */
+export function chassisSpawnY(groundY: number): number {
+  return groundY + VEHICLE_CONFIG.chassisHalfExtents.y + SPAWN_Y_OFFSET;
+}
+
 export type VehicleConfig = typeof VEHICLE_CONFIG;

@@ -1,5 +1,6 @@
 import type { LevelData } from "@/levelgen/types";
 import type { Pose2D, Vec3 } from "@/shared/types";
+import { chassisSpawnY } from "@/shared/vehicleConfig";
 
 export class CheckpointSystem {
   private last: Pose2D;
@@ -19,7 +20,7 @@ export class CheckpointSystem {
         this.last = {
           position: {
             x: cp.position.x,
-            y: cp.position.y + 1.2,
+            y: chassisSpawnY(cp.position.y),
             z: cp.position.z,
           },
           yaw: cp.yaw,

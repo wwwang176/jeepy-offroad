@@ -212,14 +212,15 @@ export class VehicleController {
       const vLong = velAt.x * wFwd.x + velAt.y * wFwd.y + velAt.z * wFwd.z;
       const vLat = velAt.x * wRight.x + velAt.y * wRight.y + velAt.z * wRight.z;
 
-      // Drive / brake along forward
+      // Drive / brake along forward (AWD: split engine force across wheels)
+      const wheelCount = this.wheels.length;
       let drive = 0;
       if (input.brake > 0.1) {
-        // Brake: oppose longitudinal velocity
-        drive = -clamp(vLong, -1, 1) * cfg.brakeForce * input.brake;
+        // Brake: oppose longitudinal velocity (per-wheel share of total brake)
+        drive = -clamp(vLong, -1, 1) * (cfg.brakeForce / wheelCount) * input.brake;
       } else {
-        // Engine: signed throttle (negative = reverse)
-        drive = input.throttle * cfg.engineForce;
+        // Engine: signed throttle (negative = reverse); total ≈ engineForce
+        drive = input.throttle * (cfg.engineForce / wheelCount);
       }
 
       // Lateral friction (oppose side slip)
@@ -232,7 +233,8 @@ export class VehicleController {
         lon += -vLong * cfg.tireGripLong * 200;
       }
 
-      // Friction ellipse clamp (if enabled)
+      // Friction ellipse clamp: normalize into unit ellipse, scale back only by 1/mag
+      // (lat/mag already equals (latN/mag)*maxLat — do NOT multiply maxLat again)
       if (cfg.frictionEllipse) {
         const maxLat = cfg.tireGripLat * suspForce;
         const maxLon = cfg.tireGripLong * Math.max(suspForce, 1);
@@ -240,14 +242,9 @@ export class VehicleController {
         const lonN = lon / (maxLon || 1);
         const mag = Math.hypot(latN, lonN);
         if (mag > 1) {
-          lat = (lat / mag);
-          lon = (lon / mag);
-          // re-scale to max circle in force space
-          lat *= maxLat;
-          lon *= maxLon;
-        } else {
-          lat = clamp(lat, -maxLat, maxLat);
-          lon = clamp(lon, -maxLon, maxLon);
+          const scale = 1 / mag;
+          lat *= scale;
+          lon *= scale;
         }
       }
 

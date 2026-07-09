@@ -21,7 +21,7 @@ import type { LevelData } from "@/levelgen/types";
 import { getBiome } from "@/biome/registry";
 import { normalizeSeed } from "@/shared/seed";
 import { VEHICLE_CAPABILITIES } from "@/shared/vehicleCapabilities";
-import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
+import { chassisSpawnY } from "@/shared/vehicleConfig";
 import { FinishSystem } from "@/gameplay/FinishSystem";
 import { CheckpointSystem } from "@/gameplay/CheckpointSystem";
 import { RespawnSystem } from "@/gameplay/RespawnSystem";
@@ -30,7 +30,6 @@ import type { BiomeId } from "@/shared/types";
 import type { InputActions } from "@/input/types";
 
 const FIXED_DT = 1 / 60;
-const SPAWN_Y_OFFSET = 1.2;
 
 const ZERO_DRIVE: Pick<InputActions, "throttle" | "steer" | "brake"> = {
   throttle: 0,
@@ -85,9 +84,11 @@ export class GameApp {
   private teardownSession(): void {
     this.sessionActive = false;
     this.sessionMode = null;
+    this.input?.dispose();
+    this.input = null;
+    this.physics?.destroy();
     this.physics = null;
     this.vehicle = null;
-    this.input = null;
     this.jeepMesh = null;
     this.three = null;
     this.level = null;
@@ -238,14 +239,10 @@ export class GameApp {
     // Warm broadphase so raycasts hit heightfield on first vehicle update.
     this.physics.step();
 
-    const spawnY =
-      level.start.position.y +
-      VEHICLE_CONFIG.chassisHalfExtents.y +
-      SPAWN_Y_OFFSET;
     const spawnPose = {
       position: {
         x: level.start.position.x,
-        y: spawnY,
+        y: chassisSpawnY(level.start.position.y),
         z: level.start.position.z,
       },
       yaw: level.start.yaw,

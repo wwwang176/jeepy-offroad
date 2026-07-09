@@ -16,6 +16,11 @@ export class PhysicsWorld {
     this.world.step();
   }
 
+  /** Free Rapier WASM world resources (call on session teardown). */
+  destroy(): void {
+    this.world.free();
+  }
+
   createGroundPlane(y = 0): void {
     const body = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(0, y, 0),
