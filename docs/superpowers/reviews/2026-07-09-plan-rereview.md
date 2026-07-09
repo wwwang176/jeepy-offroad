@@ -69,6 +69,12 @@ Architecture, solvability pipeline, task order, tests, and contracts no longer w
 
 ## Verdict
 
-**APPROVE WITH FIXES**
+**APPROVE WITH FIXES** (at re-review time)
 
 Safe to start execution of Tasks 1–7 as written. **Patch Task 8 vehicle section before or at the start of Task 8.** Not a re-BLOCK on architecture or solvability.
+
+---
+
+## Follow-up (same day)
+
+**2026-07-09:** Task 8 in the plan was expanded with a full copy-pasteable `VehicleController` (suspension rays, spring/damper, friction ellipse, drive/brake/reverse, anti-roll), plus complete `JeepMesh` / `createRenderer` / flat-sandbox wiring. Residual Major item addressed in plan text; ready for full execution.

@@ -1472,14 +1472,21 @@ git commit -m "feat: game state machine shell with boot and error states"
 
 **Files:**
 - Create: `src/physics/PhysicsWorld.ts`, `src/physics/vehicle/VehicleController.ts`, `src/physics/vehicle/VehicleConfig.ts`, `src/render/createRenderer.ts`, `src/render/JeepMesh.ts`
-- Modify: `GameApp` to support a **dev flat-drive mode** or temporary playing path on plane for manual gate (do not invent second state machine — add `startFlatSandbox()` only if needed, prefer `loading` with a `debugFlat` flag **or** wire plane inside playing after a hard-coded debug level later; simplest: private method called from menu stub button "Flat test")
+- Modify: `src/app/GameApp.ts` — menu stub button **"Flat test"** starts flat sandbox (no second state machine)
 
 **Interfaces:**
 - `PhysicsWorld.create()`, `getWorld()`, `step()`, `createGroundPlane()`
-- `VehicleController.update(dt, input, world)`, `getPose()`, `reset(pose)`
+- `VehicleController` — constructor `(world, pose)`, `update(dt, input, world)`, `getPose()`, `reset(pose)`, `getChassisBody()`
 
-- [ ] **Step 1: PhysicsWorld**
+**Fixed-step contract (must match Global Constraints):**
+1. Sample input
+2. `vehicle.update(dt, input, world)` — raycasts + apply forces only (no `world.step` inside)
+3. `physics.step()`
+4. Sync Three mesh from `getPose()`
 
+- [ ] **Step 1: PhysicsWorld + VehicleConfig re-export**
+
+`src/physics/PhysicsWorld.ts`:
 ```ts
 import RAPIER from "@dimforge/rapier3d-compat";
 
@@ -1487,7 +1494,7 @@ export class PhysicsWorld {
   private constructor(private readonly world: RAPIER.World) {}
 
   static async create(): Promise<PhysicsWorld> {
-    // RAPIER.init already done in boot; safe to call world create
+    // RAPIER.init already done in boot
     return new PhysicsWorld(new RAPIER.World({ x: 0, y: -9.81, z: 0 }));
   }
 
@@ -1503,39 +1510,493 @@ export class PhysicsWorld {
     const body = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.fixed().setTranslation(0, y, 0),
     );
-    this.world.createCollider(RAPIER.ColliderDesc.cuboid(500, 0.1, 500), body);
+    // Cuboid half-extents: top surface at y + 0.1
+    this.world.createCollider(
+      RAPIER.ColliderDesc.cuboid(500, 0.1, 500).setTranslation(0, 0, 0),
+      body,
+    );
   }
 }
 ```
 
-- [ ] **Step 2: VehicleController (full, no placeholders)**
+`src/physics/vehicle/VehicleConfig.ts`:
+```ts
+export { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
+export type { VehicleConfig } from "@/shared/vehicleConfig";
+```
 
-Implement complete class in `src/physics/vehicle/VehicleController.ts`:
+- [ ] **Step 2: Full VehicleController (copy-pasteable, no skeleton)**
+
+Create `src/physics/vehicle/VehicleController.ts` with the **entire** file below. Do not leave method bodies as comments.
 
 ```ts
-export class VehicleController {
-  constructor(world: RAPIER.World, pose: Pose2D) { /* create body + collider */ }
+import RAPIER from "@dimforge/rapier3d-compat";
+import type { InputActions } from "@/input/types";
+import type { Pose2D, Vec3 } from "@/shared/types";
+import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
+import { clamp } from "@/shared/math";
 
-  update(dt: number, input: InputActions, world: RAPIER.World): void {
-    // 1) raycast wheels in world
-    // 2) spring damper forces
-    // 3) if input.brake > 0 => brakeForce; else engineForce * throttle (signed)
-    // 4) steer front wheels
+const FIXED_DT = 1 / 60;
+
+type WheelState = {
+  localPos: { x: number; y: number; z: number };
+  isFront: boolean;
+  prevCompression: number;
+  grounded: boolean;
+};
+
+function quatRotate(
+  q: { x: number; y: number; z: number; w: number },
+  v: { x: number; y: number; z: number },
+): { x: number; y: number; z: number } {
+  // q * v * q^-1
+  const ix = q.w * v.x + q.y * v.z - q.z * v.y;
+  const iy = q.w * v.y + q.z * v.x - q.x * v.z;
+  const iz = q.w * v.z + q.x * v.y - q.y * v.x;
+  const iw = -q.x * v.x - q.y * v.y - q.z * v.z;
+  return {
+    x: ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y,
+    y: iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z,
+    z: iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x,
+  };
+}
+
+function yawFromQuat(q: { x: number; y: number; z: number; w: number }): number {
+  // yaw around +Y
+  const siny = 2 * (q.w * q.y + q.z * q.x);
+  const cosy = 1 - 2 * (q.y * q.y + q.x * q.x);
+  return Math.atan2(siny, cosy);
+}
+
+export class VehicleController {
+  private readonly body: RAPIER.RigidBody;
+  private readonly wheels: WheelState[];
+  private steerAngle = 0;
+
+  constructor(world: RAPIER.World, pose: Pose2D) {
+    const he = VEHICLE_CONFIG.chassisHalfExtents;
+    const rbDesc = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(pose.position.x, pose.position.y, pose.position.z)
+      .setRotation({
+        x: 0,
+        y: Math.sin(pose.yaw / 2),
+        z: 0,
+        w: Math.cos(pose.yaw / 2),
+      })
+      .setLinearDamping(0.15)
+      .setAngularDamping(0.4)
+      .setCanSleep(false);
+    this.body = world.createRigidBody(rbDesc);
+    const coll = RAPIER.ColliderDesc.cuboid(he.x, he.y, he.z)
+      .setMass(VEHICLE_CONFIG.massKg)
+      .setFriction(0.8)
+      .setRestitution(0.0);
+    world.createCollider(coll, this.body);
+
+    this.wheels = VEHICLE_CONFIG.wheelPositions.map((p, i) => ({
+      localPos: { x: p.x, y: p.y, z: p.z },
+      isFront: i < 2, // FL, FR, RL, RR
+      prevCompression: 0,
+      grounded: false,
+    }));
   }
 
-  getPose(): { position: Vec3; yaw: number; rotation: { x: number; y: number; z: number; w: number } };
+  getChassisBody(): RAPIER.RigidBody {
+    return this.body;
+  }
 
-  reset(pose: Pose2D): void;
+  getPose(): {
+    position: Vec3;
+    yaw: number;
+    rotation: { x: number; y: number; z: number; w: number };
+  } {
+    const t = this.body.translation();
+    const r = this.body.rotation();
+    return {
+      position: { x: t.x, y: t.y, z: t.z },
+      yaw: yawFromQuat(r),
+      rotation: { x: r.x, y: r.y, z: r.z, w: r.w },
+    };
+  }
+
+  reset(pose: Pose2D): void {
+    this.body.setTranslation(
+      { x: pose.position.x, y: pose.position.y, z: pose.position.z },
+      true,
+    );
+    this.body.setRotation(
+      {
+        x: 0,
+        y: Math.sin(pose.yaw / 2),
+        z: 0,
+        w: Math.cos(pose.yaw / 2),
+      },
+      true,
+    );
+    this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.steerAngle = 0;
+    for (const w of this.wheels) {
+      w.prevCompression = 0;
+      w.grounded = false;
+    }
+  }
+
+  /**
+   * Apply suspension, tire friction, drive/brake. Does NOT call world.step().
+   * `dt` should be FIXED_DT (1/60) when used in the fixed accumulator.
+   */
+  update(dt: number, input: InputActions, world: RAPIER.World): void {
+    const stepDt = dt > 0 ? dt : FIXED_DT;
+    const cfg = VEHICLE_CONFIG;
+    const origin = this.body.translation();
+    const rot = this.body.rotation();
+    const linvel = this.body.linvel();
+    const angvel = this.body.angvel();
+
+    // Speed along chassis forward (local +Z)
+    const forwardWorld = quatRotate(rot, { x: 0, y: 0, z: 1 });
+    const speed =
+      linvel.x * forwardWorld.x +
+      linvel.y * forwardWorld.y +
+      linvel.z * forwardWorld.z;
+
+    // Speed-sensitive steer
+    const steerFactor = clamp(1 - Math.abs(speed) / 25, 0.25, 1);
+    const targetSteer = input.steer * cfg.maxSteerRad * steerFactor;
+    this.steerAngle += (targetSteer - this.steerAngle) * clamp(10 * stepDt, 0, 1);
+
+    const rayLen = cfg.suspRestLength + cfg.suspMaxTravel;
+    let groundedCount = 0;
+
+    for (let i = 0; i < this.wheels.length; i++) {
+      const wheel = this.wheels[i];
+      const localTop = wheel.localPos;
+      const worldTop = {
+        x: origin.x + quatRotate(rot, localTop).x,
+        y: origin.y + quatRotate(rot, localTop).y,
+        z: origin.z + quatRotate(rot, localTop).z,
+      };
+      const down = quatRotate(rot, { x: 0, y: -1, z: 0 });
+      const ray = new RAPIER.Ray(worldTop, down);
+      const hit = world.castRay(ray, rayLen, true, undefined, undefined, undefined, this.body);
+
+      if (!hit) {
+        wheel.grounded = false;
+        wheel.prevCompression = 0;
+        continue;
+      }
+
+      const dist = hit.timeOfImpact;
+      const compression = clamp(cfg.suspRestLength - dist, 0, cfg.suspMaxTravel);
+      const compressionVel = (compression - wheel.prevCompression) / stepDt;
+      wheel.prevCompression = compression;
+      wheel.grounded = true;
+      groundedCount++;
+
+      // Spring + damper along suspension (world up from ray normal approx -down)
+      const springF = compression * cfg.springStiffness;
+      const dampF = compressionVel * cfg.springDamping;
+      const suspForce = Math.max(0, springF + dampF);
+      const forceDir = { x: -down.x, y: -down.y, z: -down.z };
+      this.body.addForceAtPoint(
+        {
+          x: forceDir.x * suspForce,
+          y: forceDir.y * suspForce,
+          z: forceDir.z * suspForce,
+        },
+        worldTop,
+        true,
+      );
+
+      // Contact point
+      const contact = {
+        x: worldTop.x + down.x * dist,
+        y: worldTop.y + down.y * dist,
+        z: worldTop.z + down.z * dist,
+      };
+
+      // Wheel forward in world (steer front)
+      const steer = wheel.isFront ? this.steerAngle : 0;
+      const localFwd = {
+        x: Math.sin(steer),
+        y: 0,
+        z: Math.cos(steer),
+      };
+      const localRight = {
+        x: Math.cos(steer),
+        y: 0,
+        z: -Math.sin(steer),
+      };
+      const wFwd = quatRotate(rot, localFwd);
+      const wRight = quatRotate(rot, localRight);
+
+      // Velocity at contact (lin + ang x r)
+      const rx = contact.x - origin.x;
+      const ry = contact.y - origin.y;
+      const rz = contact.z - origin.z;
+      const velAt = {
+        x: linvel.x + (angvel.y * rz - angvel.z * ry),
+        y: linvel.y + (angvel.z * rx - angvel.x * rz),
+        z: linvel.z + (angvel.x * ry - angvel.y * rx),
+      };
+
+      const vLong = velAt.x * wFwd.x + velAt.y * wFwd.y + velAt.z * wFwd.z;
+      const vLat = velAt.x * wRight.x + velAt.y * wRight.y + velAt.z * wRight.z;
+
+      // Drive / brake along forward
+      let drive = 0;
+      if (input.brake > 0.1) {
+        // Brake: oppose longitudinal velocity
+        drive = -clamp(vLong, -1, 1) * cfg.brakeForce * input.brake;
+      } else {
+        // Engine: signed throttle (negative = reverse)
+        drive = input.throttle * cfg.engineForce;
+      }
+
+      // Lateral friction (oppose side slip)
+      let lat = -vLat * cfg.tireGripLat * (cfg.massKg / 4) * 8;
+
+      // Longitudinal friction / drive blend
+      let lon = drive;
+      // Damping rolling when no input
+      if (Math.abs(input.throttle) < 0.05 && input.brake < 0.1) {
+        lon += -vLong * cfg.tireGripLong * 200;
+      }
+
+      // Friction ellipse clamp (if enabled)
+      if (cfg.frictionEllipse) {
+        const maxLat = cfg.tireGripLat * suspForce;
+        const maxLon = cfg.tireGripLong * Math.max(suspForce, 1);
+        const latN = lat / (maxLat || 1);
+        const lonN = lon / (maxLon || 1);
+        const mag = Math.hypot(latN, lonN);
+        if (mag > 1) {
+          lat = (lat / mag);
+          lon = (lon / mag);
+          // re-scale to max circle in force space
+          lat *= maxLat;
+          lon *= maxLon;
+        } else {
+          lat = clamp(lat, -maxLat, maxLat);
+          lon = clamp(lon, -maxLon, maxLon);
+        }
+      }
+
+      this.body.addForceAtPoint(
+        {
+          x: wFwd.x * lon + wRight.x * lat,
+          y: wFwd.y * lon + wRight.y * lat,
+          z: wFwd.z * lon + wRight.z * lat,
+        },
+        contact,
+        true,
+      );
+    }
+
+    // Soft anti-roll: damp local roll rate when airborne wheels uneven (simple angvel damp on Z in chassis)
+    if (groundedCount >= 2) {
+      const localAng = quatRotate(
+        { x: -rot.x, y: -rot.y, z: -rot.z, w: rot.w },
+        angvel,
+      );
+      // torque around local Z (roll) damping
+      const rollDamp = -localAng.z * 800;
+      const rollAxis = quatRotate(rot, { x: 0, y: 0, z: 1 });
+      this.body.addTorque(
+        {
+          x: rollAxis.x * rollDamp,
+          y: rollAxis.y * rollDamp,
+          z: rollAxis.z * rollDamp,
+        },
+        true,
+      );
+    }
+  }
 }
 ```
 
-Re-export config: `src/physics/vehicle/VehicleConfig.ts` → `export { VEHICLE_CONFIG } from "@/shared/vehicleConfig"`.
+**Notes for implementer (do not skip):**
+- If Rapier `castRay` signature differs for installed version, keep excluding `this.body` from hits and use TOI distance the same way.
+- Prefer `addForceAtPoint` / `addTorque` continuous forces (reset each step by Rapier); if forces accumulate wrongly in your Rapier version, switch to `applyImpulse` scaled by `dt` consistently for all wheels.
+- Chassis collider friction is secondary; most grip comes from tire forces above.
+- AWD: all four wheels receive drive force when grounded (loop applies to every grounded wheel).
 
-- [ ] **Step 3: Wire flat sandbox from menu stub button**
+- [ ] **Step 3: Minimal render helpers**
 
-Keyboard + fixed timestep + Three box jeep. Manual gate: 60s drive/turn/brake/reverse stable.
+`src/render/createRenderer.ts`:
+```ts
+import * as THREE from "three";
 
-- [ ] **Step 4: Commit**
+export function createRenderer(canvas: HTMLCanvasElement): {
+  renderer: THREE.WebGLRenderer;
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+} {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87a0b5);
+  const camera = new THREE.PerspectiveCamera(
+    55,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    500,
+  );
+  camera.position.set(0, 5, -10);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+  scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir.position.set(20, 40, 10);
+  scene.add(dir);
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+  });
+  return { renderer, scene, camera };
+}
+```
+
+`src/render/JeepMesh.ts`:
+```ts
+import * as THREE from "three";
+import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
+
+export function createJeepMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const he = VEHICLE_CONFIG.chassisHalfExtents;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(he.x * 2, he.y * 2, he.z * 2),
+    new THREE.MeshLambertMaterial({ color: 0xc45c26 }),
+  );
+  g.add(body);
+  const cabin = new THREE.Mesh(
+    new THREE.BoxGeometry(he.x * 1.6, he.y * 1.2, he.z * 0.9),
+    new THREE.MeshLambertMaterial({ color: 0x333333 }),
+  );
+  cabin.position.set(0, he.y * 1.2, -he.z * 0.1);
+  g.add(cabin);
+  for (const w of VEHICLE_CONFIG.wheelPositions) {
+    const wheel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.35, 0.25, 10),
+      new THREE.MeshLambertMaterial({ color: 0x222222 }),
+    );
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(w.x, w.y - 0.35, w.z);
+    g.add(wheel);
+  }
+  return g;
+}
+
+export function syncJeepMesh(
+  mesh: THREE.Group,
+  pose: {
+    position: { x: number; y: number; z: number };
+    rotation: { x: number; y: number; z: number; w: number };
+  },
+): void {
+  mesh.position.set(pose.position.x, pose.position.y, pose.position.z);
+  mesh.quaternion.set(
+    pose.rotation.x,
+    pose.rotation.y,
+    pose.rotation.z,
+    pose.rotation.w,
+  );
+}
+```
+
+- [ ] **Step 4: Wire Flat test from menu stub**
+
+In `GameApp` menu enter, replace stub HTML with a button that calls a private `startFlatSandbox()`:
+
+```ts
+// Inside GameApp — fields for sandbox session
+private physics: PhysicsWorld | null = null;
+private vehicle: VehicleController | null = null;
+private input: InputRouter | null = null;
+private jeepMesh: THREE.Group | null = null;
+private three: ReturnType<typeof createRenderer> | null = null;
+private acc = 0;
+private lastT = 0;
+private sandboxActive = false;
+
+private async startFlatSandbox(): Promise<void> {
+  const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas");
+  if (!canvas) throw new Error("Missing canvas");
+
+  this.physics = await PhysicsWorld.create();
+  this.physics.createGroundPlane(0);
+  this.vehicle = new VehicleController(this.physics.getWorld(), {
+    position: { x: 0, y: 2, z: 0 },
+    yaw: 0,
+  });
+  this.input = new InputRouter(new KeyboardProvider());
+  this.three = createRenderer(canvas);
+  // flat visual ground
+  const ground = new THREE.Mesh(
+    new THREE.BoxGeometry(200, 0.2, 200),
+    new THREE.MeshLambertMaterial({ color: 0x5a6a4a }),
+  );
+  ground.position.y = 0;
+  this.three.scene.add(ground);
+  this.jeepMesh = createJeepMesh();
+  this.three.scene.add(this.jeepMesh);
+  this.sandboxActive = true;
+  this.lastT = performance.now();
+  this.acc = 0;
+}
+
+// In frame():
+private frame(t: number): void {
+  if (!this.running) return;
+  if (this.sandboxActive && this.physics && this.vehicle && this.input && this.three && this.jeepMesh) {
+    const dt = Math.min(0.05, (t - this.lastT) / 1000);
+    this.lastT = t;
+    this.acc += dt;
+    const fixed = 1 / 60;
+    while (this.acc >= fixed) {
+      const actions = this.input.sample();
+      this.vehicle.update(fixed, actions, this.physics.getWorld());
+      this.physics.step();
+      this.acc -= fixed;
+    }
+    const pose = this.vehicle.getPose();
+    syncJeepMesh(this.jeepMesh, pose);
+    // simple chase cam for sandbox
+    const yaw = pose.yaw;
+    this.three.camera.position.set(
+      pose.position.x - Math.sin(yaw) * 8,
+      pose.position.y + 3.5,
+      pose.position.z - Math.cos(yaw) * 8,
+    );
+    this.three.camera.lookAt(
+      pose.position.x,
+      pose.position.y + 1.2,
+      pose.position.z,
+    );
+    this.three.renderer.render(this.three.scene, this.three.camera);
+  }
+  requestAnimationFrame((nt) => this.frame(nt));
+}
+```
+
+Menu stub must include:
+```html
+<button type="button" id="flat-test">Flat test</button>
+```
+and `onclick` → `void this.startFlatSandbox()`.
+
+- [ ] **Step 5: Manual gate**
+
+```bash
+npm run dev
+```
+
+Click **Flat test**. Drive 60s: throttle, steer, brake (W+S), reverse (S alone). Vehicle must not explode/tumble unrecoverably on flat ground; stop and reverse must work.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/physics src/render/createRenderer.ts src/render/JeepMesh.ts src/app
@@ -2005,8 +2466,8 @@ git commit -m "chore: MVP harden, README, and ship checklist"
 5. **API names:** aligned to locked contracts table.  
 6. **Order:** Task 7 state machine before Task 9 terrain.  
 7. **S5:** full runs both cameras.  
-8. **No placeholders:** removed `...` debug APIs and empty camera branches.  
-9. **Brake/reverse:** locked globally and in KeyboardProvider.  
+8. **No placeholders:** Task 8 `VehicleController` is a full copy-pasteable implementation (not a skeleton). Camera/minimap tasks also include complete code.  
+9. **Brake/reverse:** locked globally and in KeyboardProvider; vehicle applies brake vs signed throttle per Global Constraints.  
 10. **Shared `coords.ts`:** mesh/collider/minimap use one mapping.
 
 ---
@@ -2015,8 +2476,9 @@ git commit -m "chore: MVP harden, README, and ship checklist"
 
 - 2026-07-09: Initial plan  
 - 2026-07-09: Codex plan review **BLOCK**  
-- 2026-07-09: Must-fixes applied (this revision)
-
+- 2026-07-09: Must-fixes applied  
+- 2026-07-09: Codex re-review **APPROVE WITH FIXES** (Task 8 vehicle skeleton residual)  
+- 2026-07-09: Task 8 full `VehicleController` implementation written into plan
 ---
 
 ## Execution Handoff
