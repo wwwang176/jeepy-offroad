@@ -33,7 +33,14 @@ export type OffroadFxWheelSample = {
    * Used to derive tread speed for dust kick; omit → throttle proxy.
    */
   rotation?: number;
+  /** Front-wheel steer (rad), same as Rapier / mesh. Rear = 0. */
+  steering?: number;
 };
+
+/** Dust spray elevation above wheel plane (rad) — body-relative loft. */
+const DUST_ELEV_RAD = (28 * Math.PI) / 180;
+const SPLASH_ELEV_RAD = (40 * Math.PI) / 180;
+const BODY_ELEV_RAD = (32 * Math.PI) / 180;
 
 export type OffroadFxSample = {
   position: { x: number; y: number; z: number };
@@ -102,8 +109,14 @@ export class OffroadFx {
   private readonly _q = new THREE.Quaternion();
   private readonly _local = new THREE.Vector3();
   private readonly _world = new THREE.Vector3();
-  private readonly _fwd = new THREE.Vector3();
-  private readonly _right = new THREE.Vector3();
+  /** Chassis basis in world (from full pose quat — follows pitch/roll/yaw). */
+  private readonly _chassisFwd = new THREE.Vector3();
+  private readonly _chassisRight = new THREE.Vector3();
+  private readonly _chassisUp = new THREE.Vector3();
+  /** Per-puff scratch: wheel forward / right / spray dir. */
+  private readonly _wheelFwd = new THREE.Vector3();
+  private readonly _wheelRight = new THREE.Vector3();
+  private readonly _sprayDir = new THREE.Vector3();
 
   constructor(scene: THREE.Scene, opts?: OffroadFxOptions) {
     this.group.name = "offroad-fx";
@@ -192,9 +205,10 @@ export class OffroadFx {
     const latAbs = Math.abs(lat);
     const rangeBoost = sample.driveRange === "L" ? 1.35 : 1;
 
-    // Chassis axes in world XZ for spray direction
-    this._fwd.set(Math.sin(yaw), 0, Math.cos(yaw));
-    this._right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+    // Full body axes (local +Z fwd, +X right, +Y up) — spray follows pitch/roll
+    this._chassisFwd.set(0, 0, 1).applyQuaternion(this._q).normalize();
+    this._chassisRight.set(1, 0, 0).applyQuaternion(this._q).normalize();
+    this._chassisUp.set(0, 1, 0).applyQuaternion(this._q).normalize();
 
     const nWheels = Math.min(4, sample.wheels.length);
     const radius = VEHICLE_CONFIG.wheelRadius;
@@ -269,19 +283,21 @@ export class OffroadFx {
         });
         SPLASH_ACC[i] += splashR * dtClamped;
 
+        const steer = w.steering ?? 0;
         while (DUST_ACC[i] >= 1) {
           DUST_ACC[i] -= 1;
           this.emitDustPuff(
             contactPos,
             treadMps,
             lat,
+            steer,
             sample.throttle,
             dustCol,
           );
         }
         while (SPLASH_ACC[i] >= 1) {
           SPLASH_ACC[i] -= 1;
-          this.emitSplashPuff(contactPos, treadMps, lat);
+          this.emitSplashPuff(contactPos, treadMps, lat, steer);
         }
       } else {
         DUST_ACC[i] = 0;
@@ -313,10 +329,10 @@ export class OffroadFx {
         BODY_ACC.v -= 1;
         const p = bodyPts[(Math.random() * bodyN) | 0];
         const wet = streamWetness(p.x, p.z, this.streams);
-        // Body scrapes: no wheel spin — throttle proxy for kick direction/mag
+        // Body scrapes: chassis rear + loft (no wheel steer)
         const bodyTread = sample.throttle * 12;
         if (wet > 0.45) {
-          this.emitSplashPuff(p, bodyTread, lat);
+          this.emitSplashPuff(p, bodyTread, lat, 0);
         } else {
           const col = this.sampleDustColor(p.x, p.z);
           this.emitBodyDustPuff(p, bodyTread, lat, col);
@@ -400,6 +416,62 @@ export class OffroadFx {
     });
   }
 
+  /**
+   * Wheel rolling axis in world: chassis basis rotated by steer about body up.
+   * Chassis local: +Z forward, +X right (matches JeepMesh / physics).
+   */
+  private setWheelBasis(steerRad: number): void {
+    const c = Math.cos(steerRad);
+    const s = Math.sin(steerRad);
+    // wheelFwd = R_up(steer) * chassisFwd
+    this._wheelFwd
+      .copy(this._chassisFwd)
+      .multiplyScalar(c)
+      .addScaledVector(this._chassisRight, s)
+      .normalize();
+    // wheelRight = R_up(steer) * chassisRight
+    this._wheelRight
+      .copy(this._chassisRight)
+      .multiplyScalar(c)
+      .addScaledVector(this._chassisFwd, -s)
+      .normalize();
+  }
+
+  /**
+   * Spray velocity: opposite wheel roll (body+steer), lofted by elevation
+   * toward chassis up (not world-horizontal rear).
+   */
+  private sprayVelocity(
+    treadMps: number,
+    steerRad: number,
+    elevRad: number,
+    speedScale: number,
+    sideKick: number,
+    throttleHint: number,
+  ): { vx: number; vy: number; vz: number } {
+    this.setWheelBasis(steerRad);
+    // Forward tread → spray opposite wheel forward
+    const along = -Math.sign(treadMps || throttleHint || 1);
+    const elev = elevRad + (Math.random() - 0.5) * 0.08;
+    const ce = Math.cos(elev);
+    const se = Math.sin(elev);
+    // dir = along*wheelFwd * cos(elev) + chassisUp * sin(elev) + side*wheelRight
+    this._sprayDir
+      .copy(this._wheelFwd)
+      .multiplyScalar(along * ce)
+      .addScaledVector(this._chassisUp, se)
+      .addScaledVector(this._wheelRight, sideKick * 0.15)
+      .normalize();
+    const mag =
+      (speedScale + Math.abs(treadMps) * 0.12) * 3 * (0.85 + Math.random() * 0.3);
+    const j = () => (Math.random() - 0.5) * 0.35;
+    return {
+      vx: this._sprayDir.x * mag + j(),
+      vy: this._sprayDir.y * mag + j(),
+      vz: this._sprayDir.z * mag + j(),
+    };
+  }
+
   /** Scrape puff at a chassis contact (slightly more outward than tire dust). */
   private emitBodyDustPuff(
     pos: { x: number; y: number; z: number },
@@ -407,17 +479,23 @@ export class OffroadFx {
     lat: number,
     col: Rgb,
   ): void {
-    const kickBack =
-      -Math.sign(treadMps || 1) * (0.8 + Math.abs(treadMps) * 0.15) * 3;
     const sideKick = -Math.sign(lat || 0) * (0.5 + Math.abs(lat) * 0.4);
+    const vel = this.sprayVelocity(
+      treadMps,
+      0,
+      BODY_ELEV_RAD,
+      0.8,
+      sideKick,
+      0,
+    );
     const jitter = () => (Math.random() - 0.5) * 1.1;
     this.dust.emit({
       x: pos.x + jitter() * 0.2,
       y: pos.y + 0.03 + Math.random() * 0.08,
       z: pos.z + jitter() * 0.2,
-      vx: this._fwd.x * kickBack + this._right.x * sideKick + jitter(),
-      vy: 0.9 + Math.random() * 1.8,
-      vz: this._fwd.z * kickBack + this._right.z * sideKick + jitter(),
+      vx: vel.vx,
+      vy: vel.vy,
+      vz: vel.vz,
       r: jitterColor(col.r, 0.035),
       g: jitterColor(col.g, 0.035),
       b: jitterColor(col.b, 0.035),
@@ -449,7 +527,7 @@ export class OffroadFx {
     if (!Number.isFinite(prev)) {
       return throttleProxy;
     }
-    let dRot = rotation - prev;
+    const dRot = rotation - prev;
     // Unwrap large jumps (teleport / respawn)
     if (Math.abs(dRot) > Math.PI * 4) {
       return throttleProxy;
@@ -468,26 +546,28 @@ export class OffroadFx {
     /** Signed tread / throttle proxy (m/s), NOT chassis long speed. */
     treadMps: number,
     lat: number,
+    steerRad: number,
     throttle: number,
     col: Rgb,
   ): void {
-    // Kick opposite to tread spin (forward spin → spray rearward). ×3 kick.
-    const kickBack =
-      -Math.sign(treadMps || throttle || 1) *
-      (1.2 + Math.abs(treadMps) * 0.12) *
-      3;
     const sideKick = -Math.sign(lat || 0) * (0.4 + Math.abs(lat) * 0.35);
-    const jitter = () => (Math.random() - 0.5) * 0.9;
     const th = Math.abs(throttle);
+    const vel = this.sprayVelocity(
+      treadMps,
+      steerRad,
+      DUST_ELEV_RAD,
+      1.2 + th * 0.15,
+      sideKick,
+      throttle,
+    );
+    const jitter = () => (Math.random() - 0.5) * 0.9;
     this.dust.emit({
       x: pos.x + jitter() * 0.15,
       y: pos.y + 0.02 + Math.random() * 0.06,
       z: pos.z + jitter() * 0.15,
-      // No chassis-velocity inherit — spray is tire/throttle driven
-      vx: this._fwd.x * kickBack + this._right.x * sideKick + jitter(),
-      vy: 0.6 + Math.random() * 1.4 + th * 0.5,
-      vz: this._fwd.z * kickBack + this._right.z * sideKick + jitter(),
-      // Tight jitter so dust stays in terrain family (no random gray wash)
+      vx: vel.vx,
+      vy: vel.vy,
+      vz: vel.vz,
       r: jitterColor(col.r, 0.035),
       g: jitterColor(col.g, 0.035),
       b: jitterColor(col.b, 0.035),
@@ -502,18 +582,26 @@ export class OffroadFx {
     pos: { x: number; y: number; z: number },
     treadMps: number,
     lat: number,
+    steerRad: number,
   ): void {
-    const kickBack =
-      -Math.sign(treadMps || 1) * (1.8 + Math.abs(treadMps) * 0.2) * 3;
-    const sideKick = (Math.random() - 0.5) * 2.2 - Math.sign(lat || 0) * 0.5;
+    const sideKick =
+      (Math.random() - 0.5) * 2.2 - Math.sign(lat || 0) * 0.5;
+    const vel = this.sprayVelocity(
+      treadMps,
+      steerRad,
+      SPLASH_ELEV_RAD,
+      1.8,
+      sideKick,
+      0,
+    );
     const col = this.splashColor;
     this.splash.emit({
       x: pos.x + (Math.random() - 0.5) * 0.2,
       y: pos.y + 0.05,
       z: pos.z + (Math.random() - 0.5) * 0.2,
-      vx: this._fwd.x * kickBack + this._right.x * sideKick,
-      vy: 1.8 + Math.random() * 3.2,
-      vz: this._fwd.z * kickBack + this._right.z * sideKick,
+      vx: vel.vx,
+      vy: vel.vy,
+      vz: vel.vz,
       r: jitterColor(col.r, 0.12),
       g: jitterColor(col.g, 0.1),
       b: jitterColor(col.b, 0.08),
@@ -536,13 +624,24 @@ export class OffroadFx {
     const y = sample.position.y + this._local.y;
     const z = sample.position.z + this._local.z;
     const gray = 0.22 + Math.random() * 0.12;
+    // Exhaust: chassis rear + slight body-up (follows pitch/roll)
+    const speed = 0.8 + Math.random();
     this.exhaust.emit({
       x,
       y,
       z,
-      vx: -this._fwd.x * (0.8 + Math.random()) + sample.linvel.x * 0.3,
-      vy: 0.4 + Math.random() * 0.6,
-      vz: -this._fwd.z * (0.8 + Math.random()) + sample.linvel.z * 0.3,
+      vx:
+        -this._chassisFwd.x * speed +
+        this._chassisUp.x * 0.35 +
+        sample.linvel.x * 0.3,
+      vy:
+        -this._chassisFwd.y * speed +
+        this._chassisUp.y * 0.35 +
+        0.15,
+      vz:
+        -this._chassisFwd.z * speed +
+        this._chassisUp.z * 0.35 +
+        sample.linvel.z * 0.3,
       r: gray,
       g: gray * 0.98,
       b: gray * 0.95,

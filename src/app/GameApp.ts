@@ -554,6 +554,7 @@ export class GameApp {
         contact: contacts[i] ?? false,
         suspensionLength: wv.suspensionLength,
         rotation: wv.rotation,
+        steering: wv.steering,
       }));
       const linvel = this.vehicle.getLinvel();
       if (this.offroadFx) {
