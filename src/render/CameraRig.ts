@@ -15,10 +15,18 @@ export class CameraRig {
   private readonly desired = new THREE.Vector3();
   private readonly look = new THREE.Vector3();
   private readonly current = new THREE.Vector3();
-  /** Cabin eye in chassis local space. */
-  private readonly eyeLocal = new THREE.Vector3(0, 1.25, 0.2);
+  /** Cabin eye in chassis local space (+Z = vehicle forward). */
+  private readonly eyeLocal = new THREE.Vector3(0, 1.25, 0.25);
   private readonly tmp = new THREE.Vector3();
   private readonly chassisQuat = new THREE.Quaternion();
+  /**
+   * Three.js cameras look down local -Z; our chassis forward is +Z.
+   * Multiply by 180° yaw so FP faces the hood, not the tailgate.
+   */
+  private readonly camFacingFix = new THREE.Quaternion().setFromAxisAngle(
+    new THREE.Vector3(0, 1, 0),
+    Math.PI,
+  );
 
   constructor(private camera: THREE.PerspectiveCamera) {
     this.setMode("third");
@@ -83,10 +91,11 @@ export class CameraRig {
       pose.position.z + this.tmp.z,
     );
 
-    // Camera orientation = chassis orientation (full 6DOF cabin shake)
-    this.camera.quaternion.copy(this.chassisQuat);
-    // Keep Three's up vector in chassis space for correct matrix updates
-    this.tmp.set(0, 1, 0).applyQuaternion(this.chassisQuat);
+    // Chassis shake (pitch/roll/yaw) + facing fix so -Z = vehicle forward
+    this.camera.quaternion
+      .copy(this.chassisQuat)
+      .multiply(this.camFacingFix);
+    this.tmp.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
     this.camera.up.copy(this.tmp);
   }
 }
