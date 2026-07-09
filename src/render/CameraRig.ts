@@ -18,7 +18,6 @@ export class CameraRig {
   /** Cabin eye in chassis local space. */
   private readonly eyeLocal = new THREE.Vector3(0, 1.25, 0.2);
   private readonly tmp = new THREE.Vector3();
-  private readonly quat = new THREE.Quaternion();
   private readonly chassisQuat = new THREE.Quaternion();
 
   constructor(private camera: THREE.PerspectiveCamera) {
