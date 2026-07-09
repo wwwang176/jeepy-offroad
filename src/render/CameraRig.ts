@@ -15,10 +15,11 @@ export class CameraRig {
   private readonly desired = new THREE.Vector3();
   private readonly look = new THREE.Vector3();
   private readonly current = new THREE.Vector3();
-  private readonly eyeLocal = new THREE.Vector3(0, 1.35, 0.35);
-  private readonly lookLocal = new THREE.Vector3(0, 1.35, 10);
+  /** Cabin eye in chassis local space. */
+  private readonly eyeLocal = new THREE.Vector3(0, 1.25, 0.2);
   private readonly tmp = new THREE.Vector3();
   private readonly quat = new THREE.Quaternion();
+  private readonly chassisQuat = new THREE.Quaternion();
 
   constructor(private camera: THREE.PerspectiveCamera) {
     this.setMode("third");
@@ -28,6 +29,10 @@ export class CameraRig {
     this.mode = mode;
     this.camera.fov = mode === "third" ? 55 : 72;
     this.camera.updateProjectionMatrix();
+    // Snap follow camera when entering third person
+    if (mode === "third") {
+      this.current.copy(this.camera.position);
+    }
   }
 
   toggle(): void {
@@ -50,35 +55,39 @@ export class CameraRig {
       const k = 1 - Math.exp(-10 * dt);
       this.current.lerp(this.desired, k);
       this.camera.position.copy(this.current);
+      // Third person: world-up lookAt (stable chase)
+      this.camera.up.set(0, 1, 0);
       this.camera.lookAt(this.look);
       return;
     }
 
-    // First person: follow full chassis orientation (yaw + pitch + roll)
+    // First person: hard-mount to chassis so pitch/roll/yaw shake with the jeep.
+    // Do NOT use lookAt(worldUp) — that strips roll and flattens body lean.
     if (pose.rotation) {
-      this.quat.set(
+      this.chassisQuat.set(
         pose.rotation.x,
         pose.rotation.y,
         pose.rotation.z,
         pose.rotation.w,
       );
     } else {
-      this.quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), pose.yaw);
+      this.chassisQuat.setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        pose.yaw,
+      );
     }
 
-    this.tmp.copy(this.eyeLocal).applyQuaternion(this.quat);
+    this.tmp.copy(this.eyeLocal).applyQuaternion(this.chassisQuat);
     this.camera.position.set(
       pose.position.x + this.tmp.x,
       pose.position.y + this.tmp.y,
       pose.position.z + this.tmp.z,
     );
 
-    this.tmp.copy(this.lookLocal).applyQuaternion(this.quat);
-    this.look.set(
-      pose.position.x + this.tmp.x,
-      pose.position.y + this.tmp.y,
-      pose.position.z + this.tmp.z,
-    );
-    this.camera.lookAt(this.look);
+    // Camera orientation = chassis orientation (full 6DOF cabin shake)
+    this.camera.quaternion.copy(this.chassisQuat);
+    // Keep Three's up vector in chassis space for correct matrix updates
+    this.tmp.set(0, 1, 0).applyQuaternion(this.chassisQuat);
+    this.camera.up.copy(this.tmp);
   }
 }
