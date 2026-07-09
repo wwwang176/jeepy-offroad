@@ -101,91 +101,117 @@ export function createJeepMesh(): THREE.Group {
   box(g, 0.1, 0.08, 1.85, PAL.black, -halfW - 0.1, -0.2, 0.0);
   box(g, 0.1, 0.08, 1.85, PAL.black, halfW + 0.1, -0.2, 0.0);
 
-  // ===== Main white tub (4-door length) =====
-  box(g, bodyW, 0.52, 2.4, PAL.body, 0, 0.08, -0.02, "tub");
+  // ===== Continuous body shell (tub + cabin walls connected) =====
+  // Lower tub
+  box(g, bodyW, 0.55, 2.4, PAL.body, 0, 0.1, -0.02, "tub");
+  // Upper door / cabin walls — bridges tub beltline up into the hardtop
+  // (fixes floating glass/cabin look)
+  const cabinH = 0.72;
+  const cabinY = 0.48; // bottom overlaps tub top
+  const cabinZ = -0.12;
+  const cabinD = 1.85;
+  box(g, bodyW, cabinH, cabinD, PAL.body, 0, cabinY + cabinH * 0.5, cabinZ, "cabin-walls");
 
-  // Door panel lines (4 doors feel)
+  // Door panel lines (4 doors feel) on full wall height
   for (const z of [0.55, 0.05, -0.45, -0.9]) {
-    box(g, 0.02, 0.4, 0.04, PAL.bodyShade, -halfW - 0.01, 0.18, z);
-    box(g, 0.02, 0.4, 0.04, PAL.bodyShade, halfW + 0.01, 0.18, z);
+    box(g, 0.025, 0.85, 0.04, PAL.bodyShade, -halfW - 0.012, 0.45, z);
+    box(g, 0.025, 0.85, 0.04, PAL.bodyShade, halfW + 0.012, 0.45, z);
   }
 
-  // ===== Hood (white, boxy, raised edges) =====
-  box(g, bodyW * 0.98, 0.22, 0.78, PAL.body, 0, 0.4, 0.85, "hood");
-  // Black hood vents / strip
-  box(g, 0.55, 0.04, 0.35, PAL.black, 0, 0.52, 0.85);
-  // Cowl
-  box(g, bodyW * 0.95, 0.08, 0.1, PAL.bodyShade, 0, 0.48, 0.45);
+  // ===== Hood (white, boxy) — meets cowl under windshield =====
+  box(g, bodyW * 0.98, 0.26, 0.78, PAL.body, 0, 0.42, 0.85, "hood");
+  box(g, 0.55, 0.04, 0.35, PAL.black, 0, 0.56, 0.85);
+  // Cowl shelf: joins hood rear to windshield base
+  box(g, bodyW * 0.98, 0.14, 0.22, PAL.body, 0, 0.42, 0.42, "cowl");
+  box(g, bodyW * 0.95, 0.05, 0.08, PAL.bodyShade, 0, 0.5, 0.38);
 
   // ===== Black 7-slot grille =====
   const gZ = 1.2;
-  box(g, bodyW * 0.7, 0.48, 0.1, PAL.grille, 0, 0.3, gZ, "grille");
+  box(g, bodyW * 0.7, 0.48, 0.1, PAL.grille, 0, 0.32, gZ, "grille");
   for (let i = 0; i < 7; i++) {
     const x = -0.36 + i * 0.12;
-    box(g, 0.04, 0.4, 0.05, PAL.black, x, 0.3, gZ + 0.05);
+    box(g, 0.04, 0.4, 0.05, PAL.black, x, 0.32, gZ + 0.05);
   }
-  // Jeep-ish badge plate
-  box(g, 0.28, 0.08, 0.04, PAL.chrome, 0, 0.52, gZ + 0.06);
+  box(g, 0.28, 0.08, 0.04, PAL.chrome, 0, 0.54, gZ + 0.06);
 
   // ===== Round headlights =====
   for (const sx of [-1, 1]) {
     const lx = sx * 0.62;
-    cyl(g, 0.14, 0.14, 0.1, 12, PAL.lightRing, lx, 0.34, gZ + 0.02, Math.PI / 2);
-    cyl(g, 0.11, 0.11, 0.08, 12, PAL.light, lx, 0.34, gZ + 0.07, Math.PI / 2);
+    cyl(g, 0.14, 0.14, 0.1, 12, PAL.lightRing, lx, 0.36, gZ + 0.02, Math.PI / 2);
+    cyl(g, 0.11, 0.11, 0.08, 12, PAL.light, lx, 0.36, gZ + 0.07, Math.PI / 2);
   }
-  // Small marker lights
-  box(g, 0.08, 0.05, 0.04, PAL.orange, -0.72, 0.48, gZ + 0.02);
-  box(g, 0.08, 0.05, 0.04, PAL.orange, 0.72, 0.48, gZ + 0.02);
+  box(g, 0.08, 0.05, 0.04, PAL.orange, -0.72, 0.5, gZ + 0.02);
+  box(g, 0.08, 0.05, 0.04, PAL.orange, 0.72, 0.5, gZ + 0.02);
 
-  // ===== Tubular front bumper + winch (like reference) =====
+  // ===== Tubular front bumper + winch =====
   const bump = new THREE.Group();
   bump.name = "bumper-front";
   bump.position.set(0, -0.12, 1.28);
-  // Main tube (horizontal)
   cyl(bump, 0.05, 0.05, bodyW + 0.25, 8, PAL.bumper, 0, 0, 0, 0, 0, Math.PI / 2);
-  // Outer upright loops
   for (const sx of [-1, 1]) {
     cyl(bump, 0.04, 0.04, 0.35, 6, PAL.bumper, sx * (halfW + 0.05), 0.12, 0.05, 0, 0, 0);
     cyl(bump, 0.04, 0.04, 0.28, 6, PAL.bumper, sx * (halfW + 0.05), 0.08, -0.12, Math.PI / 2, 0, 0);
   }
-  // Cross bar
   cyl(bump, 0.035, 0.035, bodyW * 0.7, 6, PAL.bumper, 0, 0.18, 0.08, 0, 0, Math.PI / 2);
-  // Winch block
   box(bump, 0.35, 0.18, 0.22, PAL.black, 0, 0.05, -0.08);
   g.add(bump);
 
-  // ===== Upright windshield (black frame + dark glass) =====
-  box(g, bodyW * 0.92, 0.08, 0.08, PAL.black, 0, 1.15, 0.38); // header
-  box(g, 0.08, 0.7, 0.08, PAL.black, -halfW + 0.1, 0.85, 0.36);
-  box(g, 0.08, 0.7, 0.08, PAL.black, halfW - 0.1, 0.85, 0.36);
+  // ===== Windshield frame planted on cowl, tied into roof =====
+  // A-pillars sit on cowl, rise into header under hardtop
+  const pillarBottom = 0.48;
+  const pillarH = 0.72;
+  const pillarY = pillarBottom + pillarH * 0.5;
+  const pillarZ = 0.34;
+  box(g, 0.1, pillarH, 0.1, PAL.black, -halfW + 0.08, pillarY, pillarZ, "a-pillar-L");
+  box(g, 0.1, pillarH, 0.1, PAL.black, halfW - 0.08, pillarY, pillarZ, "a-pillar-R");
+  // Header bar (under roof front edge)
+  box(g, bodyW * 0.94, 0.09, 0.1, PAL.black, 0, 1.12, 0.32, "windshield-header");
+  // Base bar on cowl
+  box(g, bodyW * 0.9, 0.06, 0.08, PAL.black, 0, 0.52, 0.36, "windshield-base");
+
+  // Front glass inset in frame (slightly smaller, no float)
   const glass = new THREE.Mesh(
-    new THREE.BoxGeometry(bodyW * 0.82, 0.58, 0.04),
-    mat(PAL.glass, { opacity: 0.75 }),
+    new THREE.BoxGeometry(bodyW * 0.78, 0.58, 0.05),
+    mat(PAL.glass, { opacity: 0.72 }),
   );
-  glass.position.set(0, 0.88, 0.35);
-  glass.rotation.x = -0.08;
+  glass.name = "windshield";
+  glass.position.set(0, 0.82, 0.34);
+  glass.rotation.x = -0.06;
   g.add(glass);
 
-  // ===== Black hardtop (4-door roof) =====
-  box(g, bodyW * 0.98, 0.14, 1.55, PAL.black, 0, 1.18, -0.35, "hardtop");
-  // Side window black panels (freedom-top style blocks)
+  // ===== Hardtop sits ON cabin walls (connected) =====
+  // Roof slab
+  box(g, bodyW * 1.0, 0.12, cabinD + 0.08, PAL.black, 0, 1.2, cabinZ, "hardtop");
+  // Front roof lip over windshield header
+  box(g, bodyW * 0.98, 0.08, 0.14, PAL.black, 0, 1.18, 0.28);
+
+  // Side window openings: black frames flush with cabin wall, glass inset
   for (const sx of [-1, 1]) {
-    box(g, 0.06, 0.38, 1.35, PAL.black, sx * (halfW - 0.02), 0.92, -0.25);
+    const sideX = sx * (halfW - 0.01);
+    // Window frame strip (connects tub to roof)
+    box(g, 0.08, 0.5, 1.4, PAL.black, sideX, 0.85, -0.2, sx < 0 ? "side-frame-L" : "side-frame-R");
+    // Dark glass pane inset
+    const sideGlass = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 0.36, 1.2),
+      mat(PAL.glassTint, { opacity: 0.65 }),
+    );
+    sideGlass.position.set(sx * (halfW + 0.01), 0.88, -0.18);
+    g.add(sideGlass);
   }
-  // Rear quarter glass
+  // Rear quarter glass (flush)
   for (const sx of [-1, 1]) {
     const q = new THREE.Mesh(
-      new THREE.BoxGeometry(0.05, 0.28, 0.4),
-      mat(PAL.glassTint, { opacity: 0.7 }),
+      new THREE.BoxGeometry(0.05, 0.32, 0.42),
+      mat(PAL.glassTint, { opacity: 0.65 }),
     );
-    q.position.set(sx * (halfW - 0.03), 0.88, -0.85);
+    q.position.set(sx * (halfW + 0.01), 0.86, -0.88);
     g.add(q);
   }
 
-  // Door mirrors (black)
+  // Door mirrors on A-pillar base (connected to body)
   for (const sx of [-1, 1]) {
-    box(g, 0.18, 0.1, 0.12, PAL.black, sx * (halfW + 0.12), 0.7, 0.25);
-    box(g, 0.06, 0.12, 0.06, PAL.black, sx * (halfW + 0.02), 0.65, 0.28);
+    box(g, 0.08, 0.14, 0.08, PAL.black, sx * (halfW - 0.02), 0.72, 0.3);
+    box(g, 0.2, 0.12, 0.14, PAL.black, sx * (halfW + 0.14), 0.75, 0.28);
   }
 
   // ===== Black fender flares (signature Rubicon look) =====
@@ -220,14 +246,18 @@ export function createJeepMesh(): THREE.Group {
     }
   }
 
-  // ===== Rear body / tailgate =====
-  box(g, bodyW * 0.98, 0.55, 0.2, PAL.body, 0, 0.2, -1.18, "tailgate");
-  // High-mount stop strip
-  box(g, 0.5, 0.06, 0.04, PAL.orange, 0, 0.95, -1.2);
-  // Tail lights (vertical blocks)
-  box(g, 0.1, 0.28, 0.08, 0xaa2222, -halfW + 0.12, 0.35, -1.28);
-  box(g, 0.1, 0.28, 0.08, 0xaa2222, halfW - 0.12, 0.35, -1.28);
-  // Rear bumper tube
+  // ===== Rear body / tailgate (joined to cabin) =====
+  // Full-height rear panel under hardtop
+  box(g, bodyW * 0.98, 0.95, 0.22, PAL.body, 0, 0.55, -1.1, "rear-panel");
+  box(g, bodyW * 0.92, 0.7, 0.08, PAL.bodyShade, 0, 0.45, -1.22, "tailgate");
+  // C-pillars tying roof to rear
+  box(g, 0.12, 0.55, 0.12, PAL.black, -halfW + 0.1, 0.9, -1.05);
+  box(g, 0.12, 0.55, 0.12, PAL.black, halfW - 0.1, 0.9, -1.05);
+  // High-mount stop strip on roof rear
+  box(g, 0.5, 0.06, 0.04, PAL.orange, 0, 1.18, -1.05);
+  // Tail lights
+  box(g, 0.1, 0.28, 0.08, 0xaa2222, -halfW + 0.12, 0.4, -1.28);
+  box(g, 0.1, 0.28, 0.08, 0xaa2222, halfW - 0.12, 0.4, -1.28);
   cyl(g, 0.045, 0.045, bodyW + 0.1, 8, PAL.bumper, 0, -0.15, -1.32, 0, 0, Math.PI / 2);
 
   // Spare tire (optional Rubicon often has it — keep for silhouette)
