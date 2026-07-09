@@ -41,7 +41,7 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
       <div class="menu-actions">
         <button type="button" class="menu-start" id="menu-start" disabled>Start</button>
       </div>
-      <p class="menu-hints">WASD / arrows · W+S brake · S reverse · C camera · R respawn</p>
+      <p class="menu-hints">WASD / arrows · W+S brake · S reverse · drag look · C camera · R respawn</p>
       <div class="menu-dev" id="menu-dev"></div>
     </div>
   `;

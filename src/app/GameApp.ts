@@ -65,31 +65,43 @@ export class GameApp {
     this.running = true;
     if (import.meta.env.DEV) {
       // Playwright / console diagnostics — pose sample while session active
-      (window as unknown as { __JEEP_DEBUG__?: () => unknown }).__JEEP_DEBUG__ =
-        () => {
-          if (!this.vehicle) {
-            return {
-              state: this.state.name,
-              session: this.sessionMode,
-              active: this.sessionActive,
-            };
-          }
-          const pose = this.vehicle.getPose();
-          const body = this.vehicle.getChassisBody();
-          const lv = body.linvel();
+      const w = window as unknown as {
+        __JEEP_DEBUG__?: () => unknown;
+        __JEEP_ORBIT__?: (yaw: number, pitch?: number, dist?: number) => void;
+      };
+      w.__JEEP_DEBUG__ = () => {
+        if (!this.vehicle) {
           return {
             state: this.state.name,
             session: this.sessionMode,
             active: this.sessionActive,
-            y: pose.position.y,
-            x: pose.position.x,
-            z: pose.position.z,
-            yaw: pose.yaw,
-            vy: lv.y,
-            mass: body.mass(),
-            grounded: this.vehicle.getGroundedCount?.() ?? -1,
           };
+        }
+        const pose = this.vehicle.getPose();
+        const body = this.vehicle.getChassisBody();
+        const lv = body.linvel();
+        return {
+          state: this.state.name,
+          session: this.sessionMode,
+          active: this.sessionActive,
+          pose,
+          y: pose.position.y,
+          x: pose.position.x,
+          z: pose.position.z,
+          yaw: pose.yaw,
+          vy: lv.y,
+          mass: body.mass(),
+          grounded: this.vehicle.getGroundedCount?.() ?? -1,
+          orbit: this.cameraRig?.getOrbit() ?? null,
         };
+      };
+      // Absolute orbit for visual QA (yaw/pitch rad, optional arm length m).
+      w.__JEEP_ORBIT__ = (yaw: number, pitch?: number, dist?: number) => {
+        this.cameraRig?.setOrbit(yaw, pitch, dist);
+        if (this.cameraRig && this.vehicle) {
+          this.cameraRig.update(0, this.vehicle.getPose(), { snap: true });
+        }
+      };
     }
     await this.enter(this.state);
     requestAnimationFrame((t) => this.frame(t));
@@ -299,7 +311,7 @@ export class GameApp {
       this.checkpointSystem,
       this.vehicle,
     );
-    this.input = new InputRouter(new KeyboardProvider());
+    this.input = new InputRouter(new KeyboardProvider(window, canvas));
     this.gameScene = createGameScene(canvas, level, biome);
     this.jeepMesh = this.gameScene.jeepMesh;
     this.cameraRig = new CameraRig(this.gameScene.camera);
@@ -321,15 +333,19 @@ export class GameApp {
       position: { x: 0, y: 2, z: 0 },
       yaw: 0,
     });
-    this.input = new InputRouter(new KeyboardProvider());
+    this.input = new InputRouter(new KeyboardProvider(window, canvas));
     this.three = createRenderer(canvas);
+    // Neutral desert-ish ground for mesh review (matches reference vibe)
     const ground = new THREE.Mesh(
       new THREE.BoxGeometry(200, 0.2, 200),
-      new THREE.MeshLambertMaterial({ color: 0x5a6a4a }),
+      new THREE.MeshLambertMaterial({ color: 0x9a8f78 }),
     );
     ground.position.y = 0;
     ground.receiveShadow = true;
     this.three.scene.add(ground);
+    // Soft fill so white body reads like the photo
+    const hemi = new THREE.HemisphereLight(0xddeeff, 0x8a7a60, 0.55);
+    this.three.scene.add(hemi);
     this.jeepMesh = createJeepMesh();
     this.jeepMesh.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -339,6 +355,11 @@ export class GameApp {
       }
     });
     this.three.scene.add(this.jeepMesh);
+    this.cameraRig = new CameraRig(this.three.camera);
+    this.cameraRig.update(1, {
+      position: { x: 0, y: 2, z: 0 },
+      yaw: 0,
+    });
     this.sessionMode = "sandbox";
     this.sessionActive = true;
     this.lastT = performance.now();
@@ -349,7 +370,8 @@ export class GameApp {
       const hint = document.createElement("div");
       hint.className = "hud-info panel";
       hint.style.cssText = "position:absolute;top:8px;left:8px;padding:8px 12px";
-      hint.textContent = "Flat test · Esc not bound · reload for menu";
+      hint.textContent =
+        "Flat test · drag look · C camera · Esc not bound · reload for menu";
       root.appendChild(hint);
       this.uiUnmount = () => hint.remove();
     }
@@ -391,6 +413,12 @@ export class GameApp {
 
         if (actions.cameraToggle && this.cameraRig) {
           this.cameraRig.toggle();
+        }
+        if (this.cameraRig) {
+          this.cameraRig.applyLookDelta(
+            actions.lookDeltaX,
+            actions.lookDeltaY,
+          );
         }
 
         const drive: InputActions =
@@ -453,17 +481,21 @@ export class GameApp {
           this.gameScene.camera,
         );
       } else if (this.three) {
-        const yaw = pose.yaw;
-        this.three.camera.position.set(
-          pose.position.x - Math.sin(yaw) * 8,
-          pose.position.y + 3.5,
-          pose.position.z - Math.cos(yaw) * 8,
-        );
-        this.three.camera.lookAt(
-          pose.position.x,
-          pose.position.y + 1.2,
-          pose.position.z,
-        );
+        if (this.cameraRig) {
+          this.cameraRig.update(dt, pose);
+        } else {
+          const yaw = pose.yaw;
+          this.three.camera.position.set(
+            pose.position.x - Math.sin(yaw) * 8,
+            pose.position.y + 3.5,
+            pose.position.z - Math.cos(yaw) * 8,
+          );
+          this.three.camera.lookAt(
+            pose.position.x,
+            pose.position.y + 1.2,
+            pose.position.z,
+          );
+        }
         this.three.updateShadows(this.three.camera.position);
         this.three.renderer.render(this.three.scene, this.three.camera);
       }

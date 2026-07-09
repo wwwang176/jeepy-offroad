@@ -4,6 +4,9 @@ export interface InputActions {
   brake: number; // 0..1
   cameraToggle: boolean;
   respawn: boolean;
+  /** Mouse-drag look delta in pixels since last sample (right +, down +). */
+  lookDeltaX: number;
+  lookDeltaY: number;
 }
 
 export interface InputProvider {

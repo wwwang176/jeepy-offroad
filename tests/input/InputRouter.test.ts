@@ -11,6 +11,8 @@ describe("InputRouter", () => {
         brake: 0,
         cameraToggle: false,
         respawn: false,
+        lookDeltaX: 0,
+        lookDeltaY: 0,
       }),
       dispose: () => {},
     };
