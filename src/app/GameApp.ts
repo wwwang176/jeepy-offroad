@@ -17,6 +17,7 @@ import {
 } from "@/render/GameScene";
 import { CameraRig } from "@/render/CameraRig";
 import { generateLevel } from "@/levelgen/generateLevel";
+import { sampleBilinear } from "@/levelgen/heightmap";
 import type { LevelData } from "@/levelgen/types";
 import { getBiome } from "@/biome/registry";
 import { normalizeSeed } from "@/shared/seed";
@@ -244,10 +245,18 @@ export class GameApp {
     // Warm broadphase so raycasts hit heightfield on first vehicle update.
     this.physics.step();
 
+    // Sample actual heightmap (not path polyline Y) so we never spawn buried in terrain.
+    const groundY = sampleBilinear(
+      level.heightmap,
+      level.resolution,
+      level.worldSize,
+      level.start.position.x,
+      level.start.position.z,
+    );
     const spawnPose = {
       position: {
         x: level.start.position.x,
-        y: chassisSpawnY(level.start.position.y),
+        y: chassisSpawnY(groundY),
         z: level.start.position.z,
       },
       yaw: level.start.yaw,

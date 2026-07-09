@@ -28,8 +28,11 @@ export const VEHICLE_CONFIG = {
   /** Distance from hardpoint to contact at zero compression. */
   suspRestLength: 0.5,
   suspMaxTravel: 0.28,
-  springStiffness: 48000,
-  springDamping: 5200,
+  /** ~1.2–1.5 Hz natural frequency for 1400 kg / 4 wheels — avoid launch spikes. */
+  springStiffness: 32000,
+  springDamping: 2800,
+  /** Cap per-wheel suspension force (N) so first-contact damper cannot rocket the chassis. */
+  maxSuspForce: 1400 * 9.81 * 2.0,
   engineForce: 9000,
   brakeForce: 12000,
   maxSteerRad: (32 * Math.PI) / 180,
@@ -43,12 +46,12 @@ export const VEHICLE_CONFIG = {
 
 /**
  * Chassis center Y for spawn/respawn given ground sample Y.
- * Places the vehicle slightly above rest compression so rays engage immediately.
+ * Sits near rest length with light preload so rays hit without deep penetration.
  */
 export function chassisSpawnY(groundY: number): number {
   const attachY = VEHICLE_CONFIG.wheelPositions[0].y;
-  // COM = ground - attachY + rest * 0.88 (mild preload compression)
-  return groundY - attachY + VEHICLE_CONFIG.suspRestLength * 0.88;
+  // COM = ground - attachY + rest * 0.92 (light preload; avoid burying chassis in terrain)
+  return groundY - attachY + VEHICLE_CONFIG.suspRestLength * 0.92;
 }
 
 export type VehicleConfig = typeof VEHICLE_CONFIG;

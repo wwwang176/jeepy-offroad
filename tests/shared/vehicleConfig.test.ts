@@ -22,7 +22,7 @@ describe("vehicle suspension geometry", () => {
     const distToGround = comY + attachY - groundY;
     // Spawn slightly compressed vs full rest (0.88 factor)
     expect(distToGround).toBeCloseTo(
-      VEHICLE_CONFIG.suspRestLength * 0.88,
+      VEHICLE_CONFIG.suspRestLength * 0.92,
       5,
     );
     const bottomClearance =

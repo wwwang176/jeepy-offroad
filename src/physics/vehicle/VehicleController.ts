@@ -156,18 +156,43 @@ export class VehicleController {
         continue;
       }
 
+      // Rapier TOI is distance along unit ray direction.
       const dist = hit.timeOfImpact;
       const compression = clamp(cfg.suspRestLength - dist, 0, cfg.suspMaxTravel);
-      const compressionVel = (compression - wheel.prevCompression) / stepDt;
-      wheel.prevCompression = compression;
       wheel.grounded = true;
       groundedCount++;
 
-      // Spring + damper along suspension (world up from ray normal approx -down)
+      // Contact / attach kinematics first (damper needs attach velocity)
+      const contact = {
+        x: worldTop.x + down.x * dist,
+        y: worldTop.y + down.y * dist,
+        z: worldTop.z + down.z * dist,
+      };
+      const forceDir = { x: -down.x, y: -down.y, z: -down.z }; // suspension "up"
+
+      // Velocity of hardpoint (approx chassis point)
+      const ax = worldTop.x - origin.x;
+      const ay = worldTop.y - origin.y;
+      const az = worldTop.z - origin.z;
+      const attachVel = {
+        x: linvel.x + (angvel.y * az - angvel.z * ay),
+        y: linvel.y + (angvel.z * ax - angvel.x * az),
+        z: linvel.z + (angvel.x * ay - angvel.y * ax),
+      };
+      // Relative velocity along suspension up (negative when sinking into ground)
+      const vUp =
+        attachVel.x * forceDir.x +
+        attachVel.y * forceDir.y +
+        attachVel.z * forceDir.z;
+
+      // F = k*x - c*v_up  (do NOT use Δcompression/dt — first contact explodes)
       const springF = compression * cfg.springStiffness;
-      const dampF = compressionVel * cfg.springDamping;
-      const suspForce = Math.max(0, springF + dampF);
-      const forceDir = { x: -down.x, y: -down.y, z: -down.z };
+      const dampF = -cfg.springDamping * vUp;
+      // Never pull (negative); cap so we cannot launch the jeep
+      const maxF = cfg.maxSuspForce;
+      const suspForce = clamp(springF + dampF, 0, maxF);
+      wheel.prevCompression = compression;
+
       this.body.addForceAtPoint(
         {
           x: forceDir.x * suspForce,
@@ -177,13 +202,6 @@ export class VehicleController {
         worldTop,
         true,
       );
-
-      // Contact point
-      const contact = {
-        x: worldTop.x + down.x * dist,
-        y: worldTop.y + down.y * dist,
-        z: worldTop.z + down.z * dist,
-      };
 
       // Wheel forward in world (steer front)
       const steer = wheel.isFront ? this.steerAngle : 0;
@@ -224,23 +242,24 @@ export class VehicleController {
         drive = input.throttle * (cfg.engineForce / wheelCount);
       }
 
-      // Lateral friction (oppose side slip)
-      let lat = -vLat * cfg.tireGripLat * (cfg.massKg / 4) * 8;
+      // Lateral friction (oppose side slip) — scale with load, hard-cap
+      let lat = -vLat * cfg.tireGripLat * (cfg.massKg / 4) * 4;
+      lat = clamp(lat, -maxF, maxF);
 
       // Longitudinal friction / drive blend
       let lon = drive;
       // Damping rolling when no input
       if (Math.abs(input.throttle) < 0.05 && input.brake < 0.1) {
-        lon += -vLong * cfg.tireGripLong * 200;
+        lon += -vLong * cfg.tireGripLong * 150;
       }
+      lon = clamp(lon, -maxF, maxF);
 
-      // Friction ellipse clamp: normalize into unit ellipse, scale back only by 1/mag
-      // (lat/mag already equals (latN/mag)*maxLat — do NOT multiply maxLat again)
+      // Friction ellipse clamp: normalize into unit ellipse, scale by 1/mag only
       if (cfg.frictionEllipse) {
-        const maxLat = cfg.tireGripLat * suspForce;
-        const maxLon = cfg.tireGripLong * Math.max(suspForce, 1);
-        const latN = lat / (maxLat || 1);
-        const lonN = lon / (maxLon || 1);
+        const maxLat = Math.max(cfg.tireGripLat * suspForce, 1);
+        const maxLon = Math.max(cfg.tireGripLong * suspForce, 1);
+        const latN = lat / maxLat;
+        const lonN = lon / maxLon;
         const mag = Math.hypot(latN, lonN);
         if (mag > 1) {
           const scale = 1 / mag;
