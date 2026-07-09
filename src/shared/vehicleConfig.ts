@@ -99,7 +99,7 @@ export const VEHICLE_CONFIG = {
    * Rapier setWheelBrake scale on total brake force.
    * Opposite-throttle service brake (tuned by feel).
    */
-  rapierBrakeScale: 0.08,
+  rapierBrakeScale: 0.05,
   maxSteerRad: (32 * Math.PI) / 180,
   tireGripLong: 1.1,
   tireGripLat: 1.0,
