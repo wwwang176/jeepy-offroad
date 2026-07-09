@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { reduce, type GameState } from "./GameStateMachine";
 import RAPIER from "@dimforge/rapier3d-compat";
 import { showError, clearUi } from "@/ui/error";
+import { mountMenu } from "@/ui/menu";
+import { mountResult } from "@/ui/result";
 import { PhysicsWorld } from "@/physics/PhysicsWorld";
 import { VehicleController } from "@/physics/vehicle/VehicleController";
 import { createTerrainCollider } from "@/physics/createTerrainCollider";
@@ -17,7 +19,7 @@ import { CameraRig } from "@/render/CameraRig";
 import { generateLevel } from "@/levelgen/generateLevel";
 import type { LevelData } from "@/levelgen/types";
 import { getBiome } from "@/biome/registry";
-import { normalizeSeed, parseSeedInput } from "@/shared/seed";
+import { normalizeSeed } from "@/shared/seed";
 import { VEHICLE_CAPABILITIES } from "@/shared/vehicleCapabilities";
 import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
 import { FinishSystem } from "@/gameplay/FinishSystem";
@@ -53,6 +55,7 @@ export class GameApp {
   private respawnSystem: RespawnSystem | null = null;
   private cameraRig: CameraRig | null = null;
   private hud: HudHandles | null = null;
+  private uiUnmount: (() => void) | null = null;
   private acc = 0;
   private lastT = 0;
   private sessionActive = false;
@@ -69,6 +72,13 @@ export class GameApp {
     if (next !== this.state) {
       this.state = next;
       void this.enter(next);
+    }
+  }
+
+  private unmountUi(): void {
+    if (this.uiUnmount) {
+      this.uiUnmount();
+      this.uiUnmount = null;
     }
   }
 
@@ -97,6 +107,7 @@ export class GameApp {
   }
 
   private async enter(state: GameState): Promise<void> {
+    this.unmountUi();
     clearUi();
     switch (state.name) {
       case "boot": {
@@ -113,58 +124,32 @@ export class GameApp {
       }
       case "menu": {
         this.teardownSession();
-        const root = document.querySelector("#ui-root");
+        const root = document.querySelector<HTMLElement>("#ui-root");
         if (root) {
-          root.innerHTML = `
-            <div class="panel" style="padding:16px;max-width:360px">
-              <div style="margin-bottom:12px;font-weight:600">Low-Poly Jeep</div>
-              <label style="display:block;margin-bottom:8px">
-                Seed
-                <input id="seed-input" type="text" value="42"
-                  style="display:block;width:100%;margin-top:4px;padding:6px" />
-              </label>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-                <button type="button" id="play-cliffs">Play cliffs</button>
-                <button type="button" id="play-seed-42">Play cliffs seed 42</button>
-                <button type="button" id="flat-test">Flat test</button>
-              </div>
-              <div style="margin-top:10px;opacity:0.75;font-size:12px">
-                WASD / arrows · W+S brake · S reverse
-              </div>
-            </div>
-          `;
-          const seedInput =
-            root.querySelector<HTMLInputElement>("#seed-input");
-          const play = root.querySelector<HTMLButtonElement>("#play-cliffs");
-          const play42 =
-            root.querySelector<HTMLButtonElement>("#play-seed-42");
-          const flat = root.querySelector<HTMLButtonElement>("#flat-test");
-          const startCliffs = (raw: string) => {
-            try {
-              const seed = normalizeSeed(parseSeedInput(raw));
-              this.dispatch({ type: "START", biomeId: "cliffs", seed });
-            } catch (e) {
-              this.dispatch({
-                type: "LOAD_FAIL",
-                message: e instanceof Error ? e.message : String(e),
-              });
-            }
-          };
-          if (play && seedInput) {
-            play.onclick = () => startCliffs(seedInput.value);
-          }
-          if (play42) {
-            play42.onclick = () => startCliffs("42");
-          }
-          if (flat) {
-            flat.onclick = () => {
+          this.uiUnmount = mountMenu(root, {
+            onStart: ({ biomeId, seed }) => {
+              this.dispatch({ type: "START", biomeId, seed });
+            },
+            onFlatTest: () => {
               void this.startFlatSandbox();
-            };
-          }
+            },
+          });
         }
         break;
       }
       case "loading": {
+        const root = document.querySelector<HTMLElement>("#ui-root");
+        if (root) {
+          const panel = document.createElement("div");
+          panel.className = "loading-overlay";
+          panel.innerHTML = `
+            <div class="panel loading-panel">
+              Loading <strong>${state.biomeId}</strong> · seed ${state.seed}…
+            </div>
+          `;
+          root.appendChild(panel);
+          this.uiUnmount = () => panel.remove();
+        }
         try {
           await this.loadLevel(state.biomeId, state.seed);
           this.dispatch({ type: "LOADED" });
@@ -178,6 +163,7 @@ export class GameApp {
         break;
       }
       case "playing": {
+        this.unmountUi();
         clearUi();
         if (this.hud) {
           this.hud.dispose();
@@ -202,29 +188,19 @@ export class GameApp {
           this.hud.dispose();
           this.hud = null;
         }
-        const root = document.querySelector("#ui-root");
+        // Keep 3D scene visible behind result overlay for polish.
+        const root = document.querySelector<HTMLElement>("#ui-root");
         if (root) {
-          root.innerHTML = `
-            <div class="panel" style="padding:20px;max-width:360px;margin:24px;background:rgba(20,30,20,0.92)">
-              <h2 style="margin-bottom:8px">Finish!</h2>
-              <p style="margin-bottom:12px">Biome ${state.biomeId} · seed ${state.seed}</p>
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button type="button" id="retry-same">Retry same</button>
-                <button type="button" id="retry-new">New seed</button>
-                <button type="button" id="to-menu">Menu</button>
-              </div>
-            </div>
-          `;
-          root.querySelector<HTMLButtonElement>("#retry-same")!.onclick =
-            () => this.dispatch({ type: "RETRY_SAME" });
-          root.querySelector<HTMLButtonElement>("#retry-new")!.onclick =
-            () =>
-              this.dispatch({
-                type: "RETRY_NEW",
-                seed: normalizeSeed((Math.random() * 0x100000000) >>> 0),
-              });
-          root.querySelector<HTMLButtonElement>("#to-menu")!.onclick = () =>
-            this.dispatch({ type: "TO_MENU" });
+          this.uiUnmount = mountResult(
+            root,
+            { biomeId: state.biomeId, seed: state.seed },
+            {
+              onRetrySame: () => this.dispatch({ type: "RETRY_SAME" }),
+              onRetryNew: (seed) =>
+                this.dispatch({ type: "RETRY_NEW", seed }),
+              onMenu: () => this.dispatch({ type: "TO_MENU" }),
+            },
+          );
         }
         break;
       }
@@ -293,6 +269,7 @@ export class GameApp {
   }
 
   private async startFlatSandbox(): Promise<void> {
+    this.unmountUi();
     this.teardownSession();
     const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas");
     if (!canvas) throw new Error("Missing canvas");
@@ -319,10 +296,25 @@ export class GameApp {
     this.lastT = performance.now();
     this.acc = 0;
     clearUi();
+    const root = document.querySelector<HTMLElement>("#ui-root");
+    if (root) {
+      const hint = document.createElement("div");
+      hint.className = "hud-info panel";
+      hint.style.cssText = "position:absolute;top:8px;left:8px;padding:8px 12px";
+      hint.textContent = "Flat test · Esc not bound · reload for menu";
+      root.appendChild(hint);
+      this.uiUnmount = () => hint.remove();
+    }
   }
 
   private frame(t: number): void {
     if (!this.running) return;
+
+    // Keep rendering the level scene under the result overlay.
+    const renderLevelScene =
+      this.gameScene &&
+      (this.sessionActive || this.state.name === "result") &&
+      this.sessionMode === "level";
 
     if (
       this.sessionActive &&
@@ -424,6 +416,11 @@ export class GameApp {
         );
         this.three.renderer.render(this.three.scene, this.three.camera);
       }
+    } else if (renderLevelScene && this.gameScene) {
+      this.gameScene.renderer.render(
+        this.gameScene.scene,
+        this.gameScene.camera,
+      );
     }
 
     requestAnimationFrame((nt) => this.frame(nt));
