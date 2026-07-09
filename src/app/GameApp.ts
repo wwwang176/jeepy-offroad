@@ -11,9 +11,9 @@ import { createRenderer } from "@/render/createRenderer";
 import { createJeepMesh, syncJeepMesh } from "@/render/JeepMesh";
 import {
   createGameScene,
-  updateChaseCamera,
   type GameSceneHandles,
 } from "@/render/GameScene";
+import { CameraRig } from "@/render/CameraRig";
 import { generateLevel } from "@/levelgen/generateLevel";
 import type { LevelData } from "@/levelgen/types";
 import { getBiome } from "@/biome/registry";
@@ -50,6 +50,7 @@ export class GameApp {
   private finishSystem: FinishSystem | null = null;
   private checkpointSystem: CheckpointSystem | null = null;
   private respawnSystem: RespawnSystem | null = null;
+  private cameraRig: CameraRig | null = null;
   private acc = 0;
   private lastT = 0;
   private sessionActive = false;
@@ -81,6 +82,7 @@ export class GameApp {
     this.finishSystem = null;
     this.checkpointSystem = null;
     this.respawnSystem = null;
+    this.cameraRig = null;
     if (this.gameScene) {
       this.gameScene.dispose();
       this.gameScene = null;
@@ -271,6 +273,9 @@ export class GameApp {
     this.input = new InputRouter(new KeyboardProvider());
     this.gameScene = createGameScene(canvas, level, biome);
     this.jeepMesh = this.gameScene.jeepMesh;
+    this.cameraRig = new CameraRig(this.gameScene.camera);
+    // Snap third-person follow to spawn so first frame is not lerping from origin.
+    this.cameraRig.update(1, spawnPose);
     this.sessionMode = "level";
   }
 
@@ -331,6 +336,10 @@ export class GameApp {
           );
         }
 
+        if (actions.cameraToggle && this.cameraRig) {
+          this.cameraRig.toggle();
+        }
+
         const drive: InputActions =
           this.respawnSystem?.inputLocked()
             ? {
@@ -360,7 +369,9 @@ export class GameApp {
       syncJeepMesh(this.jeepMesh, pose);
 
       if (this.sessionMode === "level" && this.gameScene) {
-        updateChaseCamera(this.gameScene.camera, pose);
+        if (this.cameraRig) {
+          this.cameraRig.update(dt, pose);
+        }
         this.gameScene.renderer.render(
           this.gameScene.scene,
           this.gameScene.camera,
