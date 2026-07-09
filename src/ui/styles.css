@@ -320,8 +320,11 @@ button:disabled {
   font-size: 28px;
   line-height: 1;
   color: #9dff9d;
+  /* Width halved; rotate is applied in JS as rotate() scaleX(0.5). */
+  transform: scaleX(0.5);
   transform-origin: 50% 55%;
   will-change: transform;
+  display: inline-block;
 }
 .hud-goal-label {
   font-size: 10px;

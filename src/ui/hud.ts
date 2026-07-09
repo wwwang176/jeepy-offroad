@@ -103,12 +103,21 @@ export function updateHud(hud: HudHandles, model: HudModel): void {
   setGearDisplay(hud.gearEl, model.driveLabel || "4H");
   setSpeedDisplay(hud.speedEl, model.speedMps ?? 0);
 
+  // Vehicle-local bearing to finish (same basis as minimap).
+  //   localRight = (dx,dz)·(cos ψ, −sin ψ)
+  //   localFwd   = (dx,dz)·(sin ψ,  cos ψ)
+  // CSS rotate + = clockwise. Match minimap lateral sign (−localRight =
+  // screen-right) so finish on the right rotates the ▲ to the right.
   const dx = model.finish.x - model.player.x;
   const dz = model.finish.z - model.player.z;
-  // World yaw of vector to finish (yaw 0 = +Z) minus player yaw.
-  const toFinishYaw = Math.atan2(dx, dz);
-  const rel = toFinishYaw - model.player.yaw;
-  hud.goalArrow.style.transform = `rotate(${rel}rad)`;
+  const yaw = model.player.yaw;
+  const cosY = Math.cos(yaw);
+  const sinY = Math.sin(yaw);
+  const localRight = dx * cosY - dz * sinY;
+  const localFwd = dx * sinY + dz * cosY;
+  const rel = Math.atan2(-localRight, localFwd);
+  // scaleX after rotate in matrix terms: thin the glyph on local X, then spin.
+  hud.goalArrow.style.transform = `rotate(${rel}rad) scaleX(0.5)`;
 
   const minimapModel: MinimapModel = {
     worldSize: model.worldSize,
