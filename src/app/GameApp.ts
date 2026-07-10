@@ -224,7 +224,7 @@ export class GameApp {
           const panel = document.createElement("div");
           panel.className = "loading-overlay";
           panel.innerHTML = `
-            <div class="panel loading-panel">
+            <div class="panel loading-panel modal-panel">
               Loading <strong>${state.biomeId}</strong> · seed ${state.seed}…
             </div>
           `;

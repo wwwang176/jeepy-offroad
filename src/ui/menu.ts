@@ -37,16 +37,15 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
   root.innerHTML = `
     <div class="menu-shell">
       <div class="menu-left">
-        <div class="menu-brand">
-          <h1 class="menu-title">
-            <span class="menu-title-main">Jeepy</span>
-            <span class="menu-title-sub">offroad</span>
-          </h1>
-          <div class="menu-title-rule" aria-hidden="true"></div>
-        </div>
-
         <div class="menu-center">
           <div class="menu-stage menu-stage-home is-active" data-stage="home">
+            <div class="menu-brand">
+              <h1 class="menu-title">
+                <span class="menu-title-main">Jeepy</span>
+                <span class="menu-title-sub">offroad</span>
+              </h1>
+              <div class="menu-title-rule" aria-hidden="true"></div>
+            </div>
             <button type="button" class="menu-cta" id="menu-start-game">
               開始遊戲
             </button>

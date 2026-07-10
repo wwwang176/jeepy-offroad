@@ -17,7 +17,7 @@ export function mountResult(
   const root = document.createElement("div");
   root.className = "result-overlay";
   root.innerHTML = `
-    <div class="panel result-panel">
+    <div class="panel result-panel modal-panel">
       <h2 class="result-title">Finish!</h2>
       <p class="result-meta">
         <span class="result-biome">${opts.biomeId}</span>
@@ -27,7 +27,7 @@ export function mountResult(
       <div class="result-actions">
         <button type="button" id="result-retry-same">Retry same</button>
         <button type="button" id="result-retry-new">New seed</button>
-        <button type="button" id="result-menu">Menu</button>
+        <button type="button" class="btn-ghost" id="result-menu">Menu</button>
       </div>
     </div>
   `;

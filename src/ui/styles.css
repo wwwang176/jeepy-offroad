@@ -14,27 +14,59 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; background: #1a1
 #ui-root { position: absolute; inset: 0; pointer-events: none; font-family: system-ui, sans-serif; color: #f2f2f2; }
 #ui-root .panel { pointer-events: auto; }
 
+/* —— Flat gold buttons (shared menu / modals / default) —— */
 button {
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: #3a4a3a;
-  color: #f2f2f2;
-  padding: 8px 14px;
+  border: 1px solid #c9a04a;
+  background: #c9a04a;
+  color: #14120e;
+  padding: 10px 16px;
   border-radius: 4px;
+  box-shadow: none;
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
 }
 button:hover:not(:disabled) {
-  background: #4a5e4a;
+  background: #d9b45a;
+  border-color: #d9b45a;
+}
+button:active:not(:disabled) {
+  background: #b88838;
+  border-color: #b88838;
 }
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
+/* Secondary / ghost — outline gold on transparent */
+button.btn-ghost,
+.menu-seed-cancel,
+.menu-back {
+  background: transparent;
+  color: #e8c878;
+  border-color: rgba(201, 160, 74, 0.55);
+  font-weight: 500;
+}
+button.btn-ghost:hover:not(:disabled),
+.menu-seed-cancel:hover:not(:disabled),
+.menu-back:hover:not(:disabled) {
+  background: rgba(201, 160, 74, 0.12);
+  border-color: #c9a04a;
+  color: #f0d090;
+}
+button.btn-ghost:active:not(:disabled),
+.menu-seed-cancel:active:not(:disabled),
+.menu-back:active:not(:disabled) {
+  background: rgba(201, 160, 74, 0.2);
+}
+
 /* Menu / result / loading overlays */
 .menu-overlay,
 .result-overlay,
-.loading-overlay {
+.loading-overlay,
+.modal-overlay {
   position: absolute;
   inset: 0;
   display: flex;
@@ -42,16 +74,17 @@ button:disabled {
   justify-content: center;
   padding: 32px 16px;
   pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgba(12, 18, 22, 0.72) 0%,
-    rgba(12, 18, 22, 0.35) 55%,
-    transparent 100%
-  );
+}
+/* Flat modal scrim (result / loading / error) */
+.result-overlay,
+.loading-overlay,
+.modal-overlay {
+  background: rgba(8, 10, 12, 0.72);
 }
 .menu-overlay > .panel,
 .result-overlay > .panel,
-.loading-overlay > .panel {
+.loading-overlay > .panel,
+.modal-overlay > .panel {
   pointer-events: auto;
 }
 
@@ -119,16 +152,13 @@ button:disabled {
   padding: clamp(28px, 6vh, 56px) clamp(22px, 3vw, 36px);
   box-sizing: border-box;
 }
-/* Logo stays top-left; does not push the center stack */
+/* Logo only on stage 1 (home), stacked above CTA */
 .menu-brand {
-  position: absolute;
-  top: clamp(24px, 5vh, 48px);
-  left: clamp(22px, 3vw, 36px);
-  right: clamp(22px, 3vw, 36px);
   display: flex;
   flex-direction: column;
   gap: 10px;
   pointer-events: none;
+  margin-bottom: 8px;
 }
 /* Buttons / cards vertically centered in the 40% column */
 .menu-center {
@@ -139,8 +169,10 @@ button:disabled {
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
-  padding-top: 72px; /* clear absolute logo */
   padding-bottom: 48px; /* clear absolute hints */
+}
+.menu-stage-home {
+  gap: 28px;
 }
 .menu-title {
   display: flex;
@@ -187,23 +219,14 @@ button:disabled {
   font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #14120e;
-  background: linear-gradient(180deg, #f0d090 0%, #c8923e 100%);
-  border: 1px solid rgba(255, 230, 180, 0.55);
-  border-radius: 6px;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.25),
-    0 10px 28px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  transition: transform 0.12s ease, filter 0.12s ease;
+  /* flat solid gold — inherits button colors; only size differs */
+  border-radius: 4px;
 }
-.menu-cta:hover:not(:disabled) {
-  background: linear-gradient(180deg, #f6db9e 0%, #d4a04a 100%);
-  filter: brightness(1.05);
-  transform: translateY(-1px);
-}
+.menu-cta:hover:not(:disabled),
 .menu-cta:active:not(:disabled) {
-  transform: translateY(1px);
+  /* kill any leftover lift; color from global button */
+  transform: none;
+  filter: none;
 }
 .menu-select-label {
   font-size: 12px;
@@ -227,28 +250,29 @@ button:disabled {
   min-height: 88px;
   padding: 12px 12px 10px;
   text-align: left;
-  background: rgba(18, 22, 20, 0.72);
+  font-weight: 500;
+  color: #f2efe8;
+  background: rgba(18, 16, 14, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  backdrop-filter: blur(6px);
-  transition:
-    transform 0.12s ease,
-    border-color 0.12s ease,
-    background 0.12s ease,
-    box-shadow 0.12s ease;
+  border-radius: 4px;
+  box-shadow: none;
+  transition: border-color 0.1s ease, background 0.1s ease;
 }
-.menu-card:hover:not(:disabled) {
-  transform: translateY(-3px);
-  background: rgba(28, 34, 30, 0.88);
-  border-color: rgba(224, 176, 106, 0.55);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+.menu-card:hover:not(:disabled),
+.menu-card:active:not(:disabled) {
+  background: rgba(28, 24, 18, 0.92);
+  border-color: rgba(201, 160, 74, 0.55);
+  color: #f2efe8;
+  transform: none;
+  box-shadow: none;
 }
-.menu-card.is-selected {
-  border-color: #e0b06a;
-  box-shadow:
-    inset 0 0 0 1px rgba(224, 176, 106, 0.35),
-    0 0 18px rgba(224, 176, 106, 0.18);
-  background: rgba(36, 32, 22, 0.9);
+.menu-card.is-selected,
+.menu-card.is-selected:hover:not(:disabled),
+.menu-card.is-selected:active:not(:disabled) {
+  border-color: #c9a04a;
+  background: rgba(36, 30, 18, 0.95);
+  color: #f2efe8;
+  box-shadow: none;
 }
 .menu-card-icon {
   font-size: 18px;
@@ -275,11 +299,12 @@ button:disabled {
   display: none;
   width: 100%;
   padding: 12px 14px;
-  background: rgba(12, 14, 12, 0.82);
-  border: 1px solid rgba(224, 176, 106, 0.35);
-  border-radius: 8px;
+  background: rgba(12, 12, 12, 0.88);
+  border: 1px solid rgba(201, 160, 74, 0.4);
+  border-radius: 4px;
   flex-direction: column;
   gap: 8px;
+  box-shadow: none;
 }
 .menu-seed-panel.is-open {
   display: flex;
@@ -303,24 +328,12 @@ button:disabled {
 }
 .menu-seed-input:focus {
   outline: none;
-  border-color: rgba(224, 176, 106, 0.7);
-  box-shadow: 0 0 0 2px rgba(224, 176, 106, 0.15);
+  border-color: #c9a04a;
+  box-shadow: none;
 }
 .menu-seed-actions {
   display: flex;
   gap: 8px;
-}
-.menu-seed-go {
-  background: #3d7a4a;
-  border-color: rgba(160, 230, 170, 0.4);
-  font-weight: 600;
-}
-.menu-seed-go:hover:not(:disabled) {
-  background: #4a9158;
-}
-.menu-seed-cancel {
-  background: transparent;
-  opacity: 0.85;
 }
 .menu-seed-error {
   display: none;
@@ -333,15 +346,8 @@ button:disabled {
   display: block;
 }
 .menu-back {
-  background: transparent;
-  border-color: rgba(255, 255, 255, 0.18);
-  opacity: 0.8;
   font-size: 13px;
   padding: 6px 12px;
-}
-.menu-back:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  opacity: 1;
 }
 .menu-hints {
   position: absolute;
@@ -381,7 +387,7 @@ button:disabled {
   }
   .menu-center {
     justify-content: flex-end;
-    padding-top: 96px;
+    padding-top: 24px;
     padding-bottom: 56px;
   }
   .menu-card {
@@ -390,20 +396,28 @@ button:disabled {
   }
 }
 
-/* Result */
-.result-panel {
+/* —— Flat modals (result / loading / error) —— */
+.modal-panel,
+.result-panel,
+.loading-panel,
+.error-panel {
+  pointer-events: auto;
   width: min(380px, 100%);
   padding: 22px 24px;
   margin-top: 48px;
-  background: rgba(20, 34, 24, 0.94);
-  border: 1px solid rgba(120, 220, 140, 0.35);
-  border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: #141210;
+  border: 1px solid rgba(201, 160, 74, 0.45);
+  border-radius: 4px;
+  box-shadow: none;
 }
-.result-title {
-  font-size: 24px;
+.modal-title,
+.result-title,
+.error-panel h2 {
+  font-size: 22px;
+  font-weight: 700;
   margin-bottom: 8px;
-  color: #9dffb0;
+  color: #e8c878;
+  letter-spacing: 0.04em;
 }
 .result-meta {
   font-size: 14px;
@@ -413,28 +427,32 @@ button:disabled {
 .result-seed {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+  color: #e8c878;
 }
-.result-copy {
+.result-copy,
+.error-panel p {
   font-size: 13px;
   opacity: 0.8;
   margin-bottom: 16px;
   line-height: 1.4;
+  color: #f2efe8;
 }
-.result-actions {
+.result-actions,
+.error-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-/* Loading */
 .loading-panel {
   width: min(320px, 100%);
   padding: 18px 20px;
-  margin-top: 48px;
-  background: rgba(20, 24, 22, 0.9);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 14px;
+  color: #f2efe8;
+}
+.loading-panel strong {
+  color: #e8c878;
+  font-weight: 600;
 }
 
 /* Play HUD */

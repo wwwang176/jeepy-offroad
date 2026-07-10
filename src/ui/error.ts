@@ -7,12 +7,18 @@ export function showError(message: string, onRetry: () => void): void {
   const root = document.querySelector("#ui-root");
   if (!root) return;
   root.innerHTML = "";
-  const panel = document.createElement("div");
-  panel.className = "panel";
-  panel.style.cssText =
-    "padding:24px;margin:24px;background:#333;max-width:420px";
-  panel.innerHTML = `<h2>Error</h2><p></p><button type="button">Retry</button>`;
-  panel.querySelector("p")!.textContent = message;
-  panel.querySelector("button")!.onclick = onRetry;
-  root.appendChild(panel);
+  const wrap = document.createElement("div");
+  wrap.className = "modal-overlay";
+  wrap.innerHTML = `
+    <div class="panel error-panel modal-panel">
+      <h2>Error</h2>
+      <p></p>
+      <div class="error-actions">
+        <button type="button" id="error-retry">Retry</button>
+      </div>
+    </div>
+  `;
+  wrap.querySelector("p")!.textContent = message;
+  wrap.querySelector<HTMLButtonElement>("#error-retry")!.onclick = onRetry;
+  root.appendChild(wrap);
 }
