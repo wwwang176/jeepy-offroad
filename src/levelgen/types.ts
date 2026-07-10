@@ -7,7 +7,6 @@ export const PATH_SAFETY_FACTOR = 0.75;
 export const STREAM_MAX_DEPTH_ON_PATH_M = 0.35;
 export const CHECKPOINT_SPACING_M = 40;
 export const START_FINISH_EDGE_MARGIN_M = 16;
-export const MAX_REPAIR_ATTEMPTS = 8;
 export const DEFAULT_MAP_SIZE = 256;
 /** Height samples per axis. Keep 2^n+1 so cell count is power-of-two (was 129 → 128×2m). */
 export const DEFAULT_RESOLUTION = 257;
