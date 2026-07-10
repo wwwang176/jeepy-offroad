@@ -121,6 +121,8 @@ function heightAt(x: number, z: number, seed: number): number {
   const laneFlatten = 1 - Math.exp(-edge * edge * 4);
   h *= 0.38 + 0.62 * laneFlatten;
   h -= edge * edge * 1.15;
+  // Menu terrain relief ×2 (base sit height unchanged)
+  h *= 2;
   h += 2.4;
   return h;
 }
@@ -599,6 +601,31 @@ export async function createMenuBackdrop(
 
   const _camPos = new THREE.Vector3();
   const _look = new THREE.Vector3();
+  const _pinQ = new THREE.Quaternion();
+  const _pinE = new THREE.Euler(0, 0, 0, "YXZ");
+
+  /**
+   * Always keep the jeep on the centerline: X=0, yaw=0.
+   * Y/Z free so suspension + forward drive stay real; no full respawn snap.
+   */
+  const pinToLaneCenter = (): void => {
+    const body = vehicle.getChassisBody();
+    const t = body.translation();
+    const lv = body.linvel();
+    const av = body.angvel();
+    const r = body.rotation();
+    _pinQ.set(r.x, r.y, r.z, r.w);
+    _pinE.setFromQuaternion(_pinQ, "YXZ");
+    _pinE.y = 0;
+    _pinQ.setFromEuler(_pinE);
+    body.setTranslation({ x: 0, y: t.y, z: t.z }, true);
+    body.setRotation(
+      { x: _pinQ.x, y: _pinQ.y, z: _pinQ.z, w: _pinQ.w },
+      true,
+    );
+    body.setLinvel({ x: 0, y: lv.y, z: lv.z }, true);
+    body.setAngvel({ x: av.x, y: 0, z: av.z }, true);
+  };
 
   const onResize = (): void => {
     if (disposed) return;
@@ -712,18 +739,21 @@ export async function createMenuBackdrop(
       };
       vehicle.update(FIXED_DT, drive, world);
       physics.step();
+      // Unconditional lane pin every step (no respawn teleport)
+      pinToLaneCenter();
 
       const p = vehicle.getPose();
       maybeRecycle(p.position.z);
 
-      const offStrip = Math.abs(p.position.x) > CHUNK_WIDTH * 0.42;
-      if (p.position.y < -15 || p.position.y > 45 || offStrip) {
-        chunks.sort((a, b) => a.centerZ - b.centerZ);
-        const mid = chunks[1] ?? chunks[0]!;
-        const rz = mid.centerZ;
-        const gy = heightAt(0, rz, seed);
+      // Only extreme Y fails (fell through world) — soft re-seat on current Z
+      if (p.position.y < -15 || p.position.y > 50) {
+        const gy = heightAt(0, p.position.z, seed);
         vehicle.reset({
-          position: { x: 0, y: chassisSpawnY(gy), z: rz },
+          position: {
+            x: 0,
+            y: chassisSpawnY(gy),
+            z: p.position.z,
+          },
           yaw: 0,
         });
       }
