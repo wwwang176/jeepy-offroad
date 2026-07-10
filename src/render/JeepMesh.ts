@@ -514,8 +514,18 @@ export function createJeepMesh(): THREE.Group {
   box(g, bodyW * 0.98, tailH, 0.18, PAL.body, 0, beltY - tailH * 0.45, -1.28, "tailgate");
   box(g, bodyW * 0.98, 0.1, 0.14, PAL.black, 0, roofY, -1.18, "roof-rear-lip");
   box(g, 0.4, 0.05, 0.04, PAL.orange, 0, roofY + 0.06, -1.16);
-  box(g, 0.11, 0.3, 0.07, PAL.red, -halfW + 0.14, 0.42 * bodyScaleY, -1.38);
-  box(g, 0.11, 0.3, 0.07, PAL.red, halfW - 0.14, 0.42 * bodyScaleY, -1.38);
+  // Tail / brake lamps (emissive toggled by setJeepBrakeLights)
+  addBrakeLamp(g, -halfW + 0.14, 0.42 * bodyScaleY, -1.38);
+  addBrakeLamp(g, halfW - 0.14, 0.42 * bodyScaleY, -1.38);
+  // Center high-mount stop lamp on rear roof lip
+  const chmsl = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.045, 0.04),
+    makeBrakeLensMaterial(),
+  );
+  chmsl.name = "brake-light-chmsl";
+  chmsl.userData.isBrakeLight = true;
+  chmsl.position.set(0, roofY + 0.02, -1.2);
+  g.add(chmsl);
   cyl(g, 0.045, 0.045, bodyW + 0.1, 8, PAL.bumper, 0, -0.14, -1.42, 0, 0, Math.PI / 2);
 
   // Spare: disc faces -Z (rear)
@@ -719,6 +729,40 @@ function updateSuspensionLink(
   }
 }
 
+/** Dark red when off; bright emissive when braking. */
+function makeBrakeLensMaterial(): THREE.MeshLambertMaterial {
+  return new THREE.MeshLambertMaterial({
+    color: 0x3a0808,
+    emissive: 0x1a0000,
+    emissiveIntensity: 0.35,
+    flatShading: true,
+  });
+}
+
+function addBrakeLamp(
+  parent: THREE.Object3D,
+  x: number,
+  y: number,
+  z: number,
+): void {
+  const housing = new THREE.Mesh(
+    new THREE.BoxGeometry(0.14, 0.32, 0.06),
+    mat(PAL.blackSoft),
+  );
+  housing.position.set(x, y, z);
+  housing.name = "brake-housing";
+  parent.add(housing);
+
+  const lens = new THREE.Mesh(
+    new THREE.BoxGeometry(0.11, 0.26, 0.05),
+    makeBrakeLensMaterial(),
+  );
+  lens.name = "brake-light";
+  lens.userData.isBrakeLight = true;
+  lens.position.set(x, y, z - 0.04);
+  parent.add(lens);
+}
+
 /**
  * Hide greenhouse glass in first person so the cabin view is not fogged.
  * Tagged with `userData.isGlass` at mesh build time.
@@ -726,6 +770,27 @@ function updateSuspensionLink(
 export function setJeepGlassVisible(mesh: THREE.Object3D, visible: boolean): void {
   mesh.traverse((o) => {
     if (o.userData?.isGlass) o.visible = visible;
+  });
+}
+
+/**
+ * Toggle rear brake lamps (side pair + CHMSL). Lit on service / opposite-throttle brake.
+ */
+export function setJeepBrakeLights(mesh: THREE.Object3D, on: boolean): void {
+  mesh.traverse((o) => {
+    if (!o.userData?.isBrakeLight) return;
+    const m = o as THREE.Mesh;
+    const mat = m.material as THREE.MeshLambertMaterial;
+    if (!mat || !("emissive" in mat)) return;
+    if (on) {
+      mat.color.setHex(0xff2a1a);
+      mat.emissive.setHex(0xff1808);
+      mat.emissiveIntensity = 1.35;
+    } else {
+      mat.color.setHex(0x3a0808);
+      mat.emissive.setHex(0x1a0000);
+      mat.emissiveIntensity = 0.35;
+    }
   });
 }
 

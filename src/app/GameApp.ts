@@ -12,6 +12,7 @@ import { KeyboardProvider } from "@/input/KeyboardProvider";
 import { createRenderer } from "@/render/createRenderer";
 import {
   createJeepMesh,
+  setJeepBrakeLights,
   setJeepGlassVisible,
   syncJeepMesh,
 } from "@/render/JeepMesh";
@@ -27,6 +28,7 @@ import { getBiome } from "@/biome/registry";
 import { normalizeSeed } from "@/shared/seed";
 import { VEHICLE_CAPABILITIES } from "@/shared/vehicleCapabilities";
 import { chassisSpawnY } from "@/shared/vehicleConfig";
+import { OPPOSITE_BRAKE_SPEED_EPS } from "@/shared/driveTrain";
 import { FinishSystem } from "@/gameplay/FinishSystem";
 import { CheckpointSystem } from "@/gameplay/CheckpointSystem";
 import { RespawnSystem } from "@/gameplay/RespawnSystem";
@@ -538,6 +540,17 @@ export class GameApp {
       // Keep glass visibility in sync if mode changed elsewhere
       if (this.cameraRig) {
         setJeepGlassVisible(this.jeepMesh, this.cameraRig.mode !== "first");
+      }
+      // Brake lamps: explicit brake or opposite-throttle service brake
+      {
+        const thr = this.lastDriveActions.throttle;
+        const br = this.lastDriveActions.brake;
+        const fwd = this.vehicle.getForwardSpeedMps();
+        const opposite =
+          Math.abs(thr) > 0.05 &&
+          Math.abs(fwd) > OPPOSITE_BRAKE_SPEED_EPS &&
+          Math.sign(thr) !== Math.sign(fwd);
+        setJeepBrakeLights(this.jeepMesh, br > 0.1 || opposite);
       }
 
       // Speed + range badges (level + sandbox).
