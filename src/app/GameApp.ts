@@ -210,14 +210,10 @@ export class GameApp {
             onStart: ({ biomeId, seed }) => {
               this.dispatch({ type: "START", biomeId, seed });
             },
-            // Dev-only flat sandbox; never exposed in production builds
-            ...(import.meta.env.DEV
-              ? {
-                  onFlatTest: () => {
-                    void this.startFlatSandbox();
-                  },
-                }
-              : {}),
+            // ROAD card → flat paved practice sandbox
+            onRoad: () => {
+              void this.startFlatSandbox();
+            },
           });
         }
         break;

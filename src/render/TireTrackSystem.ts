@@ -51,6 +51,11 @@ export type TireTrackOptions = {
   };
   /** Flat sandbox ground Y */
   flatGroundY?: number;
+  /**
+   * Custom ground height (e.g. menu infinite strip).
+   * Wins over heightmap / flatGroundY when set.
+   */
+  sampleGroundY?: (x: number, z: number) => number;
 };
 
 type WheelTrail = {
@@ -94,6 +99,8 @@ export class TireTrackSystem {
   private resolution = 0;
   private worldSize = 0;
   private flatGroundY: number | null = null;
+  private customSampleGroundY: ((x: number, z: number) => number) | null =
+    null;
   private readonly _q = new THREE.Quaternion();
   private readonly _local = new THREE.Vector3();
 
@@ -189,6 +196,7 @@ export class TireTrackSystem {
 
     if (opts?.streams) this.streams = opts.streams;
     if (opts?.flatGroundY != null) this.flatGroundY = opts.flatGroundY;
+    if (opts?.sampleGroundY) this.customSampleGroundY = opts.sampleGroundY;
     if (opts?.terrain) {
       this.heightmap = opts.terrain.heightmap;
       this.resolution = opts.terrain.resolution;
@@ -484,6 +492,9 @@ export class TireTrackSystem {
   }
 
   private sampleGroundY(x: number, z: number): number {
+    if (this.customSampleGroundY) {
+      return this.customSampleGroundY(x, z);
+    }
     if (this.heightmap && this.resolution > 0) {
       return sampleBilinear(
         this.heightmap,

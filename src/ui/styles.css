@@ -31,7 +31,7 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* Menu */
+/* Menu / result / loading overlays */
 .menu-overlay,
 .result-overlay,
 .loading-overlay {
@@ -54,110 +54,340 @@ button:disabled {
 .loading-overlay > .panel {
   pointer-events: auto;
 }
-.menu-panel {
-  width: min(420px, 100%);
-  padding: 20px 22px;
-  background: rgba(22, 28, 24, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+
+/* —— Cinematic main menu (left UI over full-bleed 3D) —— */
+.menu-overlay.menu-cinematic {
+  align-items: stretch;
+  justify-content: center;
+  padding: 0;
+  z-index: 5;
+  /*
+   * Ultra-wide: solid mask from screen left edge up to the 1000px shell.
+   * Shell left = max(0, (100% - 1000px) / 2). Below 1000px this is 0 (no gap).
+   */
+  background: linear-gradient(
+    90deg,
+    rgba(8, 10, 12, 0.92) 0%,
+    rgba(8, 10, 12, 0.92) max(0px, calc((100% - 1000px) / 2)),
+    transparent max(0px, calc((100% - 1000px) / 2 + 1px))
+  );
 }
-.menu-title {
-  font-size: 22px;
-  font-weight: 700;
-  margin-bottom: 6px;
-  letter-spacing: 0.01em;
+/* Centered content rail — max 1000px; menu sits on its left edge */
+.menu-shell {
+  pointer-events: none;
+  position: relative;
+  width: 100%;
+  max-width: 1000px;
+  height: 100%;
+  min-height: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: stretch;
 }
-.menu-sub {
-  font-size: 13px;
-  opacity: 0.8;
-  margin-bottom: 14px;
-  line-height: 1.4;
+/* Fade within the shell (menu column → open jeep side) */
+.menu-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    rgba(8, 10, 12, 0.92) 0%,
+    rgba(8, 10, 12, 0.82) 22%,
+    rgba(8, 10, 12, 0.45) 42%,
+    rgba(8, 10, 12, 0.12) 58%,
+    transparent 72%
+  );
 }
-.menu-biomes {
+.menu-left {
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 14px;
+  justify-content: center;
+  /* Left column inside the 1000px shell (~40% of shell) */
+  width: 40%;
+  min-width: 260px;
+  max-width: 400px;
+  min-height: 100%;
+  height: 100%;
+  padding: clamp(28px, 6vh, 56px) clamp(22px, 3vw, 36px);
+  box-sizing: border-box;
 }
-.biome-card {
+/* Logo stays top-left; does not push the center stack */
+.menu-brand {
+  position: absolute;
+  top: clamp(24px, 5vh, 48px);
+  left: clamp(22px, 3vw, 36px);
+  right: clamp(22px, 3vw, 36px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+/* Buttons / cards vertically centered in the 40% column */
+.menu-center {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-top: 72px; /* clear absolute logo */
+  padding-bottom: 48px; /* clear absolute hints */
+}
+.menu-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  line-height: 0.95;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55);
+}
+.menu-title-main {
+  font-size: clamp(40px, 7vw, 56px);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #f6f3ec;
+}
+.menu-title-sub {
+  font-size: clamp(22px, 3.6vw, 30px);
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  text-transform: lowercase;
+  color: #d4b48a;
+  margin-top: 4px;
+}
+.menu-title-rule {
+  width: 72px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #e0b06a, transparent);
+}
+/* Stages: default hidden; .is-active wins (do NOT rely on [hidden] vs display:flex) */
+.menu-stage {
+  display: none;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-start;
+  width: 100%;
+}
+.menu-stage.is-active {
+  display: flex;
+}
+.menu-cta {
+  min-width: 200px;
+  padding: 16px 28px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #14120e;
+  background: linear-gradient(180deg, #f0d090 0%, #c8923e 100%);
+  border: 1px solid rgba(255, 230, 180, 0.55);
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.25),
+    0 10px 28px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+.menu-cta:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f6db9e 0%, #d4a04a 100%);
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+.menu-cta:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.menu-select-label {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin: 0;
+}
+.menu-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+}
+.menu-card {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  width: 100%;
+  width: calc(50% - 5px);
+  min-height: 88px;
+  padding: 12px 12px 10px;
   text-align: left;
-  padding: 12px 14px;
-  background: rgba(40, 52, 44, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  background: rgba(18, 22, 20, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease,
+    box-shadow 0.12s ease;
 }
-.biome-card:hover:not(:disabled) {
-  background: rgba(52, 68, 56, 0.95);
+.menu-card:hover:not(:disabled) {
+  transform: translateY(-3px);
+  background: rgba(28, 34, 30, 0.88);
+  border-color: rgba(224, 176, 106, 0.55);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
 }
-.biome-card.is-selected {
-  border-color: #8fd48f;
-  box-shadow: inset 0 0 0 1px rgba(143, 212, 143, 0.45);
-  background: rgba(48, 72, 52, 0.95);
+.menu-card.is-selected {
+  border-color: #e0b06a;
+  box-shadow:
+    inset 0 0 0 1px rgba(224, 176, 106, 0.35),
+    0 0 18px rgba(224, 176, 106, 0.18);
+  background: rgba(36, 32, 22, 0.9);
 }
-.biome-card-name {
-  font-weight: 600;
+.menu-card-icon {
+  font-size: 18px;
+  line-height: 1;
+  margin-bottom: 4px;
+  opacity: 0.95;
+}
+.menu-card-name {
+  font-weight: 700;
   font-size: 15px;
+  letter-spacing: 0.04em;
+  color: #f2efe8;
 }
-.biome-card-desc {
-  font-size: 12px;
-  opacity: 0.75;
+.menu-card-desc {
+  font-size: 11px;
+  opacity: 0.65;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.menu-seed-panel {
+  display: none;
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(12, 14, 12, 0.82);
+  border: 1px solid rgba(224, 176, 106, 0.35);
+  border-radius: 8px;
+  flex-direction: column;
+  gap: 8px;
+}
+.menu-seed-panel.is-open {
+  display: flex;
 }
 .menu-seed-label {
   display: block;
-  font-size: 13px;
-  margin-bottom: 6px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  opacity: 0.75;
 }
 .menu-seed-input {
   display: block;
   width: 100%;
-  margin-top: 4px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  background: #141a16;
+  background: #101410;
   color: #f2f2f2;
   font: inherit;
+  font-variant-numeric: tabular-nums;
 }
-.menu-seed-error {
-  color: #ff9b9b;
-  font-size: 12px;
-  margin: 0 0 8px;
-  min-height: 1.2em;
+.menu-seed-input:focus {
+  outline: none;
+  border-color: rgba(224, 176, 106, 0.7);
+  box-shadow: 0 0 0 2px rgba(224, 176, 106, 0.15);
 }
-.menu-actions {
+.menu-seed-actions {
   display: flex;
   gap: 8px;
-  margin-top: 10px;
 }
-.menu-start {
+.menu-seed-go {
   background: #3d7a4a;
   border-color: rgba(160, 230, 170, 0.4);
   font-weight: 600;
-  min-width: 100px;
 }
-.menu-start:hover:not(:disabled) {
+.menu-seed-go:hover:not(:disabled) {
   background: #4a9158;
 }
-.menu-hints {
-  margin-top: 14px;
-  font-size: 12px;
-  opacity: 0.7;
-  line-height: 1.4;
-}
-.menu-dev {
-  margin-top: 10px;
-}
-.menu-flat-test {
-  font-size: 12px;
-  padding: 4px 8px;
-  opacity: 0.75;
+.menu-seed-cancel {
   background: transparent;
+  opacity: 0.85;
+}
+.menu-seed-error {
+  display: none;
+  color: #ff9b9b;
+  font-size: 12px;
+  margin: 0;
+  min-height: 1.2em;
+}
+.menu-seed-error.is-visible {
+  display: block;
+}
+.menu-back {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.18);
+  opacity: 0.8;
+  font-size: 13px;
+  padding: 6px 12px;
+}
+.menu-back:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  opacity: 1;
+}
+.menu-hints {
+  position: absolute;
+  left: clamp(22px, 3vw, 36px);
+  right: clamp(22px, 3vw, 36px);
+  bottom: clamp(18px, 3.5vh, 32px);
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.55;
+  line-height: 1.45;
+  max-width: 34ch;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .menu-overlay.menu-cinematic {
+    /* Full-bleed top→bottom dim; shell handles the rest */
+    background: rgba(8, 10, 12, 0.35);
+  }
+  .menu-shell {
+    max-width: 100%;
+  }
+  .menu-shell::before {
+    background: linear-gradient(
+      180deg,
+      rgba(8, 10, 12, 0.82) 0%,
+      rgba(8, 10, 12, 0.45) 45%,
+      rgba(8, 10, 12, 0.2) 100%
+    );
+  }
+  .menu-left {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    justify-content: flex-end;
+    padding-bottom: 28px;
+  }
+  .menu-center {
+    justify-content: flex-end;
+    padding-top: 96px;
+    padding-bottom: 56px;
+  }
+  .menu-card {
+    width: 100%;
+    min-height: 72px;
+  }
 }
 
 /* Result */
