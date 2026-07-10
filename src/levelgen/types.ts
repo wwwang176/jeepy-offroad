@@ -11,6 +11,19 @@ export const MAX_REPAIR_ATTEMPTS = 8;
 export const DEFAULT_MAP_SIZE = 256;
 /** Height samples per axis. Keep 2^n+1 so cell count is power-of-two (was 129 → 128×2m). */
 export const DEFAULT_RESOLUTION = 257;
+/**
+ * Lifetime fill/cut vs immutable base terrain (m).
+ * Absolute conditioning: hm = base + clamp(pathY - base, -cut, +fill).
+ */
+export const PATH_TERRAIN_MAX_DELTA_M = 3;
+/** Max raise above base along path core (m). */
+export const PATH_FILL_CAP_M = 3;
+/** Max cut below base along path core (m). */
+export const PATH_CUT_CAP_M = 3;
+/** Full-strength conditioning radius (m). */
+export const PATH_CORE_R_M = 7;
+/** Outer falloff end (m); beyond this heightmap stays at base (pre-stream). */
+export const PATH_OUTER_R_M = 13;
 
 export interface GenerateLevelInput {
   seed: number;
@@ -24,6 +37,11 @@ export interface LevelData {
   seed: number;
   biomeId: BiomeId;
   heightmap: Float32Array;
+  /**
+   * Pre-path FBM snapshot (immutable for conditioning). Path Y and terrain
+   * deltas are always computed against this — never against mutated hm.
+   */
+  baseHeightmap: Float32Array;
   resolution: number;
   worldSize: number;
   pathPolyline: Vec3[];

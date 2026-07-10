@@ -45,8 +45,11 @@ export function assignPathHeights(
 
 /**
  * Sample heightmap along an XZ polyline, then grade-limit so the path
- * *follows terrain* instead of inventing a flat design profile that later
- * stamps a highway through the map.
+ * *follows terrain* instead of inventing a flat design profile.
+ *
+ * Last step is always grade clamp (assignPathHeights) — do not re-anchor to
+ * ground afterward or consecutive segments can exceed max slope.
+ * Embankment limits live in conditionTerrainFromBase (vs immutable base).
  */
 export function fitPathToHeightmap(
   points: Vec3[],

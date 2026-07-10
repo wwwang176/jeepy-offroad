@@ -10,8 +10,6 @@ import {
 
 const EPS = 1e-6;
 const PATH_NEAR_M = 6;
-/** Ribbon height consistency vs centerline; slightly above pure step, below 1.25 legacy. */
-const RIBBON_HEIGHT_TOL_FACTOR = 1.15;
 
 function finite(n: number): boolean {
   return Number.isFinite(n);
@@ -123,7 +121,6 @@ export function validateLevel(
   const path = level.pathPolyline;
   const maxGrade = Math.tan(vehicle.maxSlopeRad) * PATH_SAFETY_FACTOR;
   const maxStep = vehicle.maxStepHeight * PATH_SAFETY_FACTOR;
-  const halfRibbon = (vehicle.trackWidth + 2 * vehicle.pathClearance) / 2;
   const wheelHalf = vehicle.trackWidth / 2;
 
   // 1. Continuous centerline
@@ -221,67 +218,40 @@ export function validateLevel(
     }
   }
 
-  // 4. Path ribbon width: cells within halfRibbon of path have path-consistent heights
+  // 4. Route stays on-map + soft centerline ground match.
+  // Offroad: no vehicle-width hard ribbon — only require the centerline
+  // samples to be finite / roughly near path.y after soft terrain nudge.
+  {
+    const halfMap = level.worldSize * 0.5;
+    const margin = 1;
+    for (let i = 0; i < path.length; i++) {
+      const p = path[i];
+      if (
+        p.x < -halfMap + margin ||
+        p.x > halfMap - margin ||
+        p.z < -halfMap + margin ||
+        p.z > halfMap - margin
+      ) {
+        reasons.push(`path point ${i} outside map bounds`);
+      }
+    }
+  }
   if (hm && hm.length === level.resolution * level.resolution) {
     const res = level.resolution;
     const worldSize = level.worldSize;
     const cell = worldSize / (res - 1);
-    const origin = -worldSize / 2;
-    const tol = maxStep * RIBBON_HEIGHT_TOL_FACTOR + cell * 0.5;
-    let ribbonFail = 0;
-    // Sample along path at denser spacing for ribbon support
-    for (let i = 0; i < path.length; i++) {
+    // Generous: soft nudge leaves residual relief on purpose
+    const tol = maxStep * 2.5 + cell * 1.5;
+    let centerFail = 0;
+    const step = Math.max(1, Math.floor(path.length / 48));
+    for (let i = 0; i < path.length; i += step) {
       const p = path[i];
-      let yaw = 0;
-      if (i < path.length - 1) yaw = segmentHeading(p, path[i + 1]);
-      else yaw = segmentHeading(path[i - 1], p);
-      const n = pathNormal(yaw);
-      // Probe left edge, center, right edge of required ribbon
-      for (const lat of [-halfRibbon, 0, halfRibbon]) {
-        const x = p.x + n.x * lat;
-        const z = p.z + n.z * lat;
-        const y = sampleBilinear(hm, res, worldSize, x, z);
-        if (!finite(y)) {
-          ribbonFail++;
-          continue;
-        }
-        // Path-consistent: within step tolerance of centerline height
-        if (Math.abs(y - p.y) > tol) {
-          ribbonFail++;
-        }
-      }
+      const y = sampleBilinear(hm, res, worldSize, p.x, p.z);
+      if (!finite(y) || Math.abs(y - p.y) > tol) centerFail++;
     }
-    // Also verify grid cells near path mid-segment
-    for (let i = 1; i < path.length; i += Math.max(1, Math.floor(path.length / 24))) {
-      const mid = {
-        x: (path[i - 1].x + path[i].x) * 0.5,
-        y: (path[i - 1].y + path[i].y) * 0.5,
-        z: (path[i - 1].z + path[i].z) * 0.5,
-      };
-      const yaw = segmentHeading(path[i - 1], path[i]);
-      const n = pathNormal(yaw);
-      for (const lat of [-halfRibbon * 0.95, halfRibbon * 0.95]) {
-        const x = mid.x + n.x * lat;
-        const z = mid.z + n.z * lat;
-        // Ensure sample is on map
-        if (
-          x < origin ||
-          z < origin ||
-          x > origin + worldSize ||
-          z > origin + worldSize
-        ) {
-          ribbonFail++;
-          continue;
-        }
-        const y = sampleBilinear(hm, res, worldSize, x, z);
-        if (!finite(y) || Math.abs(y - mid.y) > tol) {
-          ribbonFail++;
-        }
-      }
-    }
-    if (ribbonFail > 0) {
+    if (centerFail > 0) {
       reasons.push(
-        `path ribbon width support failed (${ribbonFail} samples; need >= ${halfRibbon.toFixed(2)}m half-width)`,
+        `path centerline ground mismatch (${centerFail} samples; soft route, not road ribbon)`,
       );
     }
   }

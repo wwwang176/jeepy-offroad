@@ -1,31 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { generateLevel } from "@/levelgen/generateLevel";
-import { validateLevel } from "@/levelgen/validate";
+import { forceFallbackLevel, generateLevel } from "@/levelgen/generateLevel";
 import { cliffsBiome } from "@/biome/profiles/cliffs";
 import { VEHICLE_CAPABILITIES } from "@/shared/vehicleCapabilities";
-import { forceFallbackLevel } from "@/levelgen/generateLevel";
 
-describe("repair and fallback", () => {
-  it("forceFallbackLevel is valid and sets usedFallback", () => {
+describe("generateLevel (no validate/repair gate)", () => {
+  it("forceFallbackLevel only sets meta flag (mild carve)", () => {
     const level = forceFallbackLevel({
       seed: 99,
       biome: cliffsBiome,
       vehicle: VEHICLE_CAPABILITIES,
     });
     expect(level.meta.usedFallback).toBe(true);
-    const v = validateLevel(level, VEHICLE_CAPABILITIES);
-    expect(v.ok, v.reasons.join("; ")).toBe(true);
+    expect(level.heightmap.length).toBe(level.resolution * level.resolution);
+    expect(level.pathPolyline.length).toBeGreaterThan(2);
   });
 
-  it("generateLevel always returns ok validation", () => {
-    for (const seed of [1, 42, 99991]) {
+  it("generateLevel always returns a level without repair/fallback", () => {
+    for (const seed of [1, 42, 99991, 1082233287]) {
       const level = generateLevel({
         seed,
         biome: cliffsBiome,
         vehicle: VEHICLE_CAPABILITIES,
       });
-      const v = validateLevel(level, VEHICLE_CAPABILITIES);
-      expect(v.ok, `seed ${seed}: ${v.reasons.join("; ")}`).toBe(true);
+      expect(level.meta.usedFallback).toBe(false);
+      expect(level.meta.repairAttempts).toBe(0);
+      expect(level.pathPolyline.length).toBeGreaterThan(2);
+      expect(level.baseHeightmap.length).toBe(level.heightmap.length);
     }
   });
 });

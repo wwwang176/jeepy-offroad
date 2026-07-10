@@ -1,7 +1,7 @@
 import type { BiomeProfile } from "@/biome/types";
 import type { Vec3 } from "@/shared/types";
 import type { VehicleCapabilities } from "@/shared/vehicleCapabilities";
-import { cellSize, gridToWorld, idx } from "@/shared/coords";
+import { gridToWorld, idx } from "@/shared/coords";
 import { createHeightmap } from "./heightmap";
 import {
   fallbackPath,
@@ -9,24 +9,19 @@ import {
   generatePathPolyline,
 } from "./path";
 import {
-  flattenFallbackUntilValid,
+  conditionTerrainFromBase,
   pathClosestY,
   pathDistXZ,
-  repairHeightmap,
-  resyncPathHeights,
-  stampPathRibbon,
 } from "./repair";
 import { mulberry32 } from "./rng";
 import {
   CHECKPOINT_SPACING_M,
   DEFAULT_MAP_SIZE,
   DEFAULT_RESOLUTION,
-  MAX_REPAIR_ATTEMPTS,
   STREAM_MAX_DEPTH_ON_PATH_M,
   type GenerateLevelInput,
   type LevelData,
 } from "./types";
-import { validateLevel } from "./validate";
 
 function ribbonWidth(biome: BiomeProfile, vehicle: VehicleCapabilities): number {
   return biome.pathWidth ?? vehicle.trackWidth + 2 * vehicle.pathClearance;
@@ -72,14 +67,15 @@ function fbm(x: number, z: number, seed: number): number {
 
 export type CarveResult = {
   heightmap: Float32Array;
-  /** Path with heights fitted to terrain (grade-limited). */
+  /** Immutable pre-path FBM (path Y + terrain deltas always vs this). */
+  baseHeightmap: Float32Array;
+  /** Path with heights fitted to base terrain (grade-limited). */
   path: Vec3[];
 };
 
 /**
- * Build base terrain, fit path heights *from that terrain*, then soft-stamp a
- * drivable ribbon. The ribbon no longer invents a separate flat grade that
- * overwrites the map as a straight highway.
+ * Build base FBM → fit path to base only → one absolute path-band condition
+ * (lifetime fill/cut vs base) → carve streams. No multi-pass ratchet nudge.
  */
 export function carveAndDecorate(
   pathXZ: Vec3[],
@@ -92,8 +88,6 @@ export function carveAndDecorate(
 ): CarveResult {
   const hm = createHeightmap(resolution, 10);
   const halfW = ribbonWidth(biome, vehicle) / 2;
-  // Slightly generous ribbon so support samples pass
-  const carveHalf = halfW + cellSize(mapSize, resolution) * 0.75;
 
   // Base terrain — moderate relief (not canyon-scale)
   const nSeed = (rng() * 1e9) | 0;
@@ -115,11 +109,27 @@ export function carveAndDecorate(
     }
   }
 
-  // Path Y follows terrain, then grade-clamped — not a synthetic flat profile
-  let path = fitPathToHeightmap(pathXZ, hm, resolution, mapSize, vehicle);
-  stampPathRibbon(hm, resolution, mapSize, path, carveHalf, 3.5);
+  // Immutable base — all path fitting / conditioning is vs this snapshot
+  const baseHeightmap = new Float32Array(hm);
 
-  // Streams
+  // Design path Y from base only (conditioning target)
+  const pathDesign = fitPathToHeightmap(
+    pathXZ,
+    baseHeightmap,
+    resolution,
+    mapSize,
+    vehicle,
+  );
+  // Single absolute condition: hm = base + clamp(pathY - base, ±caps) × falloff
+  conditionTerrainFromBase(
+    hm,
+    baseHeightmap,
+    resolution,
+    mapSize,
+    pathDesign,
+  );
+
+  // Streams after conditioning — use design path for ford depth (pathY − bed)
   const streams: {
     polyline: Vec3[];
     width: number;
@@ -134,37 +144,46 @@ export function carveAndDecorate(
     vehicle.maxStepHeight * 0.75 * 0.9,
   );
   for (let s = 0; s < streamCount; s++) {
-    const poly = generateStreamPolyline(mapSize, path, rng, s);
+    const poly = generateStreamPolyline(mapSize, pathDesign, rng, s);
     if (poly.length < 2) continue;
     const width = 2 + rng() * 2;
-    carveStream(hm, resolution, mapSize, poly, width, path, halfW, fordDepth);
-    streams.push({ polyline: poly, width, depthOnPath: fordDepth });
-  }
-
-  // Re-fit after stream digs, hard re-stamp ribbon, re-apply fords
-  path = fitPathToHeightmap(path, hm, resolution, mapSize, vehicle);
-  stampPathRibbon(hm, resolution, mapSize, path, carveHalf, 3);
-  for (const s of streams) {
+    carveStream(
+      hm,
+      resolution,
+      mapSize,
+      poly,
+      width,
+      pathDesign,
+      halfW,
+      fordDepth,
+    );
     applyStreamFordsOnPath(
       hm,
       resolution,
       mapSize,
-      s.polyline,
-      s.width,
-      path,
+      poly,
+      width,
+      pathDesign,
       halfW,
-      s.depthOnPath,
+      fordDepth,
     );
+    streams.push({ polyline: poly, width, depthOnPath: fordDepth });
   }
-  // Final grade pass + stamp so wheel tracks match centerline after fords
-  path = fitPathToHeightmap(path, hm, resolution, mapSize, vehicle);
-  stampPathRibbon(hm, resolution, mapSize, path, carveHalf + 0.5, 4);
+
+  // Play path: grade on *conditioned* surface so validate centerline matches ground
+  const path = fitPathToHeightmap(
+    pathDesign,
+    hm,
+    resolution,
+    mapSize,
+    vehicle,
+  );
 
   streamCache.set(hm, streams);
   rng();
   rng();
 
-  return { heightmap: hm, path };
+  return { heightmap: hm, baseHeightmap, path };
 }
 
 const streamCache = new WeakMap<
@@ -319,11 +338,11 @@ export function buildLevelData(
   heightmap: Float32Array,
   usedFallback: boolean,
   repairAttempts: number,
+  baseHeightmap?: Float32Array,
 ): LevelData {
-  // Keep fitted path Y (terrain-sampled + grade-limited). Do NOT lift from the
-  // heightmap here — that reintroduces undrivable slopes and forces fallback
-  // to the straight corridor (straight checkpoints). Fords dig below path grade;
-  // validator measures pathCenterY − bed.
+  // Keep fitted path Y (base-sampled + grade-limited). Do NOT lift from the
+  // heightmap here — that reintroduces undrivable slopes. Fords dig below path
+  // grade; validator measures pathCenterY − bed.
   const points = path.points.map((p) => ({ ...p }));
 
   const startPos = {
@@ -357,11 +376,13 @@ export function buildLevelData(
   }
 
   const streams = streamCache.get(heightmap) ?? [];
+  const base = baseHeightmap ?? new Float32Array(heightmap);
 
   return {
     seed: input.seed >>> 0,
     biomeId: input.biome.id,
     heightmap,
+    baseHeightmap: base,
     resolution,
     worldSize: mapSize,
     pathPolyline: points,
@@ -388,6 +409,11 @@ export function buildLevelData(
   };
 }
 
+/**
+ * Build a playable level: meander path + base FBM + single ±cap path condition
+ * + optional streams. No GeometricSolvability gate, repair loop, or hard
+ * corridor fallback — offroad routes stay soft berms even on high relief.
+ */
 export function generateLevel(input: GenerateLevelInput): LevelData {
   const seed = input.seed >>> 0;
   const mapSize = input.mapSize ?? input.biome.mapSize ?? DEFAULT_MAP_SIZE;
@@ -405,87 +431,26 @@ export function generateLevel(input: GenerateLevelInput): LevelData {
     vehicle,
     false,
   );
-  let heightmap = carved.heightmap;
-  const path = {
-    points: carved.path,
-    startYaw: pathXZ.startYaw,
-    endYaw: pathXZ.endYaw,
-  };
-  let level = buildLevelData(
+  return buildLevelData(
     { ...input, seed },
     mapSize,
     resolution,
-    path,
-    heightmap,
+    {
+      points: carved.path,
+      startYaw: pathXZ.startYaw,
+      endYaw: pathXZ.endYaw,
+    },
+    carved.heightmap,
     false,
     0,
+    carved.baseHeightmap,
   );
-
-  let attempts = 0;
-  let v = validateLevel(level, vehicle);
-  while (!v.ok && attempts < MAX_REPAIR_ATTEMPTS) {
-    attempts++;
-    heightmap = repairHeightmap(level, vehicle, attempts);
-    // Preserve streams from previous level
-    streamCache.set(heightmap, level.streams);
-    // Re-grade path, stamp hard ribbon, re-grade again — keep meander XZ
-    level = resyncPathHeights(
-      {
-        ...level,
-        heightmap,
-        meta: { usedFallback: false, repairAttempts: attempts },
-      },
-      vehicle,
-    );
-    const half =
-      (vehicle.trackWidth + 2 * vehicle.pathClearance) / 2 +
-      cellSize(mapSize, resolution) * attempts;
-    stampPathRibbon(
-      level.heightmap,
-      resolution,
-      mapSize,
-      level.pathPolyline,
-      half,
-      3,
-    );
-    level = resyncPathHeights(level, vehicle);
-    // After stamp, path Y is truth — rebuild checkpoints along meander
-    level = buildLevelData(
-      { ...input, seed },
-      mapSize,
-      resolution,
-      {
-        points: level.pathPolyline,
-        startYaw: level.start.yaw,
-        endYaw: level.finish.yaw,
-      },
-      level.heightmap,
-      false,
-      attempts,
-    );
-    streamCache.set(level.heightmap, level.streams);
-    v = validateLevel(level, vehicle);
-  }
-
-  if (!v.ok) {
-    // Keep the meandering XZ path — only flatten grades / widen ribbon.
-    // Replacing with forceFallbackLevel (near-straight strip) is what made
-    // checkpoints look colinear on the minimap after high-relief terrain.
-    level = flattenFallbackUntilValid(
-      {
-        ...level,
-        meta: {
-          usedFallback: true,
-          repairAttempts: attempts,
-        },
-      },
-      vehicle,
-    );
-  }
-  return level;
 }
 
-/** Test/helper: build fallback corridor and validate before return. */
+/**
+ * Test/helper: same pipeline with milder terrain (isFallback carve) and
+ * meta.usedFallback=true. No validate/repair — only flags the mode.
+ */
 export function forceFallbackLevel(
   input: GenerateLevelInput,
   repairAttempts = 0,
@@ -504,66 +469,19 @@ export function forceFallbackLevel(
     input.vehicle,
     true,
   );
-  const path = {
-    points: carved.path,
-    startYaw: pathFb.startYaw,
-    endYaw: pathFb.endYaw,
-  };
-  let level = buildLevelData(
+  return buildLevelData(
     { ...input, seed },
     mapSize,
     resolution,
-    path,
+    {
+      points: carved.path,
+      startYaw: pathFb.startYaw,
+      endYaw: pathFb.endYaw,
+    },
     carved.heightmap,
     true,
     repairAttempts,
+    carved.baseHeightmap,
   );
-  let v = validateLevel(level, input.vehicle);
-  if (!v.ok) {
-    // Repair loop on fallback before flatten
-    let attempts = 0;
-    while (!v.ok && attempts < MAX_REPAIR_ATTEMPTS) {
-      attempts++;
-      const hm = repairHeightmap(level, input.vehicle, attempts);
-      streamCache.set(hm, level.streams);
-      level = resyncPathHeights(
-        {
-          ...level,
-          heightmap: hm,
-          meta: {
-            usedFallback: true,
-            repairAttempts: repairAttempts + attempts,
-          },
-        },
-        input.vehicle,
-      );
-      const half =
-        (input.vehicle.trackWidth + 2 * input.vehicle.pathClearance) / 2 +
-        cellSize(mapSize, resolution) * (attempts + 1);
-      stampPathRibbon(
-        level.heightmap,
-        resolution,
-        mapSize,
-        level.pathPolyline,
-        half,
-        4,
-      );
-      level = resyncPathHeights(level, input.vehicle);
-      v = validateLevel(level, input.vehicle);
-    }
-  }
-  if (!v.ok) {
-    // flattenFallbackUntilValid re-validates after each flatten; extreme corridor last
-    level = flattenFallbackUntilValid(level, input.vehicle);
-    v = validateLevel(level, input.vehicle);
-  }
-  // Ensure flag stays true
-  if (!level.meta.usedFallback) {
-    level = {
-      ...level,
-      meta: { ...level.meta, usedFallback: true },
-    };
-  }
-  return level;
 }
 

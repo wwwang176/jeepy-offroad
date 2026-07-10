@@ -2,8 +2,15 @@ import type { Vec3 } from "@/shared/types";
 import type { VehicleCapabilities } from "@/shared/vehicleCapabilities";
 import { cellSize, gridToWorld, idx } from "@/shared/coords";
 import { sampleBilinear } from "./heightmap";
-import { assignPathHeights } from "./path";
-import { PATH_SAFETY_FACTOR, type LevelData } from "./types";
+import { assignPathHeights, fitPathToHeightmap } from "./path";
+import {
+  PATH_CUT_CAP_M,
+  PATH_FILL_CAP_M,
+  PATH_CORE_R_M,
+  PATH_OUTER_R_M,
+  PATH_SAFETY_FACTOR,
+  type LevelData,
+} from "./types";
 import { validateLevel } from "./validate";
 
 function ribbonHalfWidth(vehicle: VehicleCapabilities): number {
@@ -56,46 +63,53 @@ function closestPathY(x: number, z: number, path: Vec3[]): number {
   return y;
 }
 
-/** Flatten peaks, raise troughs, widen ribbon, damp off-path near path. */
+/**
+ * Recompute path band from immutable base (no stack of nudges).
+ * Caller should re-apply streams after this if needed.
+ */
+export function reconditionFromBase(
+  level: LevelData,
+  vehicle: VehicleCapabilities,
+  attempt: number,
+): { heightmap: Float32Array; path: Vec3[]; pathDesign: Vec3[] } {
+  const base = level.baseHeightmap ?? level.heightmap;
+  const hm = new Float32Array(base);
+  const pathDesign = fitPathToHeightmap(
+    level.pathPolyline,
+    base,
+    level.resolution,
+    level.worldSize,
+    vehicle,
+  );
+  // Slightly relax lifetime caps on later attempts (still absolute vs base)
+  const fillCap = Math.min(2.5, PATH_FILL_CAP_M + Math.max(0, attempt - 1) * 0.35);
+  const cutCap = Math.min(3.0, PATH_CUT_CAP_M + Math.max(0, attempt - 1) * 0.35);
+  conditionTerrainFromBase(
+    hm,
+    base,
+    level.resolution,
+    level.worldSize,
+    pathDesign,
+    { fillCap, cutCap },
+  );
+  // Play path tracks conditioned surface (grade-legal + ground match)
+  const path = fitPathToHeightmap(
+    pathDesign,
+    hm,
+    level.resolution,
+    level.worldSize,
+    vehicle,
+  );
+  return { heightmap: hm, path, pathDesign };
+}
+
+/** @deprecated Prefer reconditionFromBase — kept for call-site compatibility. */
 export function repairHeightmap(
   level: LevelData,
   vehicle: VehicleCapabilities,
   attempt: number,
 ): Float32Array {
-  const hm = new Float32Array(level.heightmap);
-  const res = level.resolution;
-  const worldSize = level.worldSize;
-  const path = level.pathPolyline;
-  const half = ribbonHalfWidth(vehicle);
-  // Widen by ~1 cell per attempt
-  const cell = cellSize(worldSize, res);
-  const widen = half + cell * attempt;
-  const maxStep = vehicle.maxStepHeight * PATH_SAFETY_FACTOR;
-
-  for (let r = 0; r < res; r++) {
-    for (let c = 0; c < res; c++) {
-      const { x, z } = gridToWorld(c, r, worldSize, res);
-      const d = distToPathXZ(x, z, path);
-      const i = idx(res, c, r);
-      if (d <= widen) {
-        const target = closestPathY(x, z, path);
-        // Blend toward path height (stronger with more attempts)
-        const t = Math.min(1, 0.55 + attempt * 0.08);
-        hm[i] = hm[i] * (1 - t) + target * t;
-        // Clamp residual deviation
-        const maxDev = maxStep * (1.1 - attempt * 0.05);
-        if (hm[i] > target + maxDev) hm[i] = target + maxDev;
-        if (hm[i] < target - maxDev) hm[i] = target - maxDev;
-      } else if (d <= widen + 8) {
-        // Damp off-path noise near path
-        const target = closestPathY(x, z, path);
-        const fall = 1 - (d - widen) / 8;
-        const damp = 0.35 * fall * Math.min(1, attempt / 3);
-        hm[i] = hm[i] * (1 - damp) + target * damp;
-      }
-    }
-  }
-  return hm;
+  return reconditionFromBase(level, vehicle, attempt).heightmap;
 }
 
 /**
@@ -108,6 +122,7 @@ export function resyncPathHeights(
   vehicle?: VehicleCapabilities,
 ): LevelData {
   const { heightmap, resolution, worldSize } = level;
+  // Play path follows the *current* drive surface (conditioned + streams / fallback)
   let syncedPath = level.pathPolyline.map((p) => {
     const y = sampleBilinear(heightmap, resolution, worldSize, p.x, p.z);
     return {
@@ -117,7 +132,13 @@ export function resyncPathHeights(
     };
   });
   if (vehicle) {
-    syncedPath = assignPathHeights(syncedPath, vehicle);
+    syncedPath = fitPathToHeightmap(
+      syncedPath,
+      heightmap,
+      resolution,
+      worldSize,
+      vehicle,
+    );
   }
 
   const startY = syncedPath[0]?.y ??
@@ -441,40 +462,143 @@ export function flattenFallbackUntilValid(
   return current;
 }
 
+function smoothstep01(t: number): number {
+  const x = Math.max(0, Math.min(1, t));
+  return x * x * (3 - 2 * x);
+}
+
+export type ConditionFromBaseOpts = {
+  fillCap?: number;
+  cutCap?: number;
+  coreR?: number;
+  outerR?: number;
+  /** Bounded Laplacian on Δ only; still clamped vs base. */
+  smoothIters?: number;
+};
+
 /**
- * Blend a drivable ribbon toward path grade.
+ * Absolute path-band conditioning against immutable base terrain.
  *
- * Path Y must already be terrain-sampled + grade-limited (see fitPathToHeightmap).
- * Full halfWidth is stamped hard enough for wheel-track / ribbon validation;
- * only the outer shoulder is soft so we don't cut a canyon-wall highway edge.
+ *   hm[i] = base[i] + clamp(pathY − base[i], −cutCap, +fillCap) × falloff(d)
+ *
+ * Lifetime-capped: recomputing always starts from base, so passes cannot
+ * ratchet into an elevated embankment. Outside outerR, writes base height
+ * (caller should start hm as a base copy, or only band cells are rewritten).
  */
+export function conditionTerrainFromBase(
+  heightmap: Float32Array,
+  base: Float32Array,
+  resolution: number,
+  worldSize: number,
+  path: Vec3[],
+  opts?: ConditionFromBaseOpts,
+): void {
+  if (!path || path.length < 2) return;
+  if (base.length !== heightmap.length) return;
+
+  const fillCap = opts?.fillCap ?? PATH_FILL_CAP_M;
+  const cutCap = opts?.cutCap ?? PATH_CUT_CAP_M;
+  const coreR = opts?.coreR ?? PATH_CORE_R_M;
+  const outerR = opts?.outerR ?? PATH_OUTER_R_M;
+  const smoothIters = opts?.smoothIters ?? 2;
+  if (outerR <= 1e-6 || (fillCap <= 0 && cutCap <= 0)) return;
+
+  const res = resolution;
+  const n = res * res;
+  const delta = new Float32Array(n);
+  const next = new Float32Array(n);
+  const band = new Uint8Array(n);
+  const span = Math.max(1e-6, outerR - coreR);
+
+  for (let r = 0; r < res; r++) {
+    for (let c = 0; c < res; c++) {
+      const { x, z } = gridToWorld(c, r, worldSize, res);
+      const d = distToPathXZ(x, z, path);
+      if (d >= outerR) continue;
+      const i = idx(res, c, r);
+      band[i] = 1;
+      let fall = 1;
+      if (d > coreR) {
+        fall = smoothstep01(1 - (d - coreR) / span);
+      }
+      const pathY = closestPathY(x, z, path);
+      let want = pathY - base[i];
+      if (want > fillCap) want = fillCap;
+      if (want < -cutCap) want = -cutCap;
+      delta[i] = want * fall;
+    }
+  }
+
+  // Light neighbor coupling on Δ (drag shoulders); re-clamp after
+  const blend = 0.45;
+  for (let iter = 0; iter < smoothIters; iter++) {
+    for (let r = 0; r < res; r++) {
+      for (let c = 0; c < res; c++) {
+        const i = idx(res, c, r);
+        if (!band[i]) {
+          next[i] = 0;
+          continue;
+        }
+        let sum = 0;
+        let cnt = 0;
+        if (c > 0) {
+          sum += delta[i - 1];
+          cnt++;
+        }
+        if (c < res - 1) {
+          sum += delta[i + 1];
+          cnt++;
+        }
+        if (r > 0) {
+          sum += delta[i - res];
+          cnt++;
+        }
+        if (r < res - 1) {
+          sum += delta[i + res];
+          cnt++;
+        }
+        const avg = cnt > 0 ? sum / cnt : delta[i];
+        next[i] = delta[i] * (1 - blend) + avg * blend;
+      }
+    }
+    delta.set(next);
+  }
+
+  for (let i = 0; i < n; i++) {
+    if (!band[i]) continue;
+    let dlt = delta[i];
+    if (dlt > fillCap) dlt = fillCap;
+    if (dlt < -cutCap) dlt = -cutCap;
+    heightmap[i] = base[i] + dlt;
+  }
+}
+
+/**
+ * @deprecated Use conditionTerrainFromBase with an explicit base heightmap.
+ * Treats current heightmap as base (single absolute pass — no multi-stack).
+ */
+export function nudgeTerrainAlongPath(
+  heightmap: Float32Array,
+  resolution: number,
+  worldSize: number,
+  path: Vec3[],
+  _opts?: unknown,
+): void {
+  const base = new Float32Array(heightmap);
+  conditionTerrainFromBase(heightmap, base, resolution, worldSize, path);
+}
+
+/** @deprecated Alias → conditionTerrainFromBase. */
 export function stampPathRibbon(
   heightmap: Float32Array,
   resolution: number,
   worldSize: number,
   path: Vec3[],
-  halfWidth: number,
-  blendOuter = 3.5,
+  _halfWidth: number,
+  _blendOuter = 3.5,
 ): void {
-  const res = resolution;
-  for (let r = 0; r < res; r++) {
-    for (let c = 0; c < res; c++) {
-      const { x, z } = gridToWorld(c, r, worldSize, res);
-      const d = distToPathXZ(x, z, path);
-      if (d > halfWidth + blendOuter) continue;
-      const i = idx(res, c, r);
-      const target = closestPathY(x, z, path);
-      let strength = 0;
-      if (d <= halfWidth) {
-        // On-ribbon: full grade match (path already follows terrain undulation)
-        strength = 1;
-      } else {
-        const u = 1 - (d - halfWidth) / blendOuter;
-        strength = 0.45 * u;
-      }
-      heightmap[i] = heightmap[i] * (1 - strength) + target * strength;
-    }
-  }
+  const base = new Float32Array(heightmap);
+  conditionTerrainFromBase(heightmap, base, resolution, worldSize, path);
 }
 
 export function pathDistXZ(x: number, z: number, path: Vec3[]): number {
