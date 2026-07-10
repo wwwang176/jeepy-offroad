@@ -188,10 +188,11 @@ function createPropMesh(
       return m;
     }
     case "cactus": {
-      // Low-poly saguaro: main column + 0–2 arms (decorative, no collision).
+      // Single-plant path (rare); decorative spawn merges instead.
+      const parts = buildCactusParts(rng);
       const g = new THREE.Group();
       g.name = "cactus";
-      const mat = new THREE.MeshLambertMaterial({
+      const bodyMat = new THREE.MeshLambertMaterial({
         color: 0x3d7a3a,
         flatShading: true,
       });
@@ -199,50 +200,8 @@ function createPropMesh(
         color: 0x4a8f42,
         flatShading: true,
       });
-      const h = 1.4 + rng() * 1.1;
-      const r = 0.16 + rng() * 0.06;
-      const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(r * 0.92, r, h, 6),
-        mat,
-      );
-      trunk.position.y = h * 0.5;
-      g.add(trunk);
-      // Soft top dome
-      const tip = new THREE.Mesh(new THREE.SphereGeometry(r * 0.95, 5, 4), tipMat);
-      tip.position.y = h;
-      tip.scale.y = 0.7;
-      g.add(tip);
-
-      const arms = rng() < 0.35 ? 0 : rng() < 0.55 ? 1 : 2;
-      for (let a = 0; a < arms; a++) {
-        const side = a === 0 ? 1 : -1;
-        const armH = 0.45 + rng() * 0.45;
-        const attachY = h * (0.4 + rng() * 0.25);
-        const out = r + 0.12 + rng() * 0.08;
-        // Horizontal stub
-        const stub = new THREE.Mesh(
-          new THREE.CylinderGeometry(r * 0.55, r * 0.6, out, 5),
-          mat,
-        );
-        stub.rotation.z = (side * Math.PI) / 2;
-        stub.position.set((side * out) * 0.5, attachY, (rng() - 0.5) * 0.08);
-        g.add(stub);
-        // Upward arm
-        const arm = new THREE.Mesh(
-          new THREE.CylinderGeometry(r * 0.5, r * 0.55, armH, 5),
-          mat,
-        );
-        arm.position.set(side * out, attachY + armH * 0.5, stub.position.z);
-        g.add(arm);
-        const armTip = new THREE.Mesh(
-          new THREE.SphereGeometry(r * 0.52, 5, 4),
-          tipMat,
-        );
-        armTip.position.set(side * out, attachY + armH, stub.position.z);
-        armTip.scale.y = 0.65;
-        g.add(armTip);
-      }
-      // Lean applied at place time (tiny random tilt + yaw).
+      for (const geo of parts.bodies) g.add(new THREE.Mesh(geo, bodyMat));
+      for (const geo of parts.tips) g.add(new THREE.Mesh(geo, tipMat));
       return g;
     }
     case "coconut_palm": {
@@ -454,6 +413,77 @@ function bakePalmWorld(
   return geo;
 }
 
+/** Bake local prop geo with full Euler (YXZ) + uniform scale — cactus tilt. */
+function bakePropWorld(
+  geo: THREE.BufferGeometry,
+  x: number,
+  y: number,
+  z: number,
+  rotX: number,
+  rotY: number,
+  rotZ: number,
+  scale: number,
+): THREE.BufferGeometry {
+  const m = new THREE.Matrix4().compose(
+    new THREE.Vector3(x, y, z),
+    new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(rotX, rotY, rotZ, "YXZ"),
+    ),
+    new THREE.Vector3(scale, scale, scale),
+  );
+  geo.applyMatrix4(m);
+  return geo;
+}
+
+type CactusParts = {
+  bodies: THREE.BufferGeometry[];
+  tips: THREE.BufferGeometry[];
+};
+
+/**
+ * Low-poly saguaro parts in plant-local space (ground at y=0).
+ * Bodies = green flesh; tips = slightly lighter caps.
+ */
+function buildCactusParts(rng: () => number): CactusParts {
+  const bodies: THREE.BufferGeometry[] = [];
+  const tips: THREE.BufferGeometry[] = [];
+  const h = 1.4 + rng() * 1.1;
+  const r = 0.16 + rng() * 0.06;
+
+  const trunk = new THREE.CylinderGeometry(r * 0.92, r, h, 6);
+  trunk.translate(0, h * 0.5, 0);
+  bodies.push(trunk);
+
+  const tip = new THREE.SphereGeometry(r * 0.95, 5, 4);
+  tip.scale(1, 0.7, 1);
+  tip.translate(0, h, 0);
+  tips.push(tip);
+
+  const arms = rng() < 0.35 ? 0 : rng() < 0.55 ? 1 : 2;
+  for (let a = 0; a < arms; a++) {
+    const side = a === 0 ? 1 : -1;
+    const armH = 0.45 + rng() * 0.45;
+    const attachY = h * (0.4 + rng() * 0.25);
+    const out = r + 0.12 + rng() * 0.08;
+    const zJ = (rng() - 0.5) * 0.08;
+
+    const stub = new THREE.CylinderGeometry(r * 0.55, r * 0.6, out, 5);
+    stub.rotateZ((side * Math.PI) / 2);
+    stub.translate((side * out) * 0.5, attachY, zJ);
+    bodies.push(stub);
+
+    const arm = new THREE.CylinderGeometry(r * 0.5, r * 0.55, armH, 5);
+    arm.translate(side * out, attachY + armH * 0.5, zJ);
+    bodies.push(arm);
+
+    const armTip = new THREE.SphereGeometry(r * 0.52, 5, 4);
+    armTip.scale(1, 0.65, 1);
+    armTip.translate(side * out, attachY + armH, zJ);
+    tips.push(armTip);
+  }
+  return { bodies, tips };
+}
+
 function mergeOrNull(
   geos: THREE.BufferGeometry[],
 ): THREE.BufferGeometry | null {
@@ -628,8 +658,7 @@ function disposeObject3D(obj: THREE.Object3D): void {
 
 /**
  * Decorative props from biome.propTable. Non-colliding, seeded.
- * Coconut palms are merged into 2 draw calls (trunk / frond) like
- * island-conquest vegetation — dense rainforest stays cheap.
+ * Coconut palms + cacti are merged into few draw calls; rocks stay individual.
  */
 function createDecorativeProps(
   level: LevelData,
@@ -648,6 +677,8 @@ function createDecorativeProps(
 
   const palmTrunks: THREE.BufferGeometry[] = [];
   const palmFronds: THREE.BufferGeometry[] = [];
+  const cactusBodies: THREE.BufferGeometry[] = [];
+  const cactusTips: THREE.BufferGeometry[] = [];
   /** Shared clock for palm wind (seconds); GameApp ticks via updatePalmSway. */
   const palmSwayTime = { value: 0 };
   group.userData.palmSwayTime = palmSwayTime;
@@ -692,20 +723,28 @@ function createDecorativeProps(
       bumpPlaced(meshKey);
       return true;
     }
+    if (meshKey === "cactus") {
+      // Merge path: bake each plant into shared body/tip batches (2 draw calls).
+      const s = 0.85 + rng() * 0.5;
+      const rotX = (rng() - 0.5) * 0.24;
+      const rotZ = (rng() - 0.5) * 0.24;
+      const parts = buildCactusParts(rng);
+      for (const geo of parts.bodies) {
+        cactusBodies.push(bakePropWorld(geo, x, y, z, rotX, yaw, rotZ, s));
+      }
+      for (const geo of parts.tips) {
+        cactusTips.push(bakePropWorld(geo, x, y, z, rotX, yaw, rotZ, s));
+      }
+      bumpPlaced(meshKey);
+      return true;
+    }
     const prop = createPropMesh(meshKey, rng);
     prop.position.set(x, y, z);
-    // Random facing + tilt so props don't look stamped
+    // Random facing + tilt so rocks don't look stamped
     prop.rotation.order = "YXZ";
     prop.rotation.y = yaw;
-    if (meshKey === "cactus") {
-      // Noticeable but still mostly upright (~±7°)
-      prop.rotation.x = (rng() - 0.5) * 0.24;
-      prop.rotation.z = (rng() - 0.5) * 0.24;
-    } else {
-      // Rocks / pillars: freer tumble (~±20°)
-      prop.rotation.x = (rng() - 0.5) * 0.7;
-      prop.rotation.z = (rng() - 0.5) * 0.7;
-    }
+    prop.rotation.x = (rng() - 0.5) * 0.7;
+    prop.rotation.z = (rng() - 0.5) * 0.7;
     prop.scale.setScalar(0.85 + rng() * 0.5);
     group.add(prop);
     bumpPlaced(meshKey);
@@ -724,7 +763,7 @@ function createDecorativeProps(
     tryPlaceAt(rule.meshKey, x, z, rng() * Math.PI * 2);
   }
 
-  // Fill quotas (e.g. sand ≈ 50 cacti) without path/start/finish placements.
+  // Fill quotas (e.g. sand ≈ 100 cacti) without path/start/finish placements.
   for (const goal of biome.ensureProps ?? []) {
     if (goal.count <= 0) continue;
     let placed = placedCount.get(goal.meshKey) ?? 0;
@@ -776,6 +815,31 @@ function createDecorativeProps(
     mesh.customDepthMaterial = swayDepth;
     group.add(mesh);
   }
+
+  // --- Merged cactus batches (body + tip = 2 draw calls for all plants) ---
+  const cactusBodyMerged = mergeOrNull(cactusBodies);
+  if (cactusBodyMerged) {
+    const mesh = new THREE.Mesh(
+      cactusBodyMerged,
+      new THREE.MeshLambertMaterial({ color: 0x3d7a3a, flatShading: true }),
+    );
+    mesh.name = "cacti-bodies";
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  const cactusTipMerged = mergeOrNull(cactusTips);
+  if (cactusTipMerged) {
+    const mesh = new THREE.Mesh(
+      cactusTipMerged,
+      new THREE.MeshLambertMaterial({ color: 0x4a8f42, flatShading: true }),
+    );
+    mesh.name = "cacti-tips";
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+
   // Separate pass: short grass (same wind clock as palms)
   addJungleGrassCover(group, level, biome, rng, palmSwayTime);
 

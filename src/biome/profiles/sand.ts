@@ -32,6 +32,6 @@ export const sandBiome: BiomeProfile = {
     { meshKey: "rock_pile", weight: 1, collides: false },
     { meshKey: "pillar_rock", weight: 0.4, collides: false },
   ],
-  /** ~100 saguaros (×2 vs previous 50). */
+  /** ~100 saguaros. */
   ensureProps: [{ meshKey: "cactus", count: 100 }],
 };
