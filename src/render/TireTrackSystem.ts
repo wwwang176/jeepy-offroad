@@ -3,7 +3,8 @@ import { sampleBilinear } from "@/levelgen/heightmap";
 import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
 import {
   lateralSpeedMps,
-  streamWetness,
+  waterWetness,
+  type PondWetnessInput,
   type StreamSegmentInput,
 } from "@/shared/offroadFxMath";
 import {
@@ -41,6 +42,7 @@ export type TireTrackSample = {
 export type TireTrackOptions = {
   segmentsPerWheel?: number;
   streams?: readonly StreamSegmentInput[];
+  ponds?: readonly PondWetnessInput[];
   terrain?: {
     heightmap: Float32Array;
     resolution: number;
@@ -94,6 +96,7 @@ export class TireTrackSystem {
   private readonly cursors: number[];
   private readonly trails: WheelTrail[];
   private streams: readonly StreamSegmentInput[] = [];
+  private ponds: readonly PondWetnessInput[] = [];
   private terrainCtx: TerrainColorContext | null = null;
   private heightmap: Float32Array | null = null;
   private resolution = 0;
@@ -195,6 +198,7 @@ export class TireTrackSystem {
     scene.add(this.group);
 
     if (opts?.streams) this.streams = opts.streams;
+    if (opts?.ponds) this.ponds = opts.ponds;
     if (opts?.flatGroundY != null) this.flatGroundY = opts.flatGroundY;
     if (opts?.sampleGroundY) this.customSampleGroundY = opts.sampleGroundY;
     if (opts?.terrain) {
@@ -261,7 +265,13 @@ export class TireTrackSystem {
             this.terrainCtx.pathHalfWidth,
           )
         : 0;
-      const wet = streamWetness(contact.x, contact.z, this.streams);
+      const wet = waterWetness(
+        contact.x,
+        contact.z,
+        this.streams,
+        this.ponds,
+        contact.y,
+      );
       const surface = classifyTrackSurface(pathW, wet);
       const strength = trackDepositStrength({
         grounded: true,

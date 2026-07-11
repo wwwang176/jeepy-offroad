@@ -7,6 +7,15 @@ export type StreamSegmentInput = {
   width: number;
 };
 
+/** Pond wetness input (levelgen-emitted shore + free surface). */
+export type PondWetnessInput = {
+  center: { x: number; z: number };
+  radius: number;
+  /** Horizontal free-surface Y — body points above this are dry. */
+  surfaceY: number;
+  polygon?: readonly { x: number; z: number }[];
+};
+
 /** Chassis-forward (+Z when yaw=0) and right (+X) from yaw. */
 export function yawBasis(yaw: number): {
   forward: { x: number; z: number };
@@ -180,6 +189,93 @@ export function streamWetness(
   return clamp(best, 0, 1);
 }
 
+/** Ray-cast point-in-polygon on XZ (winding-agnostic even-odd). */
+export function pointInPolygonXZ(
+  x: number,
+  z: number,
+  poly: readonly { x: number; z: number }[],
+): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x;
+    const zi = poly[i].z;
+    const xj = poly[j].x;
+    const zj = poly[j].z;
+    const denom = zj - zi;
+    const intersect =
+      zi > z !== zj > z &&
+      x < ((xj - xi) * (z - zi)) / (Math.abs(denom) > 1e-12 ? denom : 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Wetness 0..1 inside a pond (any altitude). Uses shore polygon when present,
+ * else circular radius. Optional `y` must be at/below free surface.
+ */
+export function pondWetness(
+  x: number,
+  z: number,
+  ponds: readonly PondWetnessInput[],
+  y?: number,
+  margin = 0.45,
+): number {
+  if (!ponds.length) return 0;
+  let best = 0;
+  for (const pond of ponds) {
+    // Body/wheel above free surface is dry
+    if (y != null && y > pond.surfaceY + 0.22) continue;
+
+    const dx = x - pond.center.x;
+    const dz = z - pond.center.z;
+    const dist = Math.hypot(dx, dz);
+    // Broad reject
+    if (dist > pond.radius + margin + 1.5) continue;
+
+    let w = 0;
+    if (pond.polygon && pond.polygon.length >= 3) {
+      if (pointInPolygonXZ(x, z, pond.polygon)) {
+        w = 1;
+      } else {
+        // Near-shore fade: distance to center past nominal radius
+        if (dist < pond.radius + margin) {
+          w = 1 - (dist - pond.radius * 0.85) / Math.max(margin + pond.radius * 0.15, 1e-6);
+          w = clamp(w, 0, 0.55);
+        }
+      }
+    } else {
+      if (dist <= pond.radius) w = 1;
+      else if (dist < pond.radius + margin) {
+        w = 1 - (dist - pond.radius) / margin;
+      }
+    }
+    // Deeper under surface only boosts weak near-shore wetness (never reduces)
+    if (y != null && w > 0 && w < 1 && y < pond.surfaceY) {
+      const sub = clamp((pond.surfaceY - y) / 0.4, 0, 1);
+      w = Math.min(1, w + sub * 0.25);
+    }
+    if (w > best) best = w;
+  }
+  return clamp(best, 0, 1);
+}
+
+/**
+ * Combined water wetness: streams (legacy) + ponds (current hydrology).
+ */
+export function waterWetness(
+  x: number,
+  z: number,
+  streams: readonly StreamSegmentInput[],
+  ponds: readonly PondWetnessInput[],
+  y?: number,
+): number {
+  return Math.max(
+    streamWetness(x, z, streams),
+    pondWetness(x, z, ponds, y),
+  );
+}
+
 /**
  * Splash particles/sec for a grounded wheel in water.
  */
@@ -199,6 +295,125 @@ export function splashEmitRate(opts: {
     (speedGate * speed * 10.4 + th * 32 * speedGate + speedGate * 16) *
     2
   );
+}
+
+/**
+ * How far a body sample sits under free surface (m). 0 if above water.
+ * `eps` ignores hairline grazing so we don't spray on floating error.
+ */
+export function immersionDepthM(
+  surfaceY: number,
+  worldY: number,
+  eps = 0.02,
+): number {
+  return Math.max(0, surfaceY - worldY - eps);
+}
+
+/**
+ * Per-sample weight for body drainage: XZ wetness × immersion depth ×
+ * roll/pitch bias (low side / nose-down get more).
+ *
+ * `rollLean` = chassisRight.y (right lower ⇒ negative).
+ * `pitchLean` = chassisFwd.y (nose lower ⇒ negative).
+ * `localX` / `localZ` are chassis-local sample coords.
+ */
+export function bodyImmersionWeight(opts: {
+  wetnessXZ: number;
+  depthM: number;
+  localX: number;
+  localZ: number;
+  rollLean: number;
+  pitchLean: number;
+}): number {
+  if (opts.wetnessXZ < 0.08 || opts.depthM < 0.012) return 0;
+  // Normalize depth: ~0.35 m full weight, allow over-immerse boost
+  const depthN = clamp(opts.depthM / 0.35, 0, 1.6);
+  // Right lower (rollLean < 0) boosts localX > 0 samples
+  const rollBias =
+    1 -
+    clamp(opts.rollLean * Math.sign(opts.localX || 1) * 1.25, -0.6, 0.6);
+  // Nose lower (pitchLean < 0) boosts localZ > 0 (front)
+  const pitchBias =
+    1 -
+    clamp(opts.pitchLean * Math.sign(opts.localZ || 1) * 1.0, -0.5, 0.5);
+  return opts.wetnessXZ * depthN * rollBias * pitchBias;
+}
+
+/** Below this ground speed (m/s), body drainage is fully off (parked in puddle). */
+export const BODY_WATER_SPEED_DEADZONE_MPS = 0.55;
+/** Full drainage strength by this speed (m/s); ramp between deadzone and here. */
+export const BODY_WATER_SPEED_FULL_MPS = 2.2;
+
+/**
+ * Continuous body drainage rate from immersion-weighted samples.
+ * Strength ∝ depth × wetness × speed. Nearly stationary (idle / tiny slide)
+ * emits nothing so sitting in a puddle does not keep spraying.
+ */
+export function bodyWaterSprayEmitRate(opts: {
+  /** Mean immersion depth among wet samples (m). */
+  meanDepthM: number;
+  /** Mean XZ wetness 0..1 among wet samples. */
+  meanWetness: number;
+  speedMps: number;
+  wetSampleCount: number;
+  /** Sum of bodyImmersionWeight (pose-biased). */
+  totalWeight: number;
+}): number {
+  if (
+    opts.meanWetness <= 0.08 ||
+    opts.wetSampleCount <= 0 ||
+    opts.meanDepthM < 0.012 ||
+    opts.totalWeight <= 0
+  ) {
+    return 0;
+  }
+  const speed = Math.abs(opts.speedMps);
+  // Parked / micro-slide: no body drainage (tires may still splash if spinning)
+  if (speed < BODY_WATER_SPEED_DEADZONE_MPS) return 0;
+  const speedGate = clamp(
+    (speed - BODY_WATER_SPEED_DEADZONE_MPS) /
+      Math.max(1e-3, BODY_WATER_SPEED_FULL_MPS - BODY_WATER_SPEED_DEADZONE_MPS),
+    0,
+    1,
+  );
+  // Smoothstep so light creep is very soft
+  const speedEase = speedGate * speedGate * (3 - 2 * speedGate);
+
+  const depthFactor = clamp(opts.meanDepthM / 0.28, 0.35, 1.8);
+  const weightFactor = clamp(opts.totalWeight / 2.2, 0.45, 2.8);
+  // Motion-driven only — no idle base rate; ×1.5 visual volume
+  const motion = (12 + speed * 7.5) * speedEase * 1.5;
+  return opts.meanWetness * depthFactor * weightFactor * motion;
+}
+
+/** Best matching pond free-surface Y at XZ, or null if dry. */
+export function pondSurfaceYAt(
+  x: number,
+  z: number,
+  ponds: readonly PondWetnessInput[],
+): number | null {
+  let bestY: number | null = null;
+  let bestW = 0;
+  for (const pond of ponds) {
+    const w = pondWetness(x, z, [pond], undefined, 0.6);
+    if (w > bestW) {
+      bestW = w;
+      bestY = pond.surfaceY;
+    }
+  }
+  return bestW > 0.08 ? bestY : null;
+}
+
+/**
+ * Resolve free-surface Y for immersion: pond surface if wet, else null.
+ * Streams have no surfaceY in wetness input — caller may fall back.
+ */
+export function resolveWaterSurfaceY(
+  x: number,
+  z: number,
+  ponds: readonly PondWetnessInput[],
+): number | null {
+  return pondSurfaceYAt(x, z, ponds);
 }
 
 /** Parse #rgb / #rrggbb to 0..1 RGB. */

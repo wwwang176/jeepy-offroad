@@ -10,7 +10,13 @@ import {
   longitudinalSpeedMps,
   parseHexRgb,
   splashEmitRate,
+  bodyImmersionWeight,
+  bodyWaterSprayEmitRate,
+  immersionDepthM,
+  pondWetness,
+  pointInPolygonXZ,
   streamWetness,
+  waterWetness,
   waterSplashColor,
 } from "@/shared/offroadFxMath";
 
@@ -145,6 +151,132 @@ describe("stream geometry", () => {
     expect(streamWetness(2.3, 0, streams)).toBeGreaterThan(0);
     expect(streamWetness(2.3, 0, streams)).toBeLessThan(1);
     expect(streamWetness(10, 0, streams)).toBe(0);
+  });
+
+  it("pondWetness uses polygon and surfaceY", () => {
+    const ponds = [
+      {
+        center: { x: 0, z: 0 },
+        radius: 5,
+        surfaceY: 10,
+        polygon: [
+          { x: -3, z: -3 },
+          { x: 3, z: -3 },
+          { x: 3, z: 3 },
+          { x: -3, z: 3 },
+        ],
+      },
+    ];
+    expect(pointInPolygonXZ(0, 0, ponds[0].polygon)).toBe(true);
+    expect(pondWetness(0, 0, ponds, 9.5)).toBe(1);
+    expect(pondWetness(0, 0, ponds, 11)).toBe(0); // above surface
+    expect(pondWetness(20, 0, ponds, 9)).toBe(0);
+  });
+
+  it("waterWetness prefers max of streams and ponds", () => {
+    const streams = [
+      {
+        polyline: [
+          { x: 0, z: -5 },
+          { x: 0, z: 5 },
+        ],
+        width: 2,
+      },
+    ];
+    const ponds = [
+      {
+        center: { x: 10, z: 0 },
+        radius: 4,
+        surfaceY: 5,
+        polygon: [
+          { x: 8, z: -2 },
+          { x: 12, z: -2 },
+          { x: 12, z: 2 },
+          { x: 8, z: 2 },
+        ],
+      },
+    ];
+    expect(waterWetness(0, 0, streams, ponds)).toBe(1);
+    expect(waterWetness(10, 0, streams, ponds, 4.8)).toBe(1);
+    expect(waterWetness(50, 50, streams, ponds)).toBe(0);
+  });
+
+  it("immersionDepthM is zero above surface", () => {
+    expect(immersionDepthM(10, 10.5)).toBe(0);
+    expect(immersionDepthM(10, 9.5, 0.02)).toBeCloseTo(0.48, 5);
+  });
+
+  it("bodyImmersionWeight boosts low-side samples when rolled", () => {
+    const base = {
+      wetnessXZ: 1,
+      depthM: 0.2,
+      localZ: 0,
+      pitchLean: 0,
+    };
+    // Right lower: chassisRight.y < 0 → right localX > 0 gets higher weight
+    const rightLow = bodyImmersionWeight({
+      ...base,
+      localX: 0.8,
+      rollLean: -0.35,
+    });
+    const leftHigh = bodyImmersionWeight({
+      ...base,
+      localX: -0.8,
+      rollLean: -0.35,
+    });
+    expect(rightLow).toBeGreaterThan(leftHigh);
+    expect(bodyImmersionWeight({ ...base, localX: 0, rollLean: 0, depthM: 0 })).toBe(
+      0,
+    );
+  });
+
+  it("bodyWaterSprayEmitRate is off when nearly stationary", () => {
+    expect(
+      bodyWaterSprayEmitRate({
+        meanDepthM: 0.3,
+        meanWetness: 1,
+        speedMps: 0.1,
+        wetSampleCount: 5,
+        totalWeight: 3,
+      }),
+    ).toBe(0);
+    expect(
+      bodyWaterSprayEmitRate({
+        meanDepthM: 0.3,
+        meanWetness: 1,
+        speedMps: 0.4,
+        wetSampleCount: 5,
+        totalWeight: 3,
+      }),
+    ).toBe(0);
+  });
+
+  it("bodyWaterSprayEmitRate scales with depth and speed when moving", () => {
+    expect(
+      bodyWaterSprayEmitRate({
+        meanDepthM: 0,
+        meanWetness: 1,
+        speedMps: 5,
+        wetSampleCount: 3,
+        totalWeight: 2,
+      }),
+    ).toBe(0);
+    const creep = bodyWaterSprayEmitRate({
+      meanDepthM: 0.12,
+      meanWetness: 1,
+      speedMps: 1.0,
+      wetSampleCount: 3,
+      totalWeight: 1.5,
+    });
+    const deepMove = bodyWaterSprayEmitRate({
+      meanDepthM: 0.35,
+      meanWetness: 1,
+      speedMps: 8,
+      wetSampleCount: 6,
+      totalWeight: 4,
+    });
+    expect(creep).toBeGreaterThan(0);
+    expect(deepMove).toBeGreaterThan(creep);
   });
 });
 

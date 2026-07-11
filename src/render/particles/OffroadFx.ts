@@ -9,9 +9,14 @@ import {
   landingBurstCount,
   lateralSpeedMps,
   parseHexRgb,
+  bodyImmersionWeight,
+  bodyWaterSprayEmitRate,
+  immersionDepthM,
+  pondSurfaceYAt,
   splashEmitRate,
-  streamWetness,
   waterSplashColor,
+  waterWetness,
+  type PondWetnessInput,
   type Rgb,
   type StreamSegmentInput,
 } from "@/shared/offroadFxMath";
@@ -56,10 +61,51 @@ export type OffroadFxSample = {
   bodyContacts?: readonly { x: number; y: number; z: number }[];
 };
 
+/**
+ * Key body sample points for immersion drainage (chassis local).
+ * Front/rear bumper lower edge, left/right rockers, belly — denser than a
+ * simple 9-corner set; depth is measured vs pond surfaceY each frame.
+ */
+const BODY_WATER_LOCAL: readonly { x: number; y: number; z: number }[] = (() => {
+  const hx = VEHICLE_CONFIG.chassisHalfExtents.x;
+  const hy = -VEHICLE_CONFIG.chassisHalfExtents.y;
+  const hz = VEHICLE_CONFIG.chassisHalfExtents.z;
+  // Slightly above absolute bottom so points sit at rocker / bumper lip
+  const yRocker = hy * 0.88;
+  const yLip = hy * 0.72;
+  return [
+    // Front bumper lower edge
+    { x: -hx * 0.75, y: yLip, z: hz * 0.98 },
+    { x: 0, y: yLip, z: hz * 1.02 },
+    { x: hx * 0.75, y: yLip, z: hz * 0.98 },
+    // Rear bumper lower edge
+    { x: -hx * 0.75, y: yLip, z: -hz * 0.98 },
+    { x: 0, y: yLip, z: -hz * 1.02 },
+    { x: hx * 0.75, y: yLip, z: -hz * 0.98 },
+    // Left rocker (3)
+    { x: -hx * 0.95, y: yRocker, z: hz * 0.45 },
+    { x: -hx * 0.95, y: yRocker, z: 0 },
+    { x: -hx * 0.95, y: yRocker, z: -hz * 0.45 },
+    // Right rocker (3)
+    { x: hx * 0.95, y: yRocker, z: hz * 0.45 },
+    { x: hx * 0.95, y: yRocker, z: 0 },
+    { x: hx * 0.95, y: yRocker, z: -hz * 0.45 },
+    // Belly / centerline
+    { x: 0, y: yRocker, z: hz * 0.35 },
+    { x: 0, y: yRocker, z: 0 },
+    { x: 0, y: yRocker, z: -hz * 0.35 },
+    // Mid flanks (fill between rocker and bumper)
+    { x: -hx * 0.55, y: yLip, z: 0 },
+    { x: hx * 0.55, y: yLip, z: 0 },
+  ];
+})();
+
 export type OffroadFxOptions = {
   /** Max live particles (default 900). */
   capacity?: number;
   streams?: readonly StreamSegmentInput[];
+  /** Pond wetness (current pond-only hydrology). */
+  ponds?: readonly PondWetnessInput[];
   waterColor?: string;
   /**
    * Level terrain for dust that matches vertex-colored ground.
@@ -94,7 +140,9 @@ export class OffroadFx {
   private readonly exhaust: ParticlePool;
   private readonly sharedTex: THREE.CanvasTexture;
   private streams: readonly StreamSegmentInput[] = [];
+  private ponds: readonly PondWetnessInput[] = [];
   private splashColor: Rgb = { r: 0.72, g: 0.82, b: 0.88 };
+  private readonly bodyWaterAcc = { v: 0 };
   private fallbackDust: Rgb = dustColorFromTerrainAlbedo(
     parseHexRgb("#9a8f78"),
   );
@@ -136,6 +184,7 @@ export class OffroadFx {
     scene.add(this.group);
 
     if (opts?.streams) this.streams = opts.streams;
+    if (opts?.ponds) this.ponds = opts.ponds;
     if (opts?.waterColor) {
       this.splashColor = waterSplashColor(opts.waterColor);
     }
@@ -149,6 +198,14 @@ export class OffroadFx {
 
   setStreams(streams: readonly StreamSegmentInput[]): void {
     this.streams = streams;
+  }
+
+  setPonds(ponds: readonly PondWetnessInput[]): void {
+    this.ponds = ponds;
+  }
+
+  private wetnessAt(x: number, z: number, y?: number): number {
+    return waterWetness(x, z, this.streams, this.ponds, y);
   }
 
   setTerrain(terrain: NonNullable<OffroadFxOptions["terrain"]>): void {
@@ -221,7 +278,7 @@ export class OffroadFx {
         radius,
         sample,
       );
-      const wet = streamWetness(contactPos.x, contactPos.z, this.streams);
+      const wet = this.wetnessAt(contactPos.x, contactPos.z, contactPos.y);
       const dustCol = this.sampleDustColor(contactPos.x, contactPos.z);
 
       // --- Landing burst ---
@@ -328,7 +385,7 @@ export class OffroadFx {
       while (BODY_ACC.v >= 1) {
         BODY_ACC.v -= 1;
         const p = bodyPts[(Math.random() * bodyN) | 0];
-        const wet = streamWetness(p.x, p.z, this.streams);
+        const wet = this.wetnessAt(p.x, p.z, p.y);
         // Body scrapes: chassis rear + loft (no wheel steer)
         const bodyTread = sample.throttle * 12;
         if (wet > 0.45) {
@@ -342,6 +399,100 @@ export class OffroadFx {
       BODY_ACC.v = 0;
     }
     this.prevBodyContactCount = bodyN;
+
+    // --- Body drainage: key-point immersion (depth vs surfaceY) + pose weight ---
+    // Wheels keep independent tire splash; this is chassis-only.
+    if (this.ponds.length > 0 || this.streams.length > 0) {
+      // rollLean / pitchLean: which body side/nose is lower in world Y
+      const rollLean = this._chassisRight.y;
+      const pitchLean = this._chassisFwd.y;
+
+      let wetCount = 0;
+      let wetSum = 0;
+      let depthSum = 0;
+      let totalWeight = 0;
+      let pickX = sample.position.x;
+      let pickZ = sample.position.z;
+      let pickSurfY =
+        sample.position.y - VEHICLE_CONFIG.chassisHalfExtents.y * 0.2;
+      let pickWeight = 0;
+
+      for (let i = 0; i < BODY_WATER_LOCAL.length; i++) {
+        const lp = BODY_WATER_LOCAL[i];
+        this._local.set(lp.x, lp.y, lp.z).applyQuaternion(this._q);
+        const wx = sample.position.x + this._local.x;
+        const wy = sample.position.y + this._local.y;
+        const wz = sample.position.z + this._local.z;
+
+        // XZ: must be over water. Depth: how far sample is under free surface.
+        const wetXZ = this.wetnessAt(wx, wz);
+        if (wetXZ < 0.08) continue;
+
+        const surf = pondSurfaceYAt(wx, wz, this.ponds);
+        // No pond surface (stream-only legacy): treat slight belly dip as depth
+        const surfaceY =
+          surf ??
+          wy + 0.08; // if only stream wetness, assume sample is just under
+        const depth = immersionDepthM(surfaceY, wy, 0.015);
+        // Shallow fording: body can sit slightly above free surface while
+        // still displacing water — allow small negative margin via wetXZ-only
+        // contribution when depth is tiny but XZ is fully in pond.
+        const depthEff =
+          depth > 0
+            ? depth
+            : wetXZ > 0.55
+              ? 0.04 * wetXZ
+              : 0;
+        if (depthEff < 0.012) continue;
+
+        const weight = bodyImmersionWeight({
+          wetnessXZ: wetXZ,
+          depthM: depthEff,
+          localX: lp.x,
+          localZ: lp.z,
+          rollLean,
+          pitchLean,
+        });
+        if (weight <= 0) continue;
+
+        wetCount++;
+        wetSum += wetXZ;
+        depthSum += depthEff;
+        totalWeight += weight;
+        // Weighted reservoir: prefer deeper / low-side samples for spawn
+        if (Math.random() * totalWeight < weight) {
+          pickX = wx;
+          pickZ = wz;
+          pickSurfY = surfaceY;
+          pickWeight = weight;
+        }
+      }
+
+      if (wetCount > 0 && totalWeight > 0) {
+        const rate = bodyWaterSprayEmitRate({
+          meanDepthM: depthSum / wetCount,
+          meanWetness: wetSum / wetCount,
+          speedMps: speed,
+          wetSampleCount: wetCount,
+          totalWeight,
+        });
+        this.bodyWaterAcc.v += rate * dtClamped;
+        while (this.bodyWaterAcc.v >= 1) {
+          this.bodyWaterAcc.v -= 1;
+          this.emitBodyWaterSpray(
+            { x: pickX, y: pickSurfY, z: pickZ },
+            vx,
+            vz,
+            speed,
+            lat,
+            sample.position,
+            pickWeight,
+          );
+        }
+      } else {
+        this.bodyWaterAcc.v = 0;
+      }
+    }
 
     // --- Exhaust (rear bumper local) ---
     const exR = exhaustEmitRate({
@@ -609,6 +760,91 @@ export class OffroadFx {
       life: 0.22 + Math.random() * 0.22,
       drag: 2.0,
       gravityScale: 1.5,
+    });
+  }
+
+  /**
+   * Body drainage / bow wake. Side peel is always vehicle left/right (chassis),
+   * so reverse does not flip L/R. Along-travel still follows velocity.
+   */
+  private emitBodyWaterSpray(
+    pos: { x: number; y: number; z: number },
+    vx: number,
+    vz: number,
+    speedMps: number,
+    lat: number,
+    chassisOrigin: { x: number; y: number; z: number },
+    immersionWeight = 1,
+  ): void {
+    const col = this.splashColor;
+    // Travel dir in XZ (forward or reverse); fallback nose
+    let tx = vx;
+    let tz = vz;
+    const horiz = Math.hypot(tx, tz);
+    if (horiz > 0.35) {
+      tx /= horiz;
+      tz /= horiz;
+    } else {
+      tx = this._chassisFwd.x;
+      tz = this._chassisFwd.z;
+      const fl = Math.hypot(tx, tz) || 1;
+      tx /= fl;
+      tz /= fl;
+    }
+
+    // Vehicle body axes — fixed L/R even when reversing
+    let sxAxis = this._chassisRight.x;
+    let szAxis = this._chassisRight.z;
+    const srl = Math.hypot(sxAxis, szAxis) || 1;
+    sxAxis /= srl;
+    szAxis /= srl;
+
+    const sideSign = Math.random() < 0.5 ? -1 : 1;
+    const sideAmt =
+      (0.85 + Math.random() * 1.1) * sideSign -
+      Math.sign(lat || 0) * 0.25;
+
+    const along = 0.75 + Math.random() * 0.55;
+    const loft = 0.55 + Math.random() * 0.75;
+    const depthBoost = clamp01(immersionWeight / 1.8);
+    const mag =
+      (2.4 + Math.min(7, Math.abs(speedMps) * 0.85) + depthBoost * 1.6) *
+      (0.85 + Math.random() * 0.4);
+
+    const dirX = tx * along + sxAxis * sideAmt;
+    const dirZ = tz * along + szAxis * sideAmt;
+    const dirY = loft;
+    const len = Math.hypot(dirX, dirY, dirZ) || 1;
+
+    const halfX = VEHICLE_CONFIG.chassisHalfExtents.x;
+    const outSide = (halfX + 0.25 + Math.random() * 0.35) * sideSign;
+    const outAlong = 0.1 + Math.random() * 0.5;
+    const sx =
+      chassisOrigin.x +
+      sxAxis * outSide +
+      tx * outAlong +
+      (Math.random() - 0.5) * 0.2;
+    const sz =
+      chassisOrigin.z +
+      szAxis * outSide +
+      tz * outAlong +
+      (Math.random() - 0.5) * 0.2;
+    const sy = pos.y + 0.12 + Math.random() * 0.18;
+
+    this.splash.emit({
+      x: sx,
+      y: sy,
+      z: sz,
+      vx: (dirX / len) * mag + (Math.random() - 0.5) * 0.5,
+      vy: (dirY / len) * mag * 0.95 + 0.6 + Math.random() * 1.1,
+      vz: (dirZ / len) * mag + (Math.random() - 0.5) * 0.5,
+      r: jitterColor(col.r, 0.1),
+      g: jitterColor(col.g, 0.09),
+      b: jitterColor(col.b, 0.07),
+      size: 0.22 + Math.random() * 0.28 + depthBoost * 0.08,
+      life: 0.35 + Math.random() * 0.35,
+      drag: 1.35 + Math.random() * 0.4,
+      gravityScale: 1.05 + Math.random() * 0.25,
     });
   }
 

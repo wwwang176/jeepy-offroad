@@ -362,12 +362,14 @@ export class GameApp {
     };
     this.offroadFx = new OffroadFx(this.gameScene.scene, {
       streams: level.streams,
+      ponds: level.ponds,
       waterColor: biome.waterColor,
       // Dust samples same height/path blend as TerrainMesh vertex colors
       terrain: terrainFx,
     });
     this.tireTracks = new TireTrackSystem(this.gameScene.scene, {
       streams: level.streams,
+      ponds: level.ponds,
       terrain: terrainFx,
     });
     this.sessionMode = "level";
