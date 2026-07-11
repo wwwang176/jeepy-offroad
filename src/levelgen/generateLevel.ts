@@ -8,20 +8,18 @@ import {
   fitPathToHeightmap,
   generatePathPolyline,
 } from "./path";
-import {
-  conditionTerrainFromBase,
-  pathClosestY,
-  pathDistXZ,
-} from "./repair";
+import { conditionTerrainFromBase } from "./repair";
 import { mulberry32 } from "./rng";
 import {
   CHECKPOINT_SPACING_M,
   DEFAULT_MAP_SIZE,
   DEFAULT_RESOLUTION,
-  STREAM_MAX_DEPTH_ON_PATH_M,
   type GenerateLevelInput,
   type LevelData,
+  type PondBody,
+  type StreamReach,
 } from "./types";
+import { placePonds } from "./ponds";
 
 function ribbonWidth(biome: BiomeProfile, vehicle: VehicleCapabilities): number {
   return biome.pathWidth ?? vehicle.trackWidth + 2 * vehicle.pathClearance;
@@ -75,7 +73,7 @@ export type CarveResult = {
 
 /**
  * Build base FBM → fit path to base only → one absolute path-band condition
- * (lifetime fill/cut vs base) → carve streams. No multi-pass ratchet nudge.
+ * (lifetime fill/cut vs base) → place ponds. No multi-pass ratchet nudge.
  */
 export function carveAndDecorate(
   pathXZ: Vec3[],
@@ -129,46 +127,22 @@ export function carveAndDecorate(
     pathDesign,
   );
 
-  // Streams after conditioning — use design path for ford depth (pathY − bed)
-  const streams: {
-    polyline: Vec3[];
-    width: number;
-    depthOnPath: number;
-  }[] = [];
+  // Pond-only hydrology (no rivers): rim surfaceY → carve → wet shore polygon
   const density = isFallback
     ? biome.streamDensity * 0.15
     : biome.streamDensity;
-  const streamCount = density > 0.5 ? 2 : density > 0.15 ? 1 : 0;
-  const fordDepth = Math.min(
-    STREAM_MAX_DEPTH_ON_PATH_M * 0.85,
-    vehicle.maxStepHeight * 0.75 * 0.9,
+  // Pond density by biome band: rainforest heavy, sand lighter
+  // high (e.g. rainforest 0.55): 200 | mid (e.g. sand 0.35): 25
+  const pondCount = density > 0.5 ? 200 : density > 0.15 ? 25 : 0;
+  const hydro = placePonds(
+    hm,
+    resolution,
+    mapSize,
+    pathDesign,
+    halfW,
+    pondCount,
+    rng,
   );
-  for (let s = 0; s < streamCount; s++) {
-    const poly = generateStreamPolyline(mapSize, pathDesign, rng, s);
-    if (poly.length < 2) continue;
-    const width = 2 + rng() * 2;
-    carveStream(
-      hm,
-      resolution,
-      mapSize,
-      poly,
-      width,
-      pathDesign,
-      halfW,
-      fordDepth,
-    );
-    applyStreamFordsOnPath(
-      hm,
-      resolution,
-      mapSize,
-      poly,
-      width,
-      pathDesign,
-      halfW,
-      fordDepth,
-    );
-    streams.push({ polyline: poly, width, depthOnPath: fordDepth });
-  }
 
   // Play path: grade on *conditioned* surface so validate centerline matches ground
   const path = fitPathToHeightmap(
@@ -179,114 +153,17 @@ export function carveAndDecorate(
     vehicle,
   );
 
-  streamCache.set(hm, streams);
+  hydrologyCache.set(hm, hydro);
   rng();
   rng();
 
   return { heightmap: hm, baseHeightmap, path };
 }
 
-const streamCache = new WeakMap<
+const hydrologyCache = new WeakMap<
   Float32Array,
-  { polyline: Vec3[]; width: number; depthOnPath?: number }[]
+  { streams: StreamReach[]; ponds: PondBody[] }
 >();
-
-function generateStreamPolyline(
-  mapSize: number,
-  path: Vec3[],
-  rng: () => number,
-  salt: number,
-): Vec3[] {
-  const half = mapSize / 2;
-  const margin = 20;
-  // Stream roughly perpendicular to map mid, avoiding start/finish pads
-  const z0 = (rng() * 2 - 1) * (half - margin);
-  const yBase = 9 + rng() * 2;
-  const points: Vec3[] = [];
-  const step = 6;
-  for (let x = -half + margin; x <= half - margin; x += step) {
-    const zig = Math.sin((x + salt * 30) * 0.04) * 8 + (rng() - 0.5) * 3;
-    const z = Math.max(-half + margin, Math.min(half - margin, z0 + zig));
-    // Prefer not to create deep path cuts: lift stream Y near path
-    const d = pathDistXZ(x, z, path);
-    let y = yBase + (rng() - 0.5) * 1.5;
-    if (d < 12) {
-      y = pathClosestY(x, z, path) + STREAM_MAX_DEPTH_ON_PATH_M * 0.2;
-    }
-    points.push({ x, y, z });
-  }
-  return points;
-}
-
-/**
- * Carve stream beds. On-path cells target pathY - fordDepth (≤ STREAM_MAX_DEPTH);
- * off-path digs deeper. Fords are re-applied after path re-stamp via applyStreamFordsOnPath.
- */
-function carveStream(
-  hm: Float32Array,
-  resolution: number,
-  worldSize: number,
-  poly: Vec3[],
-  width: number,
-  path: Vec3[],
-  pathHalf: number,
-  fordDepth: number,
-): void {
-  const half = width / 2;
-  const onPathDepth = Math.min(fordDepth, STREAM_MAX_DEPTH_ON_PATH_M);
-  for (let r = 0; r < resolution; r++) {
-    for (let c = 0; c < resolution; c++) {
-      const { x, z } = gridToWorld(c, r, worldSize, resolution);
-      const dStream = pathDistXZ(x, z, poly);
-      if (dStream > half + 1.5) continue;
-      const dPath = pathDistXZ(x, z, path);
-      const fall = Math.max(0, 1 - dStream / (half + 1.5));
-      const i = idx(resolution, c, r);
-      if (dPath <= pathHalf + 1) {
-        // Explicit ford: pathY - min(depth, STREAM_MAX_DEPTH)
-        const pathY = pathClosestY(x, z, path);
-        const target = pathY - onPathDepth * fall * fall;
-        if (hm[i] > target) hm[i] = target;
-      } else {
-        const maxDepth = 1.2 + (1 - Math.min(1, dPath / 20)) * 0.5;
-        hm[i] -= maxDepth * fall * fall;
-      }
-    }
-  }
-}
-
-/**
- * After path ribbon stamp, re-cut fords so stream crossings keep a real dip
- * of up to STREAM_MAX_DEPTH_ON_PATH_M (validator measures pathY − bed).
- */
-function applyStreamFordsOnPath(
-  hm: Float32Array,
-  resolution: number,
-  worldSize: number,
-  poly: Vec3[],
-  width: number,
-  path: Vec3[],
-  pathHalf: number,
-  fordDepth: number,
-): void {
-  const half = width / 2;
-  const depth = Math.min(Math.max(0, fordDepth), STREAM_MAX_DEPTH_ON_PATH_M);
-  if (depth <= 0) return;
-  for (let r = 0; r < resolution; r++) {
-    for (let c = 0; c < resolution; c++) {
-      const { x, z } = gridToWorld(c, r, worldSize, resolution);
-      const dStream = pathDistXZ(x, z, poly);
-      if (dStream > half) continue;
-      const dPath = pathDistXZ(x, z, path);
-      if (dPath > pathHalf + 0.5) continue;
-      const fall = Math.max(0, 1 - dStream / half);
-      const pathY = pathClosestY(x, z, path);
-      const target = pathY - depth * fall * fall;
-      const i = idx(resolution, c, r);
-      if (hm[i] > target) hm[i] = target;
-    }
-  }
-}
 
 function pathLength(path: Vec3[]): number {
   let len = 0;
@@ -375,7 +252,7 @@ export function buildLevelData(
     if (heightmap[i] < minH) minH = heightmap[i];
   }
 
-  const streams = streamCache.get(heightmap) ?? [];
+  const hydro = hydrologyCache.get(heightmap) ?? { streams: [], ponds: [] };
   const base = baseHeightmap ?? new Float32Array(heightmap);
 
   return {
@@ -396,10 +273,17 @@ export function buildLevelData(
       halfExtents: { x: 4, y: 3, z: 4 },
     },
     checkpoints,
-    streams: streams.map((s) => ({
+    streams: hydro.streams.map((s) => ({
+      ...s,
       polyline: s.polyline.map((p) => ({ ...p })),
-      width: s.width,
-      depthOnPath: s.depthOnPath,
+      samples: s.samples.map((sm) => ({ ...sm })),
+      connections: s.connections.map((c) => ({ ...c })),
+    })),
+    ponds: hydro.ponds.map((p) => ({
+      ...p,
+      center: { ...p.center },
+      polygon: p.polygon?.map((q) => ({ ...q })),
+      connections: p.connections.map((c) => ({ ...c })),
     })),
     killY: minH - 20,
     meta: {
@@ -411,7 +295,7 @@ export function buildLevelData(
 
 /**
  * Build a playable level: meander path + base FBM + single ±cap path condition
- * + optional streams. No GeometricSolvability gate, repair loop, or hard
+ * + optional ponds. No GeometricSolvability gate, repair loop, or hard
  * corridor fallback — offroad routes stay soft berms even on high relief.
  */
 export function generateLevel(input: GenerateLevelInput): LevelData {

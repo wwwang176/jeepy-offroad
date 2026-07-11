@@ -81,95 +81,50 @@ function createFinishMarker(finish: LevelData["finish"]): THREE.Group {
   return group;
 }
 
-/** Slight lift so transparent water sits above the bed without z-fighting. */
-const STREAM_WATER_Y_BIAS = 0.05;
-
 /**
- * Densify a stream centerline in XZ so water can follow heightmap undulations
- * between sparse polyline vertices (~6 m generation step).
- */
-function densifyStreamPolyline(
-  pts: readonly { x: number; z: number }[],
-  step: number,
-): { x: number; z: number; dx: number; dz: number }[] {
-  const out: { x: number; z: number; dx: number; dz: number }[] = [];
-  if (pts.length < 2) return out;
-
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i];
-    const b = pts[i + 1];
-    const segLen = Math.hypot(b.x - a.x, b.z - a.z) || 1e-6;
-    const dx = (b.x - a.x) / segLen;
-    const dz = (b.z - a.z) / segLen;
-    const n = Math.max(1, Math.ceil(segLen / step));
-    for (let k = 0; k < n; k++) {
-      const t = k / n;
-      out.push({
-        x: a.x + (b.x - a.x) * t,
-        z: a.z + (b.z - a.z) * t,
-        dx,
-        dz,
-      });
-    }
-  }
-  const last = pts[pts.length - 1];
-  const prev = pts[pts.length - 2];
-  const endLen = Math.hypot(last.x - prev.x, last.z - prev.z) || 1;
-  out.push({
-    x: last.x,
-    z: last.z,
-    dx: (last.x - prev.x) / endLen,
-    dz: (last.z - prev.z) / endLen,
-  });
-  return out;
-}
-
-/**
- * Stream water ribbon draped on the carved bed: densified centerline, left/right
- * edges each sample heightmap at their own XZ (+ small Y bias).
+ * Pond water meshes from levelgen only (pond-only hydrology).
+ * Flat fan at pond.surfaceY over irregular shore polygon — no heightmap drape.
  */
 function createStreamMeshes(
   level: LevelData,
   waterColor: string,
 ): THREE.Group {
   const group = new THREE.Group();
-  group.name = "streams";
+  group.name = "water";
   const color = hexToNumber(waterColor);
-  const cell = level.worldSize / Math.max(1, level.resolution - 1);
-  // ~1 cell so water follows bed; floor so sparse maps still densify a bit
-  const sampleStep = Math.max(0.6, cell);
 
-  for (const stream of level.streams) {
-    const pts = stream.polyline;
-    if (pts.length < 2) continue;
-    const halfW = stream.width * 0.5;
-    // Slightly inset from nominal width so edges sit on wet bed, not bank lip
-    const edgeHalf = halfW * 0.92;
-    const stations = densifyStreamPolyline(pts, sampleStep);
-    if (stations.length < 2) continue;
+  const waterMat = () =>
+    new THREE.MeshLambertMaterial({
+      color,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      flatShading: true,
+      side: THREE.DoubleSide,
+    });
 
-    const positions: number[] = [];
+  for (const pond of level.ponds ?? []) {
+    const poly = pond.polygon;
+    if (!poly || poly.length < 3) continue;
+    const y = pond.surfaceY;
+    // Fan from centroid of polygon (more stable than pond.center for irregular)
+    let cx = 0;
+    let cz = 0;
+    for (const p of poly) {
+      cx += p.x;
+      cz += p.z;
+    }
+    cx /= poly.length;
+    cz /= poly.length;
+
+    const positions: number[] = [cx, y, cz];
     const indices: number[] = [];
-
-    for (let i = 0; i < stations.length; i++) {
-      const s = stations[i];
-      // Perpendicular in XZ
-      const px = -s.dz * edgeHalf;
-      const pz = s.dx * edgeHalf;
-      const lx = s.x + px;
-      const lz = s.z + pz;
-      const rx = s.x - px;
-      const rz = s.z - pz;
-      const yL = sampleHeight(level, lx, lz) + STREAM_WATER_Y_BIAS;
-      const yR = sampleHeight(level, rx, rz) + STREAM_WATER_Y_BIAS;
-      positions.push(lx, yL, lz, rx, yR, rz);
-      if (i > 0) {
-        const a = (i - 1) * 2;
-        const b = a + 1;
-        const c = i * 2;
-        const d = c + 1;
-        indices.push(a, c, b, b, c, d);
-      }
+    for (const p of poly) {
+      positions.push(p.x, y, p.z);
+    }
+    const n = poly.length;
+    for (let i = 0; i < n; i++) {
+      indices.push(0, 1 + i, 1 + ((i + 1) % n));
     }
 
     const geo = new THREE.BufferGeometry();
@@ -179,15 +134,8 @@ function createStreamMeshes(
     );
     geo.setIndex(indices);
     geo.computeVertexNormals();
-    const mat = new THREE.MeshLambertMaterial({
-      color,
-      transparent: true,
-      opacity: 0.72,
-      depthWrite: false,
-      flatShading: true,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.name = "stream";
+    const mesh = new THREE.Mesh(geo, waterMat());
+    mesh.name = pond.id ?? "pond";
     group.add(mesh);
   }
 
