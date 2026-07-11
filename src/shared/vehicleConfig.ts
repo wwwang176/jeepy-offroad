@@ -27,6 +27,12 @@ const CHASSIS_HALF_EXTENTS = { x: 0.88, y: 0.4, z: 1.35 } as const;
 export const VEHICLE_CONFIG = {
   massKg: 1400,
   /**
+   * Rigid-body linear damping (Rapier). Also used once at spawn to solve
+   * flat full-throttle V_term for engine-brake thresholds.
+   */
+  chassisLinearDamping: 0.05,
+  chassisAngularDamping: 0.4,
+  /**
    * Lower body / tub collider (shape centered on body origin).
    * Matched to JeepMesh body envelope, not the tall hardtop.
    */

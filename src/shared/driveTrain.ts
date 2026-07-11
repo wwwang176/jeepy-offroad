@@ -19,11 +19,12 @@ export interface DriveRangeConfig {
    */
   falloffPower: number;
   /**
-   * Legacy engine-brake when coasting (unused: release throttle = freewheel).
-   * Kept for config docs / possible future crawl assist.
+   * Overspeed engine-brake gain (N per m/s above flat V_term), before
+   * rapierBrakeScale. 0 = disabled (4H). Applied via setWheelBrake when
+   * |speed| > flatTermSpeed; does not set serviceBraking (no brake lamps).
    */
-  engineBrakeForce: number;
-  /** Multiplier on service brake (opposite-throttle or explicit brake). */
+  engineBrakeGain: number;
+  /** Multiplier on service brake only (opposite-throttle or explicit brake). */
   brakeScale: number;
 }
 
@@ -37,7 +38,8 @@ export const DRIVE_RANGES: Record<DriveRange, DriveRangeConfig> = {
     peakForce: 9000,
     vMax: 26,
     falloffPower: 1.1,
-    engineBrakeForce: 1600,
+    // Future-ready: same V_term solver; gain 0 = no 檔煞 yet
+    engineBrakeGain: 0,
     brakeScale: 1,
   },
   L: {
@@ -47,7 +49,8 @@ export const DRIVE_RANGES: Record<DriveRange, DriveRangeConfig> = {
     vMax: 10,
     // Stay strong through crawl band, then cut hard near low-range redline
     falloffPower: 1.35,
-    engineBrakeForce: 4500,
+    // N per (m/s) over flat full-throttle term (~33 km/h); scale with overshoot
+    engineBrakeGain: 4500,
     brakeScale: 1.2,
   },
 } as const;
@@ -70,11 +73,29 @@ export interface DriveCommand {
    * Kept explicit so drive math stays unit-testable.
    */
   rapierBrakeScale?: number;
+  /**
+   * Flat full-throttle terminal speed for this range (m/s), computed once
+   * at session start via solveFlatThrottleTermSpeedMps. Required for 檔煞.
+   */
+  flatTermSpeedMps: number;
 }
 
 export interface DriveForces {
   enginePerWheel: number;
+  /**
+   * Total wheel brake for Rapier (= service + engine-brake).
+   * Invariant: serviceBrakePerWheel + engineBrakePerWheel.
+   */
   brakePerWheel: number;
+  /** Explicit / opposite-throttle component only. */
+  serviceBrakePerWheel: number;
+  /** Overspeed 檔煞 component (0 at or below flat V_term). */
+  engineBrakePerWheel: number;
+  /**
+   * Driver service-brake intent — brake lamps should follow this, not
+   * engine-brake (檔煞 must not light the lights).
+   */
+  serviceBraking: boolean;
   /** Total available engine magnitude before throttle (N). */
   availableEngineForce: number;
   label: string;
@@ -93,18 +114,75 @@ export function torqueAvailable(speed: number, range: DriveRange): number {
 }
 
 /**
+ * Linear drag proxy matching Rapier-style linear damping:
+ * F ≈ mass × linearDamping × |speed|.
+ */
+export function linearDampingDragN(
+  massKg: number,
+  linearDamping: number,
+  speedMps: number,
+): number {
+  return Math.max(0, massKg) * Math.max(0, linearDamping) * Math.abs(speedMps);
+}
+
+/**
+ * Flat full-throttle terminal speed (m/s): solve
+ *   torqueAvailable(v, range) = mass × linearDamping × v
+ * once at session start (not per frame). Same API for H and L.
+ *
+ * Binary search on (0, vMax). If damping ≤ 0, returns vMax.
+ */
+export function solveFlatThrottleTermSpeedMps(
+  range: DriveRange,
+  massKg: number,
+  linearDamping: number,
+): number {
+  const cfg = DRIVE_RANGES[range];
+  const vMax = cfg.vMax;
+  if (vMax <= 0) return 0;
+  if (massKg <= 0 || linearDamping <= 0) return vMax;
+
+  const fNet = (v: number): number =>
+    torqueAvailable(v, range) - linearDampingDragN(massKg, linearDamping, v);
+
+  // At v→0+, torque → peak > 0, drag → 0 → fNet > 0 (accelerating).
+  // At vMax, torque = 0, drag > 0 → fNet < 0. Root in (0, vMax).
+  let lo = 0;
+  let hi = vMax;
+  for (let i = 0; i < 48; i++) {
+    const mid = (lo + hi) * 0.5;
+    if (fNet(mid) > 0) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) * 0.5;
+}
+
+/** Precompute H/L flat term speeds for a chassis (session start). */
+export function computeFlatTermSpeedsMps(
+  massKg: number,
+  linearDamping: number,
+): Record<DriveRange, number> {
+  return {
+    H: solveFlatThrottleTermSpeedMps("H", massKg, linearDamping),
+    L: solveFlatThrottleTermSpeedMps("L", massKg, linearDamping),
+  };
+}
+
+/**
  * Speed below this (m/s) while holding opposite input switches to reverse/drive
  * instead of staying in brake-only (arcade stop-then-go).
  */
 export const OPPOSITE_BRAKE_SPEED_EPS = 0.55;
 
+/** |throttle| below this counts as no drive torque. */
+export const COAST_THROTTLE_EPS = 0.05;
+
 /**
  * Map throttle/brake/range/speed → per-wheel engine + brake for Rapier.
  *
- * - No input → freewheel (no engine brake)
- * - Throttle same way as motion (or nearly stopped) → drive torque
- * - Throttle against motion while |speed| is significant → service brake only
- * - Explicit `brake` still works if set by input layer
+ * - Below flat V_term: normal drive / freewheel coast
+ * - |speed| > flat V_term and engineBrakeGain > 0: 檔煞 ∝ overshoot (no lamps)
+ * - Opposite throttle / explicit brake: service brake (lamps on)
  */
 export function computeDriveForces(cmd: DriveCommand): DriveForces {
   const cfg = DRIVE_RANGES[cmd.range];
@@ -113,29 +191,44 @@ export function computeDriveForces(cmd: DriveCommand): DriveForces {
   const available = torqueAvailable(cmd.speed, cmd.range);
   const throttle = clamp(cmd.throttle, -1, 1);
   const speed = cmd.speed;
+  const absSpeed = Math.abs(speed);
+  const vTerm = Math.max(0, cmd.flatTermSpeedMps);
 
   let engineTotal = 0;
-  let brakeTotal = 0;
+  let serviceBrakeTotal = 0;
+  let engineBrakeTotal = 0;
 
   const explicitBrake = cmd.brake > 0.1;
-  // Forward + reverse key (or reverse + forward key) while still rolling that way
   const oppositeThrottle =
-    Math.abs(throttle) > 0.05 &&
-    Math.abs(speed) > OPPOSITE_BRAKE_SPEED_EPS &&
+    Math.abs(throttle) > COAST_THROTTLE_EPS &&
+    absSpeed > OPPOSITE_BRAKE_SPEED_EPS &&
     Math.sign(throttle) !== Math.sign(speed);
 
-  if (explicitBrake || oppositeThrottle) {
+  const serviceBraking = explicitBrake || oppositeThrottle;
+
+  if (serviceBraking) {
     const brakeAmt = explicitBrake ? clamp(cmd.brake, 0, 1) : 1;
-    brakeTotal =
+    serviceBrakeTotal =
       cmd.baseBrakeForce * cfg.brakeScale * brakeAmt * rapierBrakeScale;
-  } else if (Math.abs(throttle) > 0.05) {
+  } else if (Math.abs(throttle) > COAST_THROTTLE_EPS) {
     engineTotal = throttle * available;
   }
-  // else: coast — zeros
+
+  // Overspeed 檔煞 (deadzone 0): only when gain > 0 and past flat term
+  if (cfg.engineBrakeGain > 0 && absSpeed > vTerm) {
+    const overshoot = absSpeed - vTerm;
+    engineBrakeTotal =
+      cfg.engineBrakeGain * overshoot * rapierBrakeScale;
+  }
+
+  const brakeTotal = serviceBrakeTotal + engineBrakeTotal;
 
   return {
     enginePerWheel: engineTotal / n,
     brakePerWheel: brakeTotal / n,
+    serviceBrakePerWheel: serviceBrakeTotal / n,
+    engineBrakePerWheel: engineBrakeTotal / n,
+    serviceBraking,
     availableEngineForce: available,
     label: cfg.label,
     range: cmd.range,

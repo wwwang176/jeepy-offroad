@@ -7,6 +7,7 @@ import {
 } from "@/shared/vehicleConfig";
 import {
   computeDriveForces,
+  computeFlatTermSpeedsMps,
   DEFAULT_DRIVE_RANGE,
   type DriveRange,
 } from "@/shared/driveTrain";
@@ -53,10 +54,17 @@ export class VehicleController {
   private lastDriveRange: DriveRange = DEFAULT_DRIVE_RANGE;
   private lastDriveLabel = "4H";
   private lastAvailableEngine = 0;
+  /** True only for explicit / opposite-throttle brake (not 4L 檔煞). */
+  private lastServiceBraking = false;
   /** Smoothed front-wheel steer angle (rad), eases toward input target. */
   private steerCurrent = 0;
   /** Effective brake scale after biome traction (vs VEHICLE_CONFIG). */
   private readonly rapierBrakeScale: number;
+  /**
+   * Flat full-throttle terminal speeds (m/s), solved once from mass × damping
+   * vs torque curve — not updated per frame.
+   */
+  private readonly flatTermByRange: Record<DriveRange, number>;
 
   /**
    * Render double-buffer (Fix Your Timestep):
@@ -74,9 +82,10 @@ export class VehicleController {
     opts?: VehicleControllerOptions,
   ) {
     this.world = world;
-    const he = VEHICLE_CONFIG.chassisHalfExtents;
-    const cabin = VEHICLE_CONFIG.cabinCollider;
-    const mass = VEHICLE_CONFIG.massKg;
+    const cfg = VEHICLE_CONFIG;
+    const he = cfg.chassisHalfExtents;
+    const cabin = cfg.cabinCollider;
+    const mass = cfg.massKg;
 
     const rbDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(pose.position.x, pose.position.y, pose.position.z)
@@ -86,11 +95,17 @@ export class VehicleController {
         z: 0,
         w: Math.cos(pose.yaw / 2),
       })
-      .setLinearDamping(0.05)
-      .setAngularDamping(0.4)
+      .setLinearDamping(cfg.chassisLinearDamping)
+      .setAngularDamping(cfg.chassisAngularDamping)
       .setCanSleep(false)
       .setCcdEnabled(true);
     this.body = world.createRigidBody(rbDesc);
+
+    // Session-constant flat V_term for overspeed 檔煞 (4L gain > 0).
+    this.flatTermByRange = computeFlatTermSpeedsMps(
+      mass,
+      cfg.chassisLinearDamping,
+    );
 
     // Lower tub / doors — all mass lives here. Shape stays body-centered;
     // COM is pinned to the tub underside (Cannon-style: shape ≠ COM).
@@ -143,7 +158,6 @@ export class VehicleController {
       this.controller as unknown as { setIndexForwardAxis: number }
     ).setIndexForwardAxis = 2;
 
-    const cfg = VEHICLE_CONFIG;
     const t = opts?.traction;
     const slipScale = t?.frictionSlipScale ?? 1;
     const sideScale = t?.sideFrictionScale ?? 1;
@@ -300,6 +314,14 @@ export class VehicleController {
     return this.lastDriveLabel;
   }
 
+  /**
+   * Driver service-brake intent for brake lamps.
+   * False during 4L coast engine-brake.
+   */
+  isServiceBraking(): boolean {
+    return this.lastServiceBraking;
+  }
+
   /** Peak available engine force (N) at current speed/range before throttle. */
   getAvailableEngineForce(): number {
     return this.lastAvailableEngine;
@@ -411,10 +433,12 @@ export class VehicleController {
       wheelCount: this.numWheels,
       baseBrakeForce: cfg.brakeForce,
       rapierBrakeScale: this.rapierBrakeScale,
+      flatTermSpeedMps: this.flatTermByRange[range],
     });
     this.lastDriveRange = drive.range;
     this.lastDriveLabel = drive.label;
     this.lastAvailableEngine = drive.availableEngineForce;
+    this.lastServiceBraking = drive.serviceBraking;
 
     // Steering still eases off with speed (road feel in 4H; 4L stays agile).
     const steerRefSpeed = range === "L" ? 12 : 25;

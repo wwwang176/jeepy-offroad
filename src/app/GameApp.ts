@@ -30,7 +30,6 @@ import { getBiome } from "@/biome/registry";
 import { normalizeSeed } from "@/shared/seed";
 import { VEHICLE_CAPABILITIES } from "@/shared/vehicleCapabilities";
 import { chassisSpawnY } from "@/shared/vehicleConfig";
-import { OPPOSITE_BRAKE_SPEED_EPS } from "@/shared/driveTrain";
 import { FinishSystem } from "@/gameplay/FinishSystem";
 import { CheckpointSystem } from "@/gameplay/CheckpointSystem";
 import { RespawnSystem } from "@/gameplay/RespawnSystem";
@@ -594,17 +593,8 @@ export class GameApp {
       if (this.cameraRig) {
         setJeepGlassVisible(this.jeepMesh, this.cameraRig.mode !== "first");
       }
-      // Brake lamps: explicit brake or opposite-throttle service brake
-      {
-        const thr = this.lastDriveActions.throttle;
-        const br = this.lastDriveActions.brake;
-        const fwd = this.vehicle.getForwardSpeedMps();
-        const opposite =
-          Math.abs(thr) > 0.05 &&
-          Math.abs(fwd) > OPPOSITE_BRAKE_SPEED_EPS &&
-          Math.sign(thr) !== Math.sign(fwd);
-        setJeepBrakeLights(this.jeepMesh, br > 0.1 || opposite);
-      }
+      // Brake lamps: service intent only (not 4L coast engine-brake / 檔煞)
+      setJeepBrakeLights(this.jeepMesh, this.vehicle.isServiceBraking());
 
       // Speed + range badges (level + sandbox).
       const speedMps = this.vehicle.getSpeedMps();
