@@ -82,10 +82,12 @@ button.btn-ghost:active:not(:disabled),
   padding: 32px 16px;
   pointer-events: none;
 }
-/* Flat modal scrim (result / loading / error) */
+/* Flat modal scrim (result / loading / error) — panel centered on screen */
 .result-overlay,
 .loading-overlay,
 .modal-overlay {
+  align-items: center;
+  justify-content: center;
   background: rgba(8, 10, 12, 0.72);
 }
 .menu-overlay > .panel,
@@ -411,7 +413,7 @@ button.btn-ghost:active:not(:disabled),
   pointer-events: auto;
   width: min(380px, 100%);
   padding: 22px 24px;
-  margin-top: 48px;
+  margin: 0;
   background: #141210;
   border: 1px solid rgba(201, 160, 74, 0.45);
   border-radius: 4px;
