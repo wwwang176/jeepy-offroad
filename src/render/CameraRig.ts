@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { Vec3 } from "@/shared/types";
-import { clamp } from "@/shared/math";
+import { clamp, deltaAngle, lerp, wrapAngle } from "@/shared/math";
 
 export type CameraMode = "third" | "first";
 
@@ -8,6 +8,12 @@ export type CameraPose = {
   position: Vec3;
   yaw: number;
   rotation?: { x: number; y: number; z: number; w: number };
+};
+
+export type CameraUpdateOpts = {
+  snap?: boolean;
+  /** Ground-plane speed (m/s); scales third-person yaw lag (slower = more lag). */
+  speedMps?: number;
 };
 
 /** Match original spring-arm: back 8m, up 3.5m. */
@@ -43,6 +49,19 @@ const TP_LOOK_SMOOTH = 14;
  */
 const TP_FOLLOW_SMOOTH = 10;
 
+/**
+ * Chase-cam vehicle-yaw lag: spring-arm heading eases toward pose.yaw so
+ * turns briefly show the vehicle side. Position XZ still hard-tracks the arm
+ * built from the lagged yaw (no position time-delay → no mesh/cam jump).
+ */
+/** Half the original rates → ~2× more visible turn lag. */
+const TP_YAW_LAG_RATE_LOW = 1.75;
+const TP_YAW_LAG_RATE_HIGH = 6;
+/** Speed (m/s) at which lag rate reaches HIGH (~36 km/h). */
+const YAW_LAG_SPEED_REF = 10;
+/** Max shortest-arc lag (rad, ~69°) so spinouts don't drag forever. */
+const TP_YAW_LAG_MAX = 1.2;
+
 export class CameraRig {
   mode: CameraMode = "third";
   private readonly desired = new THREE.Vector3();
@@ -74,6 +93,12 @@ export class CameraRig {
   private orbitPitchTarget = TP_DEFAULT_PITCH;
   /** Spring-arm length (m). */
   private orbitDist = TP_DIST_DEFAULT;
+  /**
+   * Lagged vehicle yaw for third-person spring-arm heading (rad).
+   * Mouse orbit is layered on top: armYaw = followYaw + orbitYaw.
+   */
+  private followYaw = 0;
+  private followYawInitialized = false;
   /** First-person free look (smoothed) relative to chassis (rad). */
   private fpYaw = 0;
   private fpPitch = 0;
@@ -92,8 +117,9 @@ export class CameraRig {
     // Snap follow camera when entering third person
     if (mode === "third") {
       this.current.copy(this.camera.position);
-      // Next update will hard-snap look to vehicle (avoid stale look from FP)
+      // Next update will hard-snap look + followYaw to vehicle (avoid stale lag from FP)
       this.lookInitialized = false;
+      this.followYawInitialized = false;
       // No lag from previous session's orbit targets
       this.orbitYaw = this.orbitYawTarget;
       this.orbitPitch = this.orbitPitchTarget;
@@ -147,6 +173,13 @@ export class CameraRig {
     this.fpPitch = 0;
     this.fpYawTarget = 0;
     this.fpPitchTarget = 0;
+    // Next third-person update snaps followYaw to pose (no residual turn lag).
+    this.followYawInitialized = false;
+  }
+
+  /** Lagged spring-arm vehicle yaw (for tests / debug). */
+  getFollowYaw(): number {
+    return this.followYaw;
   }
 
   /**
@@ -171,10 +204,12 @@ export class CameraRig {
     return { yaw: this.orbitYaw, pitch: this.orbitPitch, dist: this.orbitDist };
   }
 
-  update(dt: number, pose: CameraPose, opts?: { snap?: boolean }): void {
+  update(dt: number, pose: CameraPose, opts?: CameraUpdateOpts): void {
     if (this.mode === "third") {
+      const snap = opts?.snap || dt <= 0 || !this.lookInitialized;
+
       // Ease orbit look toward mouse targets (exponential, frame-rate independent)
-      if (opts?.snap || dt <= 0 || !this.lookInitialized) {
+      if (snap) {
         this.orbitYaw = this.orbitYawTarget;
         this.orbitPitch = this.orbitPitchTarget;
       } else {
@@ -183,7 +218,30 @@ export class CameraRig {
         this.orbitPitch += (this.orbitPitchTarget - this.orbitPitch) * lookK;
       }
 
-      const yaw = pose.yaw + this.orbitYaw;
+      // Vehicle-yaw lag: show a bit of the side on turns (more at low speed).
+      if (snap || !this.followYawInitialized) {
+        this.followYaw = pose.yaw;
+        this.followYawInitialized = true;
+      } else {
+        const speed = Math.abs(opts?.speedMps ?? 0);
+        const rate = lerp(
+          TP_YAW_LAG_RATE_LOW,
+          TP_YAW_LAG_RATE_HIGH,
+          clamp(speed / YAW_LAG_SPEED_REF, 0, 1),
+        );
+        const err = deltaAngle(this.followYaw, pose.yaw);
+        const yawK = 1 - Math.exp(-rate * dt);
+        this.followYaw = wrapAngle(this.followYaw + err * yawK);
+        // Cap residual lag so 360° spinouts do not drag the arm forever.
+        const lag = deltaAngle(this.followYaw, pose.yaw);
+        if (Math.abs(lag) > TP_YAW_LAG_MAX) {
+          this.followYaw = wrapAngle(
+            pose.yaw - Math.sign(lag) * TP_YAW_LAG_MAX,
+          );
+        }
+      }
+
+      const yaw = this.followYaw + this.orbitYaw;
       const pitch = this.orbitPitch;
       const dist = this.orbitDist;
       const cosP = Math.cos(pitch);
@@ -200,12 +258,14 @@ export class CameraRig {
         pose.position.y + 1.2,
         pose.position.z,
       );
-      if (opts?.snap || dt <= 0 || !this.lookInitialized) {
+      if (snap) {
         this.current.copy(this.desired);
         this.look.copy(this.lookDesired);
         this.lookInitialized = true;
       } else {
         // XZ hard-follow: same phase as jeep mesh (no chase lag / jump).
+        // Arm heading may lag vehicle yaw, but position is still hard-tracked
+        // to the current-frame desired arm — no position time-delay.
         this.current.x = this.desired.x;
         this.current.z = this.desired.z;
         this.look.x = this.lookDesired.x;

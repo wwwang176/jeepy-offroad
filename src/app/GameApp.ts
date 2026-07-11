@@ -607,7 +607,7 @@ export class GameApp {
 
       if (this.sessionMode === "level" && this.gameScene) {
         if (this.cameraRig) {
-          this.cameraRig.update(dt, pose);
+          this.cameraRig.update(dt, pose, { speedMps });
         }
         // Palm wind (island-conquest style vertex sway)
         this.gameScene.updatePalmSway(t * 0.001);
@@ -645,7 +645,7 @@ export class GameApp {
         );
       } else if (this.three) {
         if (this.cameraRig) {
-          this.cameraRig.update(dt, pose);
+          this.cameraRig.update(dt, pose, { speedMps });
         } else {
           const yaw = pose.yaw;
           this.three.camera.position.set(
