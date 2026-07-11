@@ -645,9 +645,7 @@ button.btn-ghost:active:not(:disabled),
   display: block;
 }
 /* Portrait: block drive input under full-screen rotate mask. */
-.touch-controls.is-portrait .touch-stick,
-.touch-controls.is-portrait .touch-pedals,
-.touch-controls.is-portrait .touch-actions {
+.touch-controls.is-portrait .touch-safe {
   opacity: 0.2;
   pointer-events: none;
 }
@@ -675,14 +673,59 @@ button.btn-ghost:active:not(:disabled),
   padding: 0 20px;
   text-align: center;
 }
-.touch-stick {
+
+/*
+ * Safe hit zones around pads — larger than the visual control so presses near
+ * sticks/buttons do not fall through to the canvas look-drag layer.
+ */
+.touch-safe {
   position: absolute;
-  left: calc(20px + env(safe-area-inset-left, 0px));
-  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  pointer-events: auto;
+  touch-action: none;
+  z-index: 22;
+  /* Optional subtle debug: outline: 1px dashed rgba(255,255,255,0.08); */
+}
+.touch-safe-steer {
+  left: calc(4px + env(safe-area-inset-left, 0px));
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  width: 168px;
+  height: 168px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.touch-safe-pedals {
+  right: calc(4px + env(safe-area-inset-right, 0px));
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  width: 104px;
+  height: 196px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.touch-safe-actions {
+  left: 50%;
+  bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  /* Wider than the three buttons so edge misses stay off look-drag */
+  min-width: 220px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  box-sizing: content-box;
+}
+
+.touch-stick {
+  position: relative;
+  left: auto;
+  bottom: auto;
   width: 128px;
   height: 128px;
   pointer-events: auto;
   touch-action: none;
+  flex-shrink: 0;
 }
 .touch-stick-ring {
   position: absolute;
@@ -720,9 +763,9 @@ button.btn-ghost:active:not(:disabled),
   pointer-events: none;
 }
 .touch-pedals {
-  position: absolute;
-  right: calc(16px + env(safe-area-inset-right, 0px));
-  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  position: relative;
+  right: auto;
+  bottom: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -765,17 +808,16 @@ button.btn-ghost:active:not(:disabled),
 }
 /* Bottom-center row: 4H / CAM / R between stick and pedals. */
 .touch-actions {
-  position: absolute;
-  left: 50%;
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%);
+  position: relative;
+  left: auto;
+  bottom: auto;
+  transform: none;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
   gap: 10px;
   pointer-events: auto;
-  z-index: 21;
 }
 .touch-btn {
   display: flex;
@@ -814,10 +856,24 @@ button.btn-ghost:active:not(:disabled),
 }
 
 @media (max-height: 420px) and (orientation: landscape) {
+  .touch-safe-steer {
+    width: 148px;
+    height: 148px;
+    bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  }
+  .touch-safe-pedals {
+    width: 96px;
+    height: 168px;
+    bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+  }
+  .touch-safe-actions {
+    height: 52px;
+    min-width: 200px;
+    bottom: calc(2px + env(safe-area-inset-bottom, 0px));
+  }
   .touch-stick {
     width: 112px;
     height: 112px;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   }
   .touch-pedal {
     width: 64px;
@@ -825,7 +881,6 @@ button.btn-ghost:active:not(:disabled),
     font-size: 22px;
   }
   .touch-actions {
-    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     gap: 8px;
   }
   .touch-btn {

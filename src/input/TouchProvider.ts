@@ -45,19 +45,29 @@ export class TouchProvider implements InputProvider {
       <div class="touch-rotate-mask" data-touch-rotate aria-live="polite">
         <span class="touch-rotate-mask-text">請旋轉畫面</span>
       </div>
-      <div class="touch-stick" data-touch-stick>
-        <div class="touch-stick-ring"></div>
-        <div class="touch-stick-knob" data-touch-knob></div>
-        <span class="touch-stick-label">STEER</span>
+      <!--
+        .touch-safe absorbs presses near pads so look-drag on the canvas below
+        does not start (mis-touch guard). Visual pads sit inside the safe zones.
+      -->
+      <div class="touch-safe touch-safe-steer">
+        <div class="touch-stick" data-touch-stick>
+          <div class="touch-stick-ring"></div>
+          <div class="touch-stick-knob" data-touch-knob></div>
+          <span class="touch-stick-label">STEER</span>
+        </div>
       </div>
-      <div class="touch-actions">
-        <div class="touch-btn" data-touch-range role="button" tabindex="-1" title="4H / 4L">4H</div>
-        <div class="touch-btn" data-touch-camera role="button" tabindex="-1" title="Camera">CAM</div>
-        <div class="touch-btn" data-touch-respawn role="button" tabindex="-1" title="Respawn">R</div>
+      <div class="touch-safe touch-safe-actions">
+        <div class="touch-actions">
+          <div class="touch-btn" data-touch-range role="button" tabindex="-1" title="4H / 4L">4H</div>
+          <div class="touch-btn" data-touch-camera role="button" tabindex="-1" title="Camera">CAM</div>
+          <div class="touch-btn" data-touch-respawn role="button" tabindex="-1" title="Respawn">R</div>
+        </div>
       </div>
-      <div class="touch-pedals">
-        <div class="touch-pedal touch-pedal-gas" data-touch-gas role="button" tabindex="-1">▲</div>
-        <div class="touch-pedal touch-pedal-rev" data-touch-rev role="button" tabindex="-1">▼</div>
+      <div class="touch-safe touch-safe-pedals">
+        <div class="touch-pedals">
+          <div class="touch-pedal touch-pedal-gas" data-touch-gas role="button" tabindex="-1">▲</div>
+          <div class="touch-pedal touch-pedal-rev" data-touch-rev role="button" tabindex="-1">▼</div>
+        </div>
       </div>
     `;
 

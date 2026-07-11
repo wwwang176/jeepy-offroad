@@ -1,9 +1,10 @@
 import type { InputProvider, ProviderSample } from "./types";
 
 /**
- * Desktop keyboard + left-drag look.
- * Pointer drag is only started on the game canvas so menus/HUD stay clickable.
- * Touch pointers are ignored for look (mobile uses TouchProvider + follow cam).
+ * Desktop keyboard + pointer look (mouse and touch).
+ * Look drag starts on the game canvas only so menus / HUD / touch pads stay usable.
+ * Touch UI pads sit above the canvas with enlarged safe hit-zones so edge
+ * presses near sticks do not flick the camera.
  */
 export class KeyboardProvider implements InputProvider {
   private keys = new Set<string>();
@@ -14,6 +15,8 @@ export class KeyboardProvider implements InputProvider {
   private lookY = 0;
   private dragging = false;
   private pointerId: number | null = null;
+  private lastClientX = 0;
+  private lastClientY = 0;
   private readonly target: Window;
   private readonly pointerRoot: EventTarget;
 
@@ -34,14 +37,18 @@ export class KeyboardProvider implements InputProvider {
 
   private onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
-    // MVP: touch look off — avoid camera flick when holding phone / using sticks.
-    if (e.pointerType === "touch") return;
     const el = e.target as HTMLElement | null;
     if (!el || typeof el.closest !== "function") return;
-    // Only start look-drag on the WebGL canvas (not buttons / minimap / menus).
+    // Only start look-drag on the WebGL canvas (not buttons / minimap / menus / pads).
     if (el.tagName !== "CANVAS" || el.classList.contains("hud-minimap")) return;
+    // Touch pads / HUD panels use stopPropagation + higher layers; if we still
+    // receive a pad hit, never look from it.
+    if (el.closest?.(".touch-controls, .touch-safe, .hud, .panel")) return;
+
     this.dragging = true;
     this.pointerId = e.pointerId;
+    this.lastClientX = e.clientX;
+    this.lastClientY = e.clientY;
     try {
       el.setPointerCapture?.(e.pointerId);
     } catch {
@@ -53,8 +60,27 @@ export class KeyboardProvider implements InputProvider {
   private onPointerMove = (e: PointerEvent) => {
     if (!this.dragging) return;
     if (this.pointerId !== null && e.pointerId !== this.pointerId) return;
-    this.lookX += e.movementX;
-    this.lookY += e.movementY;
+
+    // movementX/Y are often 0 on mobile Safari — fall back to client deltas.
+    let dx = e.movementX;
+    let dy = e.movementY;
+    if (
+      (dx === 0 && dy === 0) ||
+      (e.pointerType === "touch" && !Number.isFinite(dx))
+    ) {
+      dx = e.clientX - this.lastClientX;
+      dy = e.clientY - this.lastClientY;
+    }
+    // Touch often reports both movement* and client*; prefer client for touch.
+    if (e.pointerType === "touch") {
+      dx = e.clientX - this.lastClientX;
+      dy = e.clientY - this.lastClientY;
+    }
+    this.lastClientX = e.clientX;
+    this.lastClientY = e.clientY;
+
+    this.lookX += dx;
+    this.lookY += dy;
   };
 
   private onPointerUp = (e: PointerEvent) => {

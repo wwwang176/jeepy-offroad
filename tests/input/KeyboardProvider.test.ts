@@ -18,8 +18,11 @@ function createFakeWindow() {
         repeat: false,
         button: 0,
         pointerId: 1,
+        pointerType: "mouse",
         movementX: 0,
         movementY: 0,
+        clientX: 0,
+        clientY: 0,
         preventDefault() {},
         ...event,
       };
@@ -48,8 +51,11 @@ function createFakeCanvas() {
       const e = {
         button: 0,
         pointerId: 1,
+        pointerType: "mouse",
         movementX: 0,
         movementY: 0,
+        clientX: 0,
+        clientY: 0,
         preventDefault() {},
         target: null as unknown,
         ...event,
@@ -129,7 +135,7 @@ describe("KeyboardProvider", () => {
     provider.dispose();
   });
 
-  it("ignores touch pointer look drags", () => {
+  it("allows touch look drag on the game canvas (client deltas)", () => {
     const win = createFakeWindow();
     const canvas = createFakeCanvas();
     const provider = new KeyboardProvider(
@@ -141,16 +147,21 @@ describe("KeyboardProvider", () => {
       button: 0,
       pointerId: 2,
       pointerType: "touch",
+      clientX: 100,
+      clientY: 200,
     });
     win.dispatch("pointermove", {
       pointerId: 2,
-      movementX: 40,
-      movementY: 10,
+      pointerType: "touch",
+      clientX: 130,
+      clientY: 210,
+      movementX: 0,
+      movementY: 0,
     });
 
     const a = provider.sample();
-    expect(a.lookDeltaX).toBe(0);
-    expect(a.lookDeltaY).toBe(0);
+    expect(a.lookDeltaX).toBe(30);
+    expect(a.lookDeltaY).toBe(10);
 
     provider.dispose();
   });
