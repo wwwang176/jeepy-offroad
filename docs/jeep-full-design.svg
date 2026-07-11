@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1520" width="1280" height="1520">
+  <title>JeepMesh full design map — names + numbers (audit)</title>
+  <rect width="1280" height="1520" fill="#0c1016"/>
+  <text x="640" y="26" text-anchor="middle" fill="#f2f2f0" font-family="Consolas,ui-monospace,monospace" font-size="17" font-weight="700">JeepMesh CURRENT — full design map (names + numbers)</text>
+  <text x="640" y="46" text-anchor="middle" fill="#8b939e" font-family="Consolas,ui-monospace,monospace" font-size="11">+X right · +Y up · +Z hood forward · m · generated from live constants · use labels when requesting changes</text>
+  <text x="640" y="62" text-anchor="middle" fill="#e8c547" font-family="Consolas,ui-monospace,monospace" font-size="11">bodyW=1.72 · beltY≈0.699 · wheels: R=0.416 · hardpoint (±0.80, −0.14, ±1.20) · visual X ±0.96 (+0.16 outset)</text>
+
+  <!-- ========== A SIDE ========== -->
+  <g transform="translate(20,80)">
+    <rect x="0" y="0" width="1240" height="480" rx="8" fill="#161b24" stroke="#2a3340"/>
+    <text x="16" y="24" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="14" font-weight="700">A) SIDE elevation (left)  scale 80px/m · +Z → right</text>
+
+    <!-- origin z=0 at x=560, y=0 at y=340 -->
+    <g transform="translate(560,340) scale(80,-80)">
+      <line x1="-1.75" y1="0" x2="1.55" y2="0" stroke="#333" stroke-width="0.03"/>
+
+      <!-- rocker Y[-0.37,-0.27] Z[-1.3,1.3] -->
+      <rect x="-1.3" y="-0.37" width="2.6" height="0.10" fill="#111" stroke="#000" stroke-width="0.012"/>
+      <!-- side-skirt Y[-0.27,0.02] approx from code rockerTop to 0.02 -->
+      <rect x="-1.30" y="-0.27" width="2.50" height="0.29" fill="#222228" stroke="#0a0a0a" stroke-width="0.01" opacity="0.95"/>
+      <!-- cabin-shell Y[-0.28,0.699] Z[-1.30,1.20] -->
+      <rect x="-1.30" y="-0.28" width="2.50" height="0.979" fill="#c8d0dc" stroke="#7ec8ff" stroke-width="0.02" opacity="0.55"/>
+      <!-- cabin-sill Y[0,0.12] -->
+      <rect x="-1.30" y="0.00" width="2.50" height="0.12" fill="#5a9a70" opacity="0.45" stroke="#3a8" stroke-width="0.01"/>
+      <!-- tub-belly Y[-0.01,0.05] -->
+      <rect x="-1.30" y="-0.01" width="2.50" height="0.06" fill="#b8b8b4" opacity="0.75" stroke="#888" stroke-width="0.008"/>
+      <!-- tub-rear Z[-1.30,-1.05] Y[-0.21,0.457] -->
+      <rect x="-1.30" y="-0.21" width="0.25" height="0.667" fill="#e8e8e4" opacity="0.85" stroke="#999" stroke-width="0.012"/>
+      <!-- tub-front Z[0.80,1.20] Y[-0.21,0.457] -->
+      <rect x="0.80" y="-0.21" width="0.40" height="0.667" fill="#e8e8e4" opacity="0.9" stroke="#c44" stroke-width="0.02"/>
+      <!-- doors -->
+      <rect x="-0.97" y="0.078" width="0.78" height="0.621" fill="none" stroke="#6af" stroke-width="0.022"/>
+      <rect x="-0.21" y="0.078" width="0.78" height="0.621" fill="none" stroke="#6af" stroke-width="0.022"/>
+      <!-- fender Z[0.64,1.26] Y[0.011,0.402] — INSET in X (drawn thinner look) -->
+      <rect x="0.64" y="0.011" width="0.62" height="0.391" fill="#d0d0cc" opacity="0.55" stroke="#e8c547" stroke-width="0.02"/>
+      <!-- hood Z~[0.56,1.34] Y[0.437,0.667] -->
+      <rect x="0.56" y="0.437" width="0.78" height="0.23" fill="#e8e8e4" opacity="0.55" stroke="#aaa" stroke-width="0.012"/>
+      <!-- cowl Z[0.43,0.61] -->
+      <rect x="0.43" y="0.471" width="0.18" height="0.162" fill="#e8e8e4" opacity="0.5" stroke="#aaa" stroke-width="0.01"/>
+      <!-- glass -->
+      <rect x="-1.15" y="0.70" width="1.70" height="0.66" fill="#1a3040" opacity="0.4" stroke="#4a8" stroke-width="0.015" stroke-dasharray="0.05 0.03"/>
+      <line x1="-1.2" y1="0.699" x2="0.55" y2="0.699" stroke="#7ec8ff" stroke-width="0.02"/>
+      <!-- roof -->
+      <rect x="-1.20" y="1.36" width="2.00" height="0.12" fill="#111" stroke="#000" stroke-width="0.01"/>
+      <!-- grille zone -->
+      <rect x="1.27" y="0.127" width="0.10" height="0.575" fill="#0a0a0a" stroke="#333" stroke-width="0.01"/>
+      <!-- DRIVE WHEELS (side): center (z,y)=(±1.20, −0.14) R=0.416  ground≈−0.556 -->
+      <circle cx="1.20" cy="-0.14" r="0.416" fill="#0e0e0e" stroke="#f0a0a0" stroke-width="0.02"/>
+      <circle cx="1.20" cy="-0.14" r="0.18" fill="#1a1a1a" stroke="#333" stroke-width="0.012"/>
+      <circle cx="-1.20" cy="-0.14" r="0.416" fill="#0e0e0e" stroke="#f0a0a0" stroke-width="0.02"/>
+      <circle cx="-1.20" cy="-0.14" r="0.18" fill="#1a1a1a" stroke="#333" stroke-width="0.012"/>
+      <!-- spare: pos (0, 0.483, −1.5) R=0.40 — rear of vehicle, not a drive wheel -->
+      <circle cx="-1.50" cy="0.483" r="0.40" fill="#0e0e0e" stroke="#888" stroke-width="0.015"/>
+      <!-- seats -->
+      <rect x="0.10" y="0.31" width="0.40" height="0.12" fill="#4a4a52" stroke="#333" stroke-width="0.01"/>
+      <path d="M 0.08,0.43 L 0.18,0.43 L -0.04,1.04 L -0.14,1.04 Z" fill="#3a3a42" stroke="#222" stroke-width="0.01"/>
+      <rect x="-0.70" y="0.31" width="0.40" height="0.12" fill="#4a4a52" stroke="#333" stroke-width="0.01"/>
+      <path d="M -0.72,0.43 L -0.62,0.43 L -0.84,1.04 L -0.94,1.04 Z" fill="#3a3a42" stroke="#222" stroke-width="0.01"/>
+
+      <!-- FRONT GAP highlight: above tub-front top to belt, Z 0.80–1.20 -->
+      <rect x="0.80" y="0.457" width="0.40" height="0.242" fill="#ff3355" opacity="0.35" stroke="#f55" stroke-width="0.02"/>
+
+      <!-- ground contact line -->
+      <line x1="-1.7" y1="-0.556" x2="1.55" y2="-0.556" stroke="#f0a0a0" stroke-width="0.012" stroke-dasharray="0.06 0.04"/>
+      <!-- dim lines Z -->
+      <line x1="-1.30" y1="-0.72" x2="1.20" y2="-0.72" stroke="#7dcea0" stroke-width="0.02"/>
+    </g>
+
+    <!-- numeric tags on side -->
+    <text x="40" y="360" fill="#ddd" font-family="Consolas,ui-monospace,monospace" font-size="11">rocker · y=[-0.37,-0.27] · z=[-1.3,+1.3] · PAL.black</text>
+    <text x="40" y="378" fill="#ddd" font-family="Consolas,ui-monospace,monospace" font-size="11">side-skirt · y=[-0.27,+0.02] · z=[-1.30,+1.20] · blackSoft</text>
+    <text x="40" y="396" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">cabin-shell · y=[-0.28,+0.699] · z=[-1.30,+1.20] Lz=2.50 · x center ±0.83 T=0.06</text>
+    <text x="40" y="414" fill="#ddd" font-family="Consolas,ui-monospace,monospace" font-size="11">cabin-sill · y=[0.00,0.12] · z same 2.50 · body</text>
+    <text x="40" y="432" fill="#ddd" font-family="Consolas,ui-monospace,monospace" font-size="11">tub-belly · y=[-0.01,+0.05] · z=[-1.30,+1.20] · bodyShade</text>
+    <text x="40" y="450" fill="#ff8866" font-family="Consolas,ui-monospace,monospace" font-size="11">tub-front · y=[-0.21,+0.457] · z=[+0.80,+1.20] · TOP short of beltY (red zone)</text>
+    <text x="700" y="360" fill="#6af" font-family="Consolas,ui-monospace,monospace" font-size="11">door-f · y=[0.078,0.699] · z=[-0.21,+0.57]</text>
+    <text x="700" y="378" fill="#6af" font-family="Consolas,ui-monospace,monospace" font-size="11">door-r · y=[0.078,0.699] · z=[-0.97,-0.19]</text>
+    <text x="700" y="396" fill="#e8c547" font-family="Consolas,ui-monospace,monospace" font-size="11">fender-f · y=[0.011,0.402] · z=[0.64,1.26] · X OUTER only ≈0.77 (inset 0.09 vs shell 0.86)</text>
+    <text x="700" y="414" fill="#ddd" font-family="Consolas,ui-monospace,monospace" font-size="11">hood y=[0.437,0.667] · cowl z=[0.43,0.61] · grille z≈1.32</text>
+    <text x="700" y="432" fill="#f0a0a0" font-family="Consolas,ui-monospace,monospace" font-size="11">WHEELS · center (z,y)=(±1.20, −0.14) · R=0.416 · ground y≈−0.556</text>
+    <text x="700" y="450" fill="#ddd" font-family="Consolas,ui-monospace,monospace" font-size="11">spare · (0, 0.483, −1.50) R=0.40 · glass sill 0.699 · roof 1.36</text>
+    <text x="700" y="468" fill="#ff5577" font-family="Consolas,ui-monospace,monospace" font-size="11" font-weight="700">RED = front shoulder hole · pink rings = drive tires</text>
+  </g>
+
+  <!-- ========== B FRONT DETAIL ========== -->
+  <g transform="translate(20,580)">
+    <rect x="0" y="0" width="620" height="440" rx="8" fill="#161b24" stroke="#2a3340"/>
+    <text x="16" y="24" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="13" font-weight="700">B) FRONT junction detail (right half X–Y) · why nose looks unjoined</text>
+
+    <g transform="translate(200,320) scale(100,-100)">
+      <!-- shell outer face -->
+      <rect x="0.80" y="-0.28" width="0.06" height="0.979" fill="#c8d0dc" stroke="#7ec8ff" stroke-width="0.015"/>
+      <!-- fender inset -->
+      <rect x="0.55" y="0.011" width="0.22" height="0.391" fill="#d0d0cc" stroke="#e8c547" stroke-width="0.02"/>
+      <!-- tub-front full width solid (section of half) -->
+      <rect x="0" y="-0.21" width="0.86" height="0.667" fill="#e8e8e4" opacity="0.35" stroke="#c44" stroke-width="0.015"/>
+      <!-- GAP fender to shell X -->
+      <rect x="0.77" y="0.011" width="0.09" height="0.391" fill="#ff3355" opacity="0.5"/>
+      <!-- GAP tub top to belt -->
+      <rect x="0.80" y="0.457" width="0.06" height="0.242" fill="#ff3355" opacity="0.55"/>
+      <!-- belt line -->
+      <line x1="0" y1="0.699" x2="0.95" y2="0.699" stroke="#7ec8ff" stroke-width="0.02"/>
+      <!-- rocker -->
+      <rect x="0" y="-0.37" width="0.88" height="0.10" fill="#111"/>
+      <!-- skirt -->
+      <rect x="0.80" y="-0.27" width="0.06" height="0.29" fill="#222"/>
+      <!-- glass -->
+      <rect x="0.82" y="0.70" width="0.04" height="0.5" fill="#284050" opacity="0.5"/>
+      <!-- drive wheel front view: visual X=+0.96 · Yc=-0.14 · R=0.416 -->
+      <circle cx="0.96" cy="-0.14" r="0.416" fill="#0e0e0e" stroke="#f0a0a0" stroke-width="0.02"/>
+      <circle cx="0.96" cy="-0.14" r="0.18" fill="#1a1a1a"/>
+      <line x1="0" y1="-0.556" x2="1.15" y2="-0.556" stroke="#f0a0a0" stroke-width="0.012" stroke-dasharray="0.05 0.03"/>
+      <!-- dim X -->
+      <line x1="0.77" y1="-0.72" x2="0.86" y2="-0.72" stroke="#f55" stroke-width="0.015"/>
+    </g>
+
+    <text x="420" y="80" fill="#e8c547" font-family="Consolas,ui-monospace,monospace" font-size="12" font-weight="700">FRONT GAPS (numbers)</text>
+    <text x="420" y="108" fill="#ff8866" font-family="Consolas,ui-monospace,monospace" font-size="11">G1 fender X outer ≈ 0.77</text>
+    <text x="420" y="126" fill="#ff8866" font-family="Consolas,ui-monospace,monospace" font-size="11">   shell X outer = 0.86</text>
+    <text x="420" y="144" fill="#ff5577" font-family="Consolas,ui-monospace,monospace" font-size="11" font-weight="700">   ΔX gap = 0.09 m (not flush)</text>
+    <text x="420" y="176" fill="#ff8866" font-family="Consolas,ui-monospace,monospace" font-size="11">G2 tub-front top Y = 0.457</text>
+    <text x="420" y="194" fill="#ff8866" font-family="Consolas,ui-monospace,monospace" font-size="11">   beltY / shell top = 0.699</text>
+    <text x="420" y="212" fill="#ff5577" font-family="Consolas,ui-monospace,monospace" font-size="11" font-weight="700">   ΔY gap = 0.242 m (shoulder)</text>
+    <text x="420" y="244" fill="#ddd" font-family="Consolas,ui-monospace,monospace" font-size="11">G3 shell covers that Y in thin strip</text>
+    <text x="420" y="262" fill="#ddd" font-family="Consolas,ui-monospace,monospace" font-size="11">   but fender is inset so nose side</text>
+    <text x="420" y="280" fill="#ddd" font-family="Consolas,ui-monospace,monospace" font-size="11">   still reads as discontinuous</text>
+    <text x="420" y="300" fill="#f0a0a0" font-family="Consolas,ui-monospace,monospace" font-size="11">WHEEL (front view right)</text>
+    <text x="420" y="318" fill="#f0a0a0" font-family="Consolas,ui-monospace,monospace" font-size="11">visual X=+0.96 · Yc=−0.14 · R=0.416</text>
+    <text x="420" y="336" fill="#f0a0a0" font-family="Consolas,ui-monospace,monospace" font-size="11">hardpoint X=+0.80 · outset +0.16</text>
+    <text x="420" y="354" fill="#f0a0a0" font-family="Consolas,ui-monospace,monospace" font-size="11">ground contact Y≈−0.556</text>
+    <text x="420" y="380" fill="#7dcea0" font-family="Consolas,ui-monospace,monospace" font-size="10">rocker top −0.27 nest shell bot −0.28</text>
+    <text x="420" y="398" fill="#8b939e" font-family="Consolas,ui-monospace,monospace" font-size="10">Yellow=fender · Red=gaps · Cyan=shell</text>
+  </g>
+
+  <!-- ========== C TOP + TABLE ========== -->
+  <g transform="translate(660,580)">
+    <rect x="0" y="0" width="600" height="440" rx="8" fill="#161b24" stroke="#2a3340"/>
+    <text x="16" y="24" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="13" font-weight="700">C) TOP plan names (X–Z) · +Z up</text>
+
+    <g transform="translate(300,230) scale(65,-65)">
+      <rect x="-0.86" y="-1.55" width="1.72" height="3.0" fill="none" stroke="#555" stroke-width="0.03"/>
+      <!-- shell rails -->
+      <rect x="-0.86" y="-1.30" width="0.06" height="2.50" fill="#7ec8ff" opacity="0.4"/>
+      <rect x="0.80" y="-1.30" width="0.06" height="2.50" fill="#7ec8ff" opacity="0.4"/>
+      <!-- tub-front -->
+      <rect x="-0.86" y="0.80" width="1.72" height="0.40" fill="#e8e8e4" opacity="0.7" stroke="#c44" stroke-width="0.02"/>
+      <!-- tub-rear -->
+      <rect x="-0.86" y="-1.30" width="1.72" height="0.25" fill="#e8e8e4" opacity="0.7" stroke="#999" stroke-width="0.015"/>
+      <!-- cabin free -->
+      <rect x="-0.72" y="-1.05" width="1.44" height="1.85" fill="#1a2030" opacity="0.5" stroke="#444" stroke-width="0.015"/>
+      <!-- fender positions (inset) -->
+      <rect x="-0.77" y="0.64" width="0.22" height="0.62" fill="#e8c547" opacity="0.35" stroke="#e8c547" stroke-width="0.02"/>
+      <rect x="0.55" y="0.64" width="0.22" height="0.62" fill="#e8c547" opacity="0.35" stroke="#e8c547" stroke-width="0.02"/>
+      <!-- seats -->
+      <rect x="-0.644" y="0.10" width="0.528" height="0.40" fill="#4a4a52"/>
+      <rect x="0.116" y="0.10" width="0.528" height="0.40" fill="#4a4a52"/>
+      <rect x="-0.644" y="-0.70" width="0.528" height="0.40" fill="#4a4a52"/>
+      <rect x="0.116" y="-0.70" width="0.528" height="0.40" fill="#4a4a52"/>
+      <!-- wheels: visual X=±0.96 (hardpoint 0.80+outset 0.16) · Z=±1.20 · R=0.416 -->
+      <circle cx="-0.96" cy="1.20" r="0.416" fill="#0e0e0e" stroke="#f0a0a0" stroke-width="0.025"/>
+      <circle cx="0.96" cy="1.20" r="0.416" fill="#0e0e0e" stroke="#f0a0a0" stroke-width="0.025"/>
+      <circle cx="-0.96" cy="-1.20" r="0.416" fill="#0e0e0e" stroke="#f0a0a0" stroke-width="0.025"/>
+      <circle cx="0.96" cy="-1.20" r="0.416" fill="#0e0e0e" stroke="#f0a0a0" stroke-width="0.025"/>
+      <circle cx="-0.96" cy="1.20" r="0.18" fill="#1a1a1a"/>
+      <circle cx="0.96" cy="1.20" r="0.18" fill="#1a1a1a"/>
+      <circle cx="-0.96" cy="-1.20" r="0.18" fill="#1a1a1a"/>
+      <circle cx="0.96" cy="-1.20" r="0.18" fill="#1a1a1a"/>
+      <!-- spare rear -->
+      <circle cx="0" cy="-1.50" r="0.40" fill="#0e0e0e" stroke="#888" stroke-width="0.02"/>
+      <text x="0" y="1.55" text-anchor="middle" fill="#888" font-size="0.12" font-family="Consolas,monospace">+Z</text>
+    </g>
+    <text x="16" y="392" fill="#f0a0a0" font-family="Consolas,ui-monospace,monospace" font-size="11">wheels visual X=±0.96 · Z=±1.20 · R=0.416</text>
+    <text x="16" y="408" fill="#ff8866" font-family="Consolas,ui-monospace,monospace" font-size="11">yellow = fender inset · red = tub-front z only</text>
+  </g>
+
+  <!-- ========== D MASTER TABLE ========== -->
+  <g transform="translate(20,1040)">
+    <rect x="0" y="0" width="1240" height="460" rx="8" fill="#161b24" stroke="#2a3340"/>
+    <text x="16" y="26" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="14" font-weight="700">D) MASTER PART TABLE (English name · mesh name · Y · Z · notes)</text>
+
+    <!-- table header -->
+    <text x="20" y="56" fill="#e8c547" font-family="Consolas,ui-monospace,monospace" font-size="11" font-weight="700">English name</text>
+    <text x="200" y="56" fill="#e8c547" font-family="Consolas,ui-monospace,monospace" font-size="11" font-weight="700">mesh name</text>
+    <text x="400" y="56" fill="#e8c547" font-family="Consolas,ui-monospace,monospace" font-size="11" font-weight="700">Y range</text>
+    <text x="580" y="56" fill="#e8c547" font-family="Consolas,ui-monospace,monospace" font-size="11" font-weight="700">Z range</text>
+    <text x="780" y="56" fill="#e8c547" font-family="Consolas,ui-monospace,monospace" font-size="11" font-weight="700">size / pos notes</text>
+    <line x1="16" y1="64" x2="1220" y2="64" stroke="#333" stroke-width="1"/>
+
+    <text x="20" y="86" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">rocker / rock rail</text>
+    <text x="200" y="86" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">rocker</text>
+    <text x="400" y="86" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-0.37, -0.27]</text>
+    <text x="580" y="86" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-1.30, +1.30]</text>
+    <text x="780" y="86" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">size≈(1.76, 0.10, 2.60) centerY=-0.32 BLACK floor</text>
+
+    <text x="20" y="108" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">side rock rail</text>
+    <text x="200" y="108" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">(unnamed rail)</text>
+    <text x="400" y="108" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-0.288,-0.232]</text>
+    <text x="580" y="108" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">~[-1.05,+0.95]</text>
+    <text x="780" y="108" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">x=±(halfW+0.07) size (0.11,0.055,2.0)</text>
+
+    <text x="20" y="130" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">side skirt</text>
+    <text x="200" y="130" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">side-skirt-L/R</text>
+    <text x="400" y="130" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-0.27, +0.02]</text>
+    <text x="580" y="130" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-1.30, +1.20]</text>
+    <text x="780" y="130" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">from rocker top → belly · blackSoft</text>
+
+    <text x="20" y="152" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">outer body side skin</text>
+    <text x="200" y="152" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">cabin-shell-L/R</text>
+    <text x="400" y="152" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-0.28, +0.699]</text>
+    <text x="580" y="152" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-1.30, +1.20]</text>
+    <text x="780" y="152" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">T=0.06 centerX=±0.83 Lz=2.50 · main side wall</text>
+
+    <text x="20" y="174" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">door sill accent</text>
+    <text x="200" y="174" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">cabin-sill-L/R</text>
+    <text x="400" y="174" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[0.00, 0.12]</text>
+    <text x="580" y="174" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-1.30, +1.20]</text>
+    <text x="780" y="174" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">body color accent strip</text>
+
+    <text x="20" y="196" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">under-cabin plate</text>
+    <text x="200" y="196" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">tub-belly</text>
+    <text x="400" y="196" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-0.01, +0.05]</text>
+    <text x="580" y="196" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-1.30, +1.20]</text>
+    <text x="780" y="196" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">full width bodyShade · NOT the black plane</text>
+
+    <text x="20" y="218" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">front tub stub</text>
+    <text x="200" y="218" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">tub-front</text>
+    <text x="400" y="218" fill="#ff8866" font-family="Consolas,ui-monospace,monospace" font-size="11">[-0.21, +0.457]</text>
+    <text x="580" y="218" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[+0.80, +1.20]</text>
+    <text x="780" y="218" fill="#ff8866" font-family="Consolas,ui-monospace,monospace" font-size="11">TOP 0.457 &lt; belt 0.699 · gap 0.242</text>
+
+    <text x="20" y="240" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">rear tub stub</text>
+    <text x="200" y="240" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">tub-rear</text>
+    <text x="400" y="240" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-0.21, +0.457]</text>
+    <text x="580" y="240" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-1.30, -1.05]</text>
+    <text x="780" y="240" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">covered by full-length shell above</text>
+
+    <text x="20" y="262" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">front fender</text>
+    <text x="200" y="262" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">(loop box)</text>
+    <text x="400" y="262" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[0.011, 0.402]</text>
+    <text x="580" y="262" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[0.64, 1.26]</text>
+    <text x="780" y="262" fill="#ff8866" font-family="Consolas,ui-monospace,monospace" font-size="11">X center ±0.66 w=0.22 → outer ±0.77 · gap to shell 0.09</text>
+
+    <text x="20" y="284" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">front / rear door skin</text>
+    <text x="200" y="284" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">door-f/r-L/R</text>
+    <text x="400" y="284" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[0.078, 0.699]</text>
+    <text x="580" y="284" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">see col Z</text>
+    <text x="780" y="284" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">T=0.06 · two bays only · overlaps shell</text>
+
+    <text x="20" y="306" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">hood / cowl / grille</text>
+    <text x="200" y="306" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">hood,cowl,grille</text>
+    <text x="400" y="306" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">hood≈[0.44,0.67]</text>
+    <text x="580" y="306" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">hood z≈[0.56,1.34]</text>
+    <text x="780" y="306" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">grille z≈1.32 · bumper group z≈1.42</text>
+
+    <text x="20" y="328" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">hardtop / glass</text>
+    <text x="200" y="328" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">roof,glass-*</text>
+    <text x="400" y="328" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">glass [0.70,1.36]</text>
+    <text x="580" y="328" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">greenhouse</text>
+    <text x="780" y="328" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">sill=beltY · FP hides glass</text>
+
+    <text x="20" y="350" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">cabin floor/liners</text>
+    <text x="200" y="350" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">cabin-floor,liner-*</text>
+    <text x="400" y="350" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">floor≈0.12</text>
+    <text x="580" y="350" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">[-1.05,+0.80]</text>
+    <text x="780" y="350" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">free W=1.44 · interior only Lz=1.85</text>
+
+    <text x="20" y="372" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">seats ×4</text>
+    <text x="200" y="372" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">seat / seat-*</text>
+    <text x="400" y="372" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">cush [0.31,0.43]</text>
+    <text x="580" y="372" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">front z≈0.30</text>
+    <text x="780" y="372" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">center (±0.38,0.37,…) W=0.528 backH=0.65</text>
+
+    <text x="20" y="394" fill="#f0a0a0" font-family="Consolas,ui-monospace,monospace" font-size="11">drive wheels ×4</text>
+    <text x="200" y="394" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">wheel-pivot-0..3</text>
+    <text x="400" y="394" fill="#f0a0a0" font-family="Consolas,ui-monospace,monospace" font-size="11">Yc=−0.14 R=0.416</text>
+    <text x="580" y="394" fill="#f0a0a0" font-family="Consolas,ui-monospace,monospace" font-size="11">Z=±1.20</text>
+    <text x="780" y="394" fill="#f0a0a0" font-family="Consolas,ui-monospace,monospace" font-size="11">hardpoint X=±0.80 · visual X=±0.96 · ground≈−0.556</text>
+
+    <text x="20" y="416" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">spare tire</text>
+    <text x="200" y="416" fill="#7ec8ff" font-family="Consolas,ui-monospace,monospace" font-size="11">spare-tire</text>
+    <text x="400" y="416" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">Yc≈0.483</text>
+    <text x="580" y="416" fill="#ccc" font-family="Consolas,ui-monospace,monospace" font-size="11">Z=−1.50</text>
+    <text x="780" y="416" fill="#9aa" font-family="Consolas,ui-monospace,monospace" font-size="11">R=0.40 · mounted rear (not drive wheel)</text>
+
+    <text x="20" y="442" fill="#e8c547" font-family="Consolas,ui-monospace,monospace" font-size="12" font-weight="700">KNOWN DISCONNECTS</text>
+    <text x="20" y="462" fill="#ff5577" font-family="Consolas,ui-monospace,monospace" font-size="11">1. FRONT shoulder: tub-front top 0.457 → belt 0.699 (ΔY=0.242) z∈[0.80,1.20]</text>
+    <text x="20" y="480" fill="#ff5577" font-family="Consolas,ui-monospace,monospace" font-size="11">2. FRONT fender inset: outer X 0.77 vs shell 0.86 (ΔX=0.09)</text>
+  </g>
+</svg>

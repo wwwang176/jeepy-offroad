@@ -3,8 +3,8 @@
   <title>Jeep cabin interior layout — dimensioned 3-view (dev reference)</title>
   <rect width="1100" height="1020" fill="#14171c"/>
 
-  <text x="550" y="26" text-anchor="middle" fill="#f0f0ee" font-family="Consolas, ui-monospace, monospace" font-size="16" font-weight="700">Jeep interior DEV SPEC — cavity + 4 seats (shell thickness included)</text>
-  <text x="550" y="46" text-anchor="middle" fill="#8b939e" font-family="Consolas, ui-monospace, monospace" font-size="11">+X right · +Y up · +Z forward · m · bodyW=1.72 · shellT=0.06 · linerT=0.08 · cabin free W=1.44</text>
+  <text x="550" y="26" text-anchor="middle" fill="#f0f0ee" font-family="Consolas, ui-monospace, monospace" font-size="16" font-weight="700">Jeep interior DEV SPEC — cavity + 4 seats + side cover</text>
+  <text x="550" y="46" text-anchor="middle" fill="#8b939e" font-family="Consolas, ui-monospace, monospace" font-size="11">+X right · +Y up · +Z forward · shellY 0.04→belt · sill · rear cheek · free W=1.44 · see jeep-body-coverage.svg</text>
 
   <!-- ============================================================ -->
   <!-- TOP VIEW                                                      -->
@@ -173,10 +173,11 @@
     <text x="16" y="120" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">linerInnerX = ±(halfW − totalWall) = ±0.72</text>
     <text x="16" y="138" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">cabinFreeW = 1.44  cavityZ=[-1.05,+0.80] Lz=1.85 cZ=-0.125</text>
 
-    <text x="16" y="164" fill="#e8c547" font-family="Consolas, ui-monospace, monospace" font-size="12" font-weight="700">OUTER SHELL (replace solid tub sides)</text>
-    <text x="16" y="182" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">skin L  size=(0.06, 0.58, 1.85)  pos=(-0.83, 0.41, -0.125)</text>
-    <text x="16" y="198" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">skin R  size=(0.06, 0.58, 1.85)  pos=(+0.83, 0.41, -0.125)</text>
-    <text x="16" y="214" fill="#8b939e" font-family="Consolas, ui-monospace, monospace" font-size="10">centerX = ±(0.80+0.86)/2 = ±0.83 · Y:0.12→0.70 · white/body mat</text>
+    <text x="16" y="164" fill="#e8c547" font-family="Consolas, ui-monospace, monospace" font-size="12" font-weight="700">OUTER SHELL + SILL + REAR CHEEK</text>
+    <text x="16" y="182" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">shell L/R  size=(0.06, ~0.66, 1.85)  midY≈0.37  Y 0.04→belt</text>
+    <text x="16" y="198" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">sill  L/R  size≈(0.07, 0.10, 1.85)  pos Y=0.07  (closes low gap)</text>
+    <text x="16" y="214" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">rear cheek L/R  size=(0.06, ~0.24, 0.28)  Y tubTop→belt  Z−1.175</text>
+    <text x="16" y="228" fill="#8b939e" font-family="Consolas, ui-monospace, monospace" font-size="10">centerX ±0.83 · front nose UNCHANGED · liner Y still 0.12→belt</text>
 
     <text x="16" y="240" fill="#e8c547" font-family="Consolas, ui-monospace, monospace" font-size="12" font-weight="700">CAVITY (dark recess)</text>
     <text x="16" y="258" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">floor   size=(1.44, 0.04, 1.85)  pos=(0, 0.12, -0.125)</text>

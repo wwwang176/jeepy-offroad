@@ -290,11 +290,15 @@ export function createJeepMesh(): THREE.Group {
   const wb2 = VEHICLE_CONFIG.wheelPositions[0].z;
 
   // ===== Undercarriage / rock rails =====
-  box(g, bodyW + 0.04, 0.1, 2.6, PAL.black, 0, -0.34, 0, "rocker");
+  // Underbody plate (named rocker): top flush with tub-front bottom (Y≈-0.21).
+  const rockerH = 0.1;
+  const rockerTopY = -0.21; // match tub-front underside
+  const rockerY = rockerTopY - rockerH * 0.5; // center ≈ -0.26
+  box(g, bodyW + 0.04, rockerH, 2.6, PAL.black, 0, rockerY, 0, "rocker");
   for (const sx of [-1, 1]) {
-    box(g, 0.11, 0.055, 2.0, PAL.black, sx * (halfW + 0.07), -0.28, -0.05);
+    box(g, 0.11, 0.055, 2.0, PAL.black, sx * (halfW + 0.07), rockerTopY + 0.02, -0.05);
     for (const z of [0.4, -0.1, -0.6]) {
-      box(g, 0.13, 0.035, 0.26, PAL.blackSoft, sx * (halfW + 0.09), -0.24, z);
+      box(g, 0.13, 0.035, 0.26, PAL.blackSoft, sx * (halfW + 0.09), rockerTopY + 0.04, z);
     }
   }
 
@@ -308,8 +312,8 @@ export function createJeepMesh(): THREE.Group {
   // Original tub Z span ≈[-1.30,+1.20]; split around hollow cabin.
   box(g, bodyW, tubH, 0.4, PAL.body, 0, tubY, 1.0, "tub-front"); // Z[0.80,1.20]
   box(g, bodyW, tubH, 0.25, PAL.body, 0, tubY, -1.175, "tub-rear"); // Z[-1.30,-1.05]
-  // Thin belly under cabin so underside is not open (not a solid fill).
-  box(g, bodyW, 0.06, 1.85, PAL.bodyShade, 0, 0.02, -0.125, "tub-belly");
+  // Thin belly under cabin — full old-tub length so side underside matches.
+  box(g, bodyW, 0.06, 2.5, PAL.bodyShade, 0, 0.02, -0.05, "tub-belly");
 
   // ===== Hood (raised with body) =====
   const hoodY = 0.48 * bodyScaleY;
@@ -637,45 +641,89 @@ export function createJeepMesh(): THREE.Group {
   g.add(spare);
 
   // ===== Cabin cavity + 4 seats (docs/jeep-interior-layout.svg BUILD TABLE) =====
-  // Wall stack: shellT=0.06 outer + linerT=0.08 dark · free cabin W=1.44 (±0.72).
-  // Hollow Z∈[-1.05,+0.80] driven by seat envelope + bulks.
+  // Interior free Z∈[-1.05,+0.80] for floor/liners/seats.
+  // Outer side skins restore full old-tub length (2.50) + rocker-to-belt height
+  // so the body no longer looks shortened or open under the doors.
   {
     const linerT = 0.08;
+    // Interior cavity (seats / free cabin)
     const cabinLz = 1.85;
     const cabinCz = -0.125;
-    const wallH = 0.58;
-    const wallMidY = 0.41; // Y 0.12→0.70
+    // Outer side skin: match original solid tub Z[-1.30,+1.20]
+    const sideLz = 2.5;
+    const sideCz = -0.05;
+    const linerY0 = 0.12;
+    const linerY1 = beltY; // ~0.70
+    const linerH = linerY1 - linerY0;
+    const linerMidY = (linerY0 + linerY1) * 0.5;
+    // Outer shell: underbody top → belt (closes bottom hollow + full door height)
+    const shellY0 = rockerTopY; // flush with underbody / tub-front bottom
+    const shellY1 = beltY;
+    const shellH = shellY1 - shellY0;
+    const shellMidY = (shellY0 + shellY1) * 0.5;
     const linerCenterX = halfW - shellT - linerT * 0.5; // ±0.76
     const freeW = 1.44;
 
-    // Continuous outer shell along cabin (joins door skins; fills gaps)
+    // Full-length outer side skins (2.50 m) + interior liners (cabin free Z only)
     for (const sx of [-1, 1]) {
       box(
         g,
         shellT,
-        wallH,
-        cabinLz,
+        shellH,
+        sideLz,
         PAL.body,
         sx * shellCenterX,
-        wallMidY,
-        cabinCz,
+        shellMidY,
+        sideCz,
         sx < 0 ? "cabin-shell-L" : "cabin-shell-R",
       );
       box(
         g,
         linerT,
-        wallH,
+        linerH,
         cabinLz,
         PAL.interior,
         sx * linerCenterX,
-        wallMidY,
+        linerMidY,
         cabinCz,
         sx < 0 ? "cabin-liner-L" : "cabin-liner-R",
       );
     }
+    // Outer sill accent along full side length (door-bottom belt)
+    for (const sx of [-1, 1]) {
+      box(
+        g,
+        shellT + 0.015,
+        0.12,
+        sideLz,
+        PAL.body,
+        sx * (shellCenterX + 0.005),
+        0.06,
+        sideCz,
+        sx < 0 ? "cabin-sill-L" : "cabin-sill-R",
+      );
+    }
+    // Lower side strip: underbody top → belly (rockerTopY from outer scope)
+    const skirtY0 = rockerTopY;
+    const skirtY1 = 0.02;
+    const skirtH = Math.max(0.08, skirtY1 - skirtY0);
+    const skirtMidY = (skirtY0 + skirtY1) * 0.5;
+    for (const sx of [-1, 1]) {
+      box(
+        g,
+        shellT + 0.02,
+        skirtH,
+        sideLz,
+        PAL.blackSoft,
+        sx * (shellCenterX + 0.008),
+        skirtMidY,
+        sideCz,
+        sx < 0 ? "side-skirt-L" : "side-skirt-R",
+      );
+    }
     box(g, freeW, 0.04, cabinLz, PAL.interior, 0, 0.12, cabinCz, "cabin-floor");
-    box(g, freeW, wallH, 0.08, PAL.interior, 0, wallMidY, 0.76, "cabin-bulk-F");
-    box(g, freeW, wallH, 0.08, PAL.interior, 0, wallMidY, -1.01, "cabin-bulk-R");
+    box(g, freeW, linerH, 0.08, PAL.interior, 0, linerMidY, 0.76, "cabin-bulk-F");
+    box(g, freeW, linerH, 0.08, PAL.interior, 0, linerMidY, -1.01, "cabin-bulk-R");
 
     // Seat height ≈ 0.73; after +¼ then −⅛ → net +⅛ ≈ +0.09 from first raised pass.
     // centerY=0.37 · cushion Y 0.31–0.43 · top ≈ 0.43+0.65·cos20° ≈ 1.04 (under roof 1.36)
