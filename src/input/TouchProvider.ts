@@ -183,6 +183,10 @@ export class TouchProvider implements InputProvider {
 
   private bindEdgeButton(el: HTMLElement, onPress: () => void): void {
     let activeId: number | null = null;
+    const clear = () => {
+      activeId = null;
+      el.classList.remove("is-active");
+    };
     const down = (e: PointerEvent) => {
       if (!this.visible) return;
       if (activeId !== null) return;
@@ -198,9 +202,9 @@ export class TouchProvider implements InputProvider {
       onPress();
     };
     const up = (e: PointerEvent) => {
-      if (activeId !== null && e.pointerId !== activeId) return;
-      activeId = null;
-      el.classList.remove("is-active");
+      if (activeId === null) return;
+      if (e.pointerId !== activeId) return;
+      clear();
       try {
         el.releasePointerCapture?.(e.pointerId);
       } catch {
@@ -210,10 +214,35 @@ export class TouchProvider implements InputProvider {
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
-    el.addEventListener("lostpointercapture", up);
+    el.addEventListener("lostpointercapture", () => clear());
   }
 
   private bindPedal(el: HTMLElement, kind: "gas" | "rev"): void {
+    const clear = (pointerId: number | null) => {
+      if (kind === "gas") {
+        if (
+          pointerId !== null &&
+          this.gasPointerId !== null &&
+          pointerId !== this.gasPointerId
+        ) {
+          return;
+        }
+        this.gasPointerId = null;
+        this.gasDown = false;
+      } else {
+        if (
+          pointerId !== null &&
+          this.revPointerId !== null &&
+          pointerId !== this.revPointerId
+        ) {
+          return;
+        }
+        this.revPointerId = null;
+        this.revDown = false;
+      }
+      el.classList.remove("is-active");
+      this.recomputeThrottle();
+    };
     const down = (e: PointerEvent) => {
       if (!this.visible) return;
       // Ignore second finger while this pedal is already held.
@@ -237,26 +266,20 @@ export class TouchProvider implements InputProvider {
       this.recomputeThrottle();
     };
     const up = (e: PointerEvent) => {
-      if (kind === "gas") {
-        if (this.gasPointerId !== null && e.pointerId !== this.gasPointerId) {
-          return;
-        }
-        this.gasPointerId = null;
-        this.gasDown = false;
-      } else {
-        if (this.revPointerId !== null && e.pointerId !== this.revPointerId) {
-          return;
-        }
-        this.revPointerId = null;
-        this.revDown = false;
+      const held =
+        kind === "gas" ? this.gasPointerId : this.revPointerId;
+      if (held === null || e.pointerId !== held) return;
+      clear(e.pointerId);
+      try {
+        el.releasePointerCapture?.(e.pointerId);
+      } catch {
+        /* ignore */
       }
-      el.classList.remove("is-active");
-      this.recomputeThrottle();
     };
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointerup", up);
     el.addEventListener("pointercancel", up);
-    el.addEventListener("lostpointercapture", up);
+    el.addEventListener("lostpointercapture", () => clear(null));
   }
 
   private bindStick(el: HTMLElement): void {

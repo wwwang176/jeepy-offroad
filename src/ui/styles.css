@@ -743,14 +743,23 @@ button.btn-ghost:active:not(:disabled),
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.touch-pedal-gas.is-active,
-.touch-pedal-gas:active {
+/*
+ * Highlight only via JS .is-active while finger is down.
+ * Do NOT use :active — mobile browsers keep :active sticky after release,
+ * and global `button:active` would leave gold fill stuck on.
+ */
+.touch-controls .touch-pedal:active:not(:disabled) {
+  background: rgba(12, 16, 18, 0.45);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #f2f2f2;
+}
+.touch-pedal-gas.is-active {
   background: rgba(60, 160, 90, 0.55);
   border-color: rgba(120, 230, 150, 0.75);
 }
-.touch-pedal-rev.is-active,
-.touch-pedal-rev:active {
+.touch-pedal-rev.is-active {
   background: rgba(180, 80, 60, 0.5);
   border-color: rgba(255, 150, 120, 0.7);
 }
@@ -783,15 +792,31 @@ button.btn-ghost:active:not(:disabled),
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.touch-btn.is-active,
-.touch-btn:active {
+/* Neutralize global button:active sticky highlight after finger-up. */
+.touch-controls .touch-btn:active:not(:disabled) {
+  background: rgba(12, 16, 18, 0.55);
+  border-color: rgba(201, 160, 74, 0.55);
+  color: #e8c878;
+}
+.touch-btn.is-active {
   background: rgba(201, 160, 74, 0.35);
+  border-color: rgba(201, 160, 74, 0.75);
   color: #fff0c8;
 }
 .touch-btn.is-low {
   border-color: rgba(255, 170, 60, 0.8);
   color: #ffb84a;
+}
+.touch-controls .touch-btn.is-low:active:not(:disabled) {
+  background: rgba(12, 16, 18, 0.55);
+  border-color: rgba(255, 170, 60, 0.8);
+  color: #ffb84a;
+}
+.touch-btn.is-low.is-active {
+  background: rgba(255, 170, 60, 0.28);
+  color: #ffd090;
 }
 
 @media (max-height: 420px) and (orientation: landscape) {
