@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { VEHICLE_CONFIG } from "@/shared/vehicleConfig";
 
 export type WheelVisualState = {
@@ -882,7 +883,115 @@ export function createJeepMesh(): THREE.Group {
     updateSuspensionLink(link, hard, restYOff);
   }
 
+  // Bake static body parts into few meshes (one per palette color).
+  // Wheels, suspension, glass, and brake lenses stay independent.
+  mergeStaticJeepParts(g);
+
   return g;
+}
+
+/**
+ * True if this object lives under a per-frame / toggle-sensitive subtree.
+ * Those meshes must not be baked into static batches.
+ */
+function isDynamicJeepPart(obj: THREE.Object3D): boolean {
+  let p: THREE.Object3D | null = obj;
+  while (p) {
+    if (p.name.startsWith("wheel-pivot-")) return true;
+    if (p.name.startsWith("susp-link-")) return true;
+    if (p.userData?.isGlass === true) return true;
+    if (p.userData?.isBrakeLight === true) return true;
+    p = p.parent;
+  }
+  return false;
+}
+
+/**
+ * Merge all static opaque meshes under the jeep root by material color.
+ * Hierarchy (bumper, spare, seats) is flattened into color batches parented
+ * on the root — silhouette unchanged, draw calls drop sharply.
+ */
+function mergeStaticJeepParts(root: THREE.Group): void {
+  root.updateMatrixWorld(true);
+
+  type Bucket = {
+    color: number;
+    geos: THREE.BufferGeometry[];
+    meshes: THREE.Mesh[];
+  };
+  const buckets = new Map<number, Bucket>();
+
+  root.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    if (isDynamicJeepPart(obj)) return;
+
+    const material = obj.material;
+    if (!material || Array.isArray(material)) return;
+    if (!(material instanceof THREE.MeshLambertMaterial)) return;
+    // Skip any accidental transparent static mesh (glass is already dynamic-tagged)
+    if (material.transparent && material.opacity < 1) return;
+
+    const color = material.color.getHex();
+    let bucket = buckets.get(color);
+    if (!bucket) {
+      bucket = { color, geos: [], meshes: [] };
+      buckets.set(color, bucket);
+    }
+
+    // Bake jeep-local transform into the geometry (root is identity at build)
+    const geo = obj.geometry.clone();
+    geo.applyMatrix4(obj.matrixWorld);
+    bucket.geos.push(geo);
+    bucket.meshes.push(obj);
+  });
+
+  for (const bucket of buckets.values()) {
+    for (const mesh of bucket.meshes) {
+      mesh.parent?.remove(mesh);
+      mesh.geometry.dispose();
+      if (!Array.isArray(mesh.material)) mesh.material.dispose();
+    }
+  }
+
+  pruneEmptyGroups(root);
+
+  for (const bucket of buckets.values()) {
+    if (bucket.geos.length === 0) continue;
+
+    let merged: THREE.BufferGeometry | null;
+    if (bucket.geos.length === 1) {
+      merged = bucket.geos[0]!;
+    } else {
+      merged = mergeGeometries(bucket.geos, false);
+      for (const geo of bucket.geos) geo.dispose();
+    }
+    if (!merged) continue;
+
+    const mesh = new THREE.Mesh(merged, mat(bucket.color));
+    mesh.name = `merged-0x${bucket.color.toString(16).padStart(6, "0")}`;
+    root.add(mesh);
+  }
+}
+
+/** Remove emptied Groups left after static meshes were peeled out. */
+function pruneEmptyGroups(root: THREE.Object3D): void {
+  let removed = true;
+  while (removed) {
+    removed = false;
+    const empty: THREE.Object3D[] = [];
+    root.traverse((obj) => {
+      if (obj === root) return;
+      if (obj instanceof THREE.Mesh) return;
+      if (obj.children.length === 0) empty.push(obj);
+    });
+    for (const obj of empty) {
+      // Never drop animated roots even if somehow empty
+      if (obj.name.startsWith("wheel-pivot-")) continue;
+      if (obj.name.startsWith("susp-link-")) continue;
+      obj.parent?.remove(obj);
+      removed = true;
+    }
+  }
 }
 
 function getWheelPivots(mesh: THREE.Group): THREE.Group[] {
