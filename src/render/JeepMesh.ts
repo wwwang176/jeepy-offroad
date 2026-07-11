@@ -390,9 +390,15 @@ export function createJeepMesh(): THREE.Group {
   box(g, bodyW * 0.94, 0.08, 0.1, PAL.black, 0, wsBottom, wsZ, "ws-base");
   box(g, bodyW * 0.96, 0.09, 0.12, PAL.black, 0, wsTop - 0.02, wsZ - 0.02, "ws-header");
 
+  // Tint hierarchy: front lightest → side mid → rear darkest (opacity ↑ = less clear)
+  const glassFrontOpacity = 0.42;
+  const glassSideOpacity = 0.62;
+  const glassRearOpacity = 0.82;
+  const glassT = 0.04;
+
   const ws = new THREE.Mesh(
-    new THREE.BoxGeometry(bodyW * 0.84, Math.max(0.2, wsH - 0.06), 0.05),
-    mat(PAL.glass, { opacity: 0.58 }),
+    new THREE.BoxGeometry(bodyW * 0.84, Math.max(0.2, wsH - 0.06), glassT),
+    mat(PAL.glass, { opacity: glassFrontOpacity }),
   );
   ws.name = "glass-windshield";
   ws.userData.isGlass = true;
@@ -400,61 +406,121 @@ export function createJeepMesh(): THREE.Group {
   ws.rotation.x = -0.08;
   g.add(ws);
 
-  // ===== Black hardtop: roof fixed; short side walls over glass only =====
+  // ===== Black hardtop: roof + open window frames (glass fills bays) =====
+  // Frame first; glass is derived from inner faces so panes sit flush in openings.
   const roofZ = -0.2;
   const roofD = 2.0;
   box(g, bodyW + 0.06, 0.12, roofD, PAL.black, 0, roofY, roofZ, "roof");
   box(g, bodyW + 0.04, 0.1, 0.18, PAL.black, 0, roofY - 0.02, 0.5);
-  box(g, bodyW + 0.02, greenH, 0.12, PAL.black, 0, greenMidY, -1.18, "hardtop-rear");
+
+  // Pillar centers along vehicle Z (front → rear).
+  const pillarZs = [0.48, -0.18, -0.82, -1.16];
+  const pillarD = 0.1;
+  const pillarW = 0.11;
+  const frameW = 0.1;
+  const botRailH = 0.1;
+  const topRailH = 0.08;
+  const botRailY = beltY;
+  const topRailY = roofBottomY - 0.02;
+  const frameX = halfW + 0.02; // side-frame centerline (|X|)
+  /** Clearance from frame inner faces — avoids z-fight, still reads as filled. */
+  const glassInset = 0.012;
+
+  // Rails span front face of first pillar → rear face of last pillar
+  const railZFront = pillarZs[0]! + pillarD * 0.5;
+  const railZRear = pillarZs[pillarZs.length - 1]! - pillarD * 0.5;
+  const railZLen = railZFront - railZRear;
+  const railZMid = (railZFront + railZRear) * 0.5;
+
+  // Window opening in Y (inner faces of top/bottom rails)
+  const openY0 = botRailY + botRailH * 0.5;
+  const openY1 = topRailY - topRailH * 0.5;
+  const glassH = Math.max(0.2, openY1 - openY0 - glassInset * 2);
+  const glassY = (openY0 + openY1) * 0.5;
+
+  // Pillar vertical span (slightly inside roof/belt so rails read on top)
+  const pillarH = openY1 - openY0 + botRailH * 0.35 + topRailH * 0.35;
+  const pillarY = (openY0 + openY1) * 0.5;
 
   for (const sx of [-1, 1]) {
-    box(
-      g,
-      0.08,
-      greenH,
-      1.78,
-      PAL.black,
-      sx * (halfW - 0.01),
-      greenMidY,
-      -0.2,
-      sx < 0 ? "hardtop-side-L" : "hardtop-side-R",
-    );
-    // Beltline on raised white body
-    box(g, 0.1, 0.1, 1.78, PAL.blackSoft, sx * (halfW + 0.01), beltY, -0.2);
-    box(g, 0.1, 0.08, 1.78, PAL.blackSoft, sx * (halfW + 0.01), roofBottomY - 0.02, -0.2);
-    for (const z of [0.5, -0.2, -0.9]) {
-      box(g, 0.1, greenH - 0.06, 0.09, PAL.blackSoft, sx * (halfW + 0.03), greenMidY, z);
+    const x = sx * frameX;
+    // Bottom / top rails only (no full-height side slab)
+    box(g, frameW, botRailH, railZLen, PAL.blackSoft, x, botRailY, railZMid);
+    box(g, frameW, topRailH, railZLen, PAL.blackSoft, x, topRailY, railZMid);
+    // Vertical pillars
+    for (let i = 0; i < pillarZs.length; i++) {
+      const z = pillarZs[i]!;
+      box(
+        g,
+        pillarW,
+        pillarH,
+        pillarD,
+        PAL.black,
+        x,
+        pillarY,
+        z,
+        i === 0
+          ? sx < 0
+            ? "hardtop-pillar-Lf"
+            : "hardtop-pillar-Rf"
+          : i === pillarZs.length - 1
+            ? sx < 0
+              ? "hardtop-pillar-Lr"
+              : "hardtop-pillar-Rr"
+            : undefined,
+      );
     }
-  }
-
-  // Side glass: shorter panes in the reduced greenhouse band
-  const sideGlassH = Math.max(0.22, greenH - 0.14);
-  const sideGlassY = greenMidY + 0.01;
-  const panes = [
-    { z: 0.16, d: 0.55 },
-    { z: -0.52, d: 0.55 },
-    { z: -1.05, d: 0.3 },
-  ];
-  for (const sx of [-1, 1]) {
-    for (const p of panes) {
+    // Side glass: fill each bay to pillar/rail inners (minus inset), on frame midplane
+    for (let i = 0; i < pillarZs.length - 1; i++) {
+      const zFwd = pillarZs[i]!;
+      const zAft = pillarZs[i + 1]!;
+      const openFront = zFwd - pillarD * 0.5;
+      const openRear = zAft + pillarD * 0.5;
+      const paneD = Math.max(0.1, openFront - openRear - glassInset * 2);
+      const paneZ = (openFront + openRear) * 0.5;
       const pane = new THREE.Mesh(
-        new THREE.BoxGeometry(0.05, sideGlassH, p.d),
-        mat(PAL.glassTint, { opacity: 0.58 }),
+        new THREE.BoxGeometry(glassT, glassH, paneD),
+        mat(PAL.glassTint, { opacity: glassSideOpacity }),
       );
       pane.name = "glass-side";
       pane.userData.isGlass = true;
-      pane.position.set(sx * (halfW + 0.04), sideGlassY, p.z);
+      pane.position.set(x, glassY, paneZ);
       g.add(pane);
     }
   }
 
+  // Rear window frame on the same rear-pillar plane; posts share side rear pillars in Z
+  const rearZ = pillarZs[pillarZs.length - 1]!;
+  const rearFrameD = pillarD;
+  const rearPostW = pillarW;
+  // Posts sit on body sides (inner of side-frame centerline) so rear glass spans cabin width
+  const rearPostX = halfW - rearPostW * 0.5;
+  box(g, bodyW + 0.02, botRailH, rearFrameD, PAL.black, 0, botRailY, rearZ, "hardtop-rear-sill");
+  box(
+    g,
+    bodyW + 0.02,
+    topRailH,
+    rearFrameD,
+    PAL.black,
+    0,
+    topRailY,
+    rearZ,
+    "hardtop-rear-header",
+  );
+  for (const sx of [-1, 1]) {
+    box(g, rearPostW, pillarH, rearFrameD, PAL.black, sx * rearPostX, pillarY, rearZ);
+  }
+
+  // Rear glass: between post inners + rail inners; centered on rear frame midplane
+  const rearOpenHalfW = rearPostX - rearPostW * 0.5;
+  const rearGlassW = Math.max(0.4, rearOpenHalfW * 2 - glassInset * 2);
   const rearGlass = new THREE.Mesh(
-    new THREE.BoxGeometry(bodyW * 0.74, sideGlassH - 0.02, 0.05),
-    mat(PAL.glassTint, { opacity: 0.58 }),
+    new THREE.BoxGeometry(rearGlassW, glassH, glassT),
+    mat(PAL.glassTint, { opacity: glassRearOpacity }),
   );
   rearGlass.name = "glass-rear";
   rearGlass.userData.isGlass = true;
-  rearGlass.position.set(0, sideGlassY, -1.25);
+  rearGlass.position.set(0, glassY, rearZ);
   g.add(rearGlass);
 
   // ===== Mirrors =====
