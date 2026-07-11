@@ -29,8 +29,9 @@ export const sandBiome: BiomeProfile = {
   propTable: [
     // Low weight so the scaled pass is mostly stone; cactus filled by ensure.
     { meshKey: "cactus", weight: 0.2, collides: false },
-    { meshKey: "rock_pile", weight: 1, collides: false },
-    { meshKey: "pillar_rock", weight: 0.4, collides: false },
+    // Rocks: visual + fixed Rapier colliders (all biomes).
+    { meshKey: "rock_pile", weight: 1, collides: true },
+    { meshKey: "pillar_rock", weight: 0.4, collides: true },
   ],
   /** ~100 saguaros. */
   ensureProps: [{ meshKey: "cactus", count: 100 }],

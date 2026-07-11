@@ -7,6 +7,7 @@ import { mountResult } from "@/ui/result";
 import { PhysicsWorld } from "@/physics/PhysicsWorld";
 import { VehicleController } from "@/physics/vehicle/VehicleController";
 import { createTerrainCollider } from "@/physics/createTerrainCollider";
+import { createPropColliders } from "@/physics/propColliders";
 import { InputRouter } from "@/input/InputRouter";
 import { KeyboardProvider } from "@/input/KeyboardProvider";
 import { TouchProvider } from "@/input/TouchProvider";
@@ -376,6 +377,11 @@ export class GameApp {
     );
     this.input = this.createInputRouter(canvas);
     this.gameScene = createGameScene(canvas, level, biome);
+    // Fixed rock colliders share terrain groups (chassis + suspension rays).
+    createPropColliders(
+      this.physics.getWorld(),
+      this.gameScene.collidableRockPlacements,
+    );
     this.jeepMesh = this.gameScene.jeepMesh;
     this.cameraRig = new CameraRig(this.gameScene.camera);
     // Snap third-person follow to spawn so first frame is not lerping from origin.

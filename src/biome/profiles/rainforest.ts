@@ -26,6 +26,7 @@ export const rainforestBiome: BiomeProfile = {
   propTable: [
     { meshKey: "coconut_palm", weight: 10, collides: false },
     { meshKey: "jungle_bush", weight: 2, collides: false },
-    { meshKey: "rock_pile", weight: 0.35, collides: false },
+    // Same rock mesh/colliders as sand (sparse weight).
+    { meshKey: "rock_pile", weight: 0.35, collides: true },
   ],
 };

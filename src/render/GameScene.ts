@@ -15,6 +15,10 @@ import {
 } from "./followShadows";
 import { rainImpactHeight } from "@/shared/offroadFxMath";
 import { RainVFX } from "./RainVFX";
+import {
+  isCollidableRockMesh,
+  type RockPropPlacement,
+} from "@/physics/propColliders";
 
 export type GameSceneHandles = {
   scene: THREE.Scene;
@@ -23,6 +27,11 @@ export type GameSceneHandles = {
   jeepMesh: THREE.Group;
   terrainMesh: THREE.Mesh;
   finishMesh: THREE.Object3D;
+  /**
+   * rock_pile / pillar_rock poses for fixed Rapier colliders
+   * (same seed/RNG path as the decorative meshes).
+   */
+  collidableRockPlacements: readonly RockPropPlacement[];
   /** Recenters local shadow map around camera / vehicle. */
   updateShadows: (follow: { x: number; y: number; z: number }) => void;
   /** Vegetation wind clock (palms + grass). Seconds. No-op if none. */
@@ -759,15 +768,17 @@ function disposeObject3D(obj: THREE.Object3D): void {
 }
 
 /**
- * Decorative props from biome.propTable. Non-colliding, seeded.
+ * Decorative props from biome.propTable (seeded).
  * Coconut palms + cacti are merged into few draw calls; rocks stay individual.
+ * rock_pile / pillar_rock poses are recorded for fixed Rapier colliders.
  */
 function createDecorativeProps(
   level: LevelData,
   biome: BiomeProfile,
-): THREE.Group {
+): { group: THREE.Group; collidableRockPlacements: RockPropPlacement[] } {
   const group = new THREE.Group();
   group.name = "props";
+  const collidableRockPlacements: RockPropPlacement[] = [];
   const rng = mulberry32((level.seed ^ 0x9e3779b9) >>> 0);
   const density = clamp(biome.propDensity, 0, 1);
   const scale = Math.max(0.25, biome.propCountScale ?? 1);
@@ -775,7 +786,8 @@ function createDecorativeProps(
   const count = Math.floor((12 + density * 36) * scale);
   const half = level.worldSize * 0.5 - 8;
   const pathHalf = (biome.pathWidth ?? 4) * 1.25;
-  const table = biome.propTable.filter((p) => !p.collides);
+  // Include collides:true rocks (they still draw; colliders built from poses).
+  const table = biome.propTable;
 
   const palmTrunks: THREE.BufferGeometry[] = [];
   const palmFronds: THREE.BufferGeometry[] = [];
@@ -843,12 +855,27 @@ function createDecorativeProps(
     const prop = createPropMesh(meshKey, rng);
     prop.position.set(x, y, z);
     // Random facing + tilt so rocks don't look stamped
+    const rotX = (rng() - 0.5) * 0.7;
+    const rotZ = (rng() - 0.5) * 0.7;
+    const s = 0.85 + rng() * 0.5;
     prop.rotation.order = "YXZ";
     prop.rotation.y = yaw;
-    prop.rotation.x = (rng() - 0.5) * 0.7;
-    prop.rotation.z = (rng() - 0.5) * 0.7;
-    prop.scale.setScalar(0.85 + rng() * 0.5);
+    prop.rotation.x = rotX;
+    prop.rotation.z = rotZ;
+    prop.scale.setScalar(s);
     group.add(prop);
+    if (isCollidableRockMesh(meshKey)) {
+      collidableRockPlacements.push({
+        meshKey: meshKey as RockPropPlacement["meshKey"],
+        x,
+        y,
+        z,
+        rotX,
+        rotY: yaw,
+        rotZ,
+        scale: s,
+      });
+    }
     bumpPlaced(meshKey);
     return true;
   };
@@ -949,7 +976,7 @@ function createDecorativeProps(
   // Separate pass: short grass (same wind clock as palms)
   addJungleGrassCover(group, level, biome, rng, palmSwayTime);
 
-  return group;
+  return { group, collidableRockPlacements };
 }
 
 /**
@@ -1019,7 +1046,10 @@ export function createGameScene(
   setShadowFlags(streamGroup, { cast: false, receive: true });
   scene.add(streamGroup);
 
-  const propGroup = createDecorativeProps(level, biome);
+  const { group: propGroup, collidableRockPlacements } = createDecorativeProps(
+    level,
+    biome,
+  );
   setShadowFlags(propGroup, { cast: true, receive: false });
   scene.add(propGroup);
 
@@ -1063,6 +1093,7 @@ export function createGameScene(
     jeepMesh,
     terrainMesh,
     finishMesh,
+    collidableRockPlacements,
     updateShadows: (follow) => {
       shadows.update(follow);
     },

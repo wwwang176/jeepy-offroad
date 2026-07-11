@@ -3,6 +3,11 @@ import type { BiomeId } from "@/shared/types";
 export interface PropSpawnRule {
   meshKey: string;
   weight: number;
+  /**
+   * When true, GameScene records a pose for fixed Rapier colliders.
+   * Still drawn as a decorative mesh (not excluded from spawn).
+   * rock_pile / pillar_rock use this across biomes.
+   */
   collides: boolean;
 }
 
