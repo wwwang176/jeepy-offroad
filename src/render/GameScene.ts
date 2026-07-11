@@ -984,11 +984,14 @@ export function createGameScene(
   setShadowFlags(propGroup, { cast: true, receive: false });
   scene.add(propGroup);
 
-  // Start marker: flat blue ring (not a solid disc)
+  // Start marker: flat semi-transparent blue ring
   const startRing = new THREE.Mesh(
     new THREE.RingGeometry(2.0, 2.55, 48),
     new THREE.MeshLambertMaterial({
       color: 0x66aaff,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
       side: THREE.DoubleSide,
     }),
   );
