@@ -169,6 +169,17 @@ button.btn-ghost:active:not(:disabled),
   touch-action: pan-y;
   scrollbar-gutter: stable;
 }
+/*
+ * Equal flex spacers → content block vertically centered when short;
+ * shrink to 0 when overflowing so scroll still starts at the top.
+ */
+.menu-left::before,
+.menu-left::after {
+  content: "";
+  flex: 1 1 0;
+  min-height: 0;
+  pointer-events: none;
+}
 /* Logo only on stage 1 (home), stacked above CTA */
 .menu-brand {
   display: flex;
@@ -177,18 +188,14 @@ button.btn-ghost:active:not(:disabled),
   pointer-events: none;
   margin-bottom: 8px;
 }
-/*
- * Grow with content; min-height fills column so short menus stay vertically
- * centered, tall menus expand and .menu-left scrolls.
- */
 .menu-center {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: flex-start;
   width: 100%;
-  flex: 1 0 auto;
-  min-height: calc(100% - 3.5rem);
+  flex: 0 0 auto;
+  min-height: 0;
   padding-bottom: 12px;
 }
 .menu-stage-home {
@@ -406,10 +413,8 @@ button.btn-ghost:active:not(:disabled),
     padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
   }
   .menu-center {
-    justify-content: flex-start;
-    min-height: auto;
-    padding-top: 24px;
-    padding-bottom: 24px;
+    padding-top: 8px;
+    padding-bottom: 16px;
   }
   .menu-card {
     width: 100%;
