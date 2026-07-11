@@ -2,7 +2,7 @@ import type { BiomeProfile } from "@/biome/types";
 import type { Vec3 } from "@/shared/types";
 import type { VehicleCapabilities } from "@/shared/vehicleCapabilities";
 import { gridToWorld, idx } from "@/shared/coords";
-import { createHeightmap } from "./heightmap";
+import { createHeightmap, flattenDiskWithFalloff, sampleBilinear } from "./heightmap";
 import {
   fallbackPath,
   fitPathToHeightmap,
@@ -20,6 +20,13 @@ import {
   type StreamReach,
 } from "./types";
 import { placePonds } from "./ponds";
+
+/** Start pad flat radius (m) — covers rect ring + vehicle footprint. */
+const START_FLAT_RADIUS_M = 6;
+/** Finish pad flat radius (m). */
+const FINISH_FLAT_RADIUS_M = 5.5;
+/** Smooth blend from pad to surrounding terrain (m). */
+const PAD_FALLOFF_M = 2.5;
 
 function ribbonWidth(biome: BiomeProfile, vehicle: VehicleCapabilities): number {
   return biome.pathWidth ?? vehicle.trackWidth + 2 * vehicle.pathClearance;
@@ -229,6 +236,47 @@ export function buildLevelData(
   };
   const end = points[points.length - 1];
   const finishPos = { x: end.x, y: end.y, z: end.z };
+
+  // Flatten spawn / finish pads so markers sit on level ground (physics + mesh).
+  flattenDiskWithFalloff(
+    heightmap,
+    resolution,
+    mapSize,
+    startPos,
+    START_FLAT_RADIUS_M,
+    PAD_FALLOFF_M,
+    startPos.y,
+  );
+  flattenDiskWithFalloff(
+    heightmap,
+    resolution,
+    mapSize,
+    finishPos,
+    FINISH_FLAT_RADIUS_M,
+    PAD_FALLOFF_M,
+    finishPos.y,
+  );
+  startPos.y = sampleBilinear(
+    heightmap,
+    resolution,
+    mapSize,
+    startPos.x,
+    startPos.z,
+  );
+  finishPos.y = sampleBilinear(
+    heightmap,
+    resolution,
+    mapSize,
+    finishPos.x,
+    finishPos.z,
+  );
+  // Keep path polyline Y consistent on the pads (minimap / debug).
+  for (const p of points) {
+    const ds = Math.hypot(p.x - startPos.x, p.z - startPos.z);
+    if (ds <= START_FLAT_RADIUS_M) p.y = startPos.y;
+    const df = Math.hypot(p.x - finishPos.x, p.z - finishPos.z);
+    if (df <= FINISH_FLAT_RADIUS_M) p.y = finishPos.y;
+  }
 
   const totalLen = pathLength(points);
   const checkpoints: LevelData["checkpoints"] = [];

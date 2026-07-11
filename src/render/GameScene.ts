@@ -39,6 +39,45 @@ function hexToNumber(hex: string): number {
   return parseInt(hex.replace("#", ""), 16);
 }
 
+/**
+ * Horizontal rectangular frame (outer square with inner hole), lying on XZ.
+ * Sized to sit inside the flattened start pad.
+ */
+function createStartRectRing(
+  outerHalf = 2.7,
+  innerHalf = 2.15,
+): THREE.Mesh {
+  const shape = new THREE.Shape();
+  shape.moveTo(-outerHalf, -outerHalf);
+  shape.lineTo(outerHalf, -outerHalf);
+  shape.lineTo(outerHalf, outerHalf);
+  shape.lineTo(-outerHalf, outerHalf);
+  shape.closePath();
+
+  const hole = new THREE.Path();
+  hole.moveTo(-innerHalf, -innerHalf);
+  hole.lineTo(-innerHalf, innerHalf);
+  hole.lineTo(innerHalf, innerHalf);
+  hole.lineTo(innerHalf, -innerHalf);
+  hole.closePath();
+  shape.holes.push(hole);
+
+  const geo = new THREE.ShapeGeometry(shape);
+  // Shape is in XY → lay flat on ground (XZ)
+  geo.rotateX(-Math.PI / 2);
+
+  return new THREE.Mesh(
+    geo,
+    new THREE.MeshLambertMaterial({
+      color: 0x66aaff,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+}
+
 /** Bilinear sample of heightmap at world XZ. */
 function sampleHeight(level: LevelData, x: number, z: number): number {
   const { resolution: res, worldSize, heightmap } = level;
@@ -984,23 +1023,14 @@ export function createGameScene(
   setShadowFlags(propGroup, { cast: true, receive: false });
   scene.add(propGroup);
 
-  // Start marker: flat semi-transparent blue ring
-  const startRing = new THREE.Mesh(
-    new THREE.RingGeometry(2.0, 2.55, 48),
-    new THREE.MeshLambertMaterial({
-      color: 0x66aaff,
-      transparent: true,
-      opacity: 0.45,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    }),
-  );
-  startRing.rotation.x = -Math.PI / 2;
+  // Start marker: semi-transparent blue rectangular ring on flattened pad
+  const startRing = createStartRectRing();
   startRing.position.set(
     level.start.position.x,
     level.start.position.y + 0.08,
     level.start.position.z,
   );
+  startRing.rotation.y = level.start.yaw;
   startRing.receiveShadow = true;
   scene.add(startRing);
 

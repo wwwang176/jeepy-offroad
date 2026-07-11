@@ -47,3 +47,45 @@ export function setDisk(
     }
   }
 }
+
+/**
+ * Flatten terrain in a disk of `flatRadius`, then smoothstep-blend back to the
+ * original height over `falloff` meters. Mutates `heightmap` in place.
+ */
+export function flattenDiskWithFalloff(
+  heightmap: Float32Array,
+  resolution: number,
+  worldSize: number,
+  center: { x: number; z: number },
+  flatRadius: number,
+  falloff: number,
+  targetY: number,
+): void {
+  const outer = Math.max(flatRadius, 0) + Math.max(falloff, 0);
+  if (outer <= 0) return;
+  const cell = worldSize / (resolution - 1);
+  const rCells = Math.ceil(outer / cell) + 1;
+  const { col, row } = worldToGrid(center.x, center.z, worldSize, resolution);
+  const flatR = Math.max(flatRadius, 0);
+  const fade = Math.max(falloff, 1e-6);
+
+  for (let dr = -rCells; dr <= rCells; dr++) {
+    for (let dc = -rCells; dc <= rCells; dc++) {
+      const c = col + dc;
+      const r = row + dr;
+      if (c < 0 || r < 0 || c >= resolution || r >= resolution) continue;
+      const p = gridToWorld(c, r, worldSize, resolution);
+      const dist = Math.hypot(p.x - center.x, p.z - center.z);
+      if (dist > outer) continue;
+      const i = idx(resolution, c, r);
+      if (dist <= flatR) {
+        heightmap[i] = targetY;
+      } else {
+        // t=0 at flat edge → full targetY; t=1 at outer → keep original
+        const t = (dist - flatR) / fade;
+        const s = t * t * (3 - 2 * t); // smoothstep
+        heightmap[i] = targetY * (1 - s) + heightmap[i] * s;
+      }
+    }
+  }
+}
