@@ -322,35 +322,76 @@ button.btn-ghost:active:not(:disabled),
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.menu-seed-panel {
-  display: none;
-  width: 100%;
-  padding: 12px 14px;
-  background: rgba(12, 12, 12, 0.88);
-  border: 1px solid rgba(201, 160, 74, 0.4);
+/* Language toggle — single button, menu chrome only (not during play) */
+.lang-toggle.menu-lang-toggle,
+button.lang-toggle {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  z-index: 40;
+  min-width: 44px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   border-radius: 4px;
-  flex-direction: column;
-  gap: 8px;
+  border: 1px solid rgba(201, 160, 74, 0.55);
+  background: rgba(12, 12, 12, 0.78);
+  color: #e8c878;
   box-shadow: none;
+  pointer-events: auto;
 }
-.menu-seed-panel.is-open {
+button.lang-toggle:hover:not(:disabled) {
+  background: rgba(201, 160, 74, 0.18);
+  border-color: #c9a04a;
+  color: #f0d090;
+}
+button.lang-toggle:active:not(:disabled) {
+  background: rgba(201, 160, 74, 0.28);
+}
+
+/* Custom SEED dialog — centered modal over cinematic menu */
+.menu-seed-modal {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  background: rgba(8, 10, 12, 0.72);
+}
+.menu-seed-modal.is-open {
   display: flex;
+}
+.menu-seed-modal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, 100%);
+}
+.menu-seed-modal-panel .modal-title {
+  margin-bottom: 2px;
 }
 .menu-seed-label {
   display: block;
   font-size: 11px;
   letter-spacing: 0.16em;
+  text-transform: uppercase;
   opacity: 0.75;
 }
 .menu-seed-input {
   display: block;
   width: 100%;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: #101410;
   color: #f2f2f2;
   font: inherit;
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
 }
 .menu-seed-input:focus {
@@ -360,7 +401,12 @@ button.btn-ghost:active:not(:disabled),
 }
 .menu-seed-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  margin-top: 4px;
+}
+.menu-seed-actions .menu-seed-go {
+  min-width: 96px;
 }
 .menu-seed-error {
   display: none;

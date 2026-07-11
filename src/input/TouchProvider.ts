@@ -1,6 +1,7 @@
 import type { DriveRange } from "@/shared/driveTrain";
 import { DRIVE_RANGES } from "@/shared/driveTrain";
 import { requestGameFullscreen } from "@/ui/fullscreen";
+import { t } from "@/i18n";
 import type { InputProvider, ProviderSample } from "./types";
 import { prefersTouchUi, stickSteerFromOffset } from "./touchMath";
 
@@ -44,7 +45,7 @@ export class TouchProvider implements InputProvider {
     this.root.setAttribute("aria-hidden", "true");
     this.root.innerHTML = `
       <div class="touch-rotate-mask" data-touch-rotate aria-live="polite">
-        <span class="touch-rotate-mask-text">請旋轉畫面</span>
+        <span class="touch-rotate-mask-text"></span>
       </div>
       <!--
         .touch-safe absorbs presses near pads so look-drag on the canvas below
@@ -75,6 +76,10 @@ export class TouchProvider implements InputProvider {
     this.stickEl = this.root.querySelector("[data-touch-stick]")!;
     this.knobEl = this.root.querySelector("[data-touch-knob]")!;
     this.rangeBtn = this.root.querySelector("[data-touch-range]")!;
+    const rotateText = this.root.querySelector<HTMLElement>(
+      ".touch-rotate-mask-text",
+    );
+    if (rotateText) rotateText.textContent = t("touch.rotate");
 
     this.bindStick(this.stickEl);
     this.bindPedal(this.root.querySelector("[data-touch-gas]")!, "gas");

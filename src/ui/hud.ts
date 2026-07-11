@@ -1,4 +1,5 @@
 import { drawMinimap, type MinimapModel } from "./minimap";
+import { biomeDisplayName, t } from "@/i18n";
 
 export interface HudModel {
   biomeId: string;
@@ -53,14 +54,14 @@ export function createHud(
         <span class="hud-speed-unit">km/h</span>
       </div>
       <div class="hud-gear panel" aria-live="polite" title="Shift or RANGE: toggle 4H / 4L">
-        <span class="hud-gear-label">RANGE</span>
+        <span class="hud-gear-label">${t("hud.range")}</span>
         <span class="hud-gear-value">4H</span>
         <span class="hud-gear-hint">Shift</span>
       </div>
     </div>
     <div class="hud-goal" aria-hidden="true">
       <div class="hud-goal-arrow">▲</div>
-      <div class="hud-goal-label">FINISH</div>
+      <div class="hud-goal-label">${t("hud.finish")}</div>
     </div>
     <canvas class="hud-minimap" width="${MINIMAP_SIZE}" height="${MINIMAP_SIZE}"></canvas>
   `;
@@ -168,5 +169,7 @@ function formatInfo(
   seed: number,
   usedFallback?: boolean,
 ): string {
-  return `${biomeId} · seed ${seed}${usedFallback ? " · fallback path" : ""}`;
+  const biome = biomeDisplayName(biomeId);
+  const key = usedFallback ? "hud.info.fallback" : "hud.info";
+  return t(key, { biome, seed });
 }

@@ -12,9 +12,9 @@ describe("biome registry", () => {
     expect(ids).toEqual(["rainforest", "sand"]);
   });
 
-  it("sand is 沙地 with arid palette", () => {
+  it("sand is Sand with arid palette", () => {
     const sand = getBiome("sand");
-    expect(sand.displayName).toBe("沙地");
+    expect(sand.displayName).toBe("Sand");
     expect(sand.groundPalette.mid.toLowerCase()).toMatch(/a89880|#a89880/i);
   });
 
@@ -28,7 +28,7 @@ describe("biome registry", () => {
 
   it("rainforest has green palette, palms, and ground cover", () => {
     const rf = getBiome("rainforest");
-    expect(rf.displayName).toBe("雨林");
+    expect(rf.displayName).toBe("Rainforest");
     expect(rf.propCountScale ?? 1).toBeGreaterThan(1);
     expect(rf.groundCoverCountScale ?? 0).toBeGreaterThan(0);
     expect(

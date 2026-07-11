@@ -3,8 +3,9 @@ import type { BiomeProfile } from "../types";
 /** Arid sand / rocky terrain — former "cliffs" look, renamed 沙地. */
 export const sandBiome: BiomeProfile = {
   id: "sand",
-  displayName: "沙地",
-  description: "乾燥岩脊、仙人掌與沙褐土徑",
+  /** Canonical EN; UI prefers i18n biomeDisplayName(). */
+  displayName: "Sand",
+  description: "Dry ridges, cacti, and sandy tracks",
   skyColor: "#87a0b5",
   fogColor: "#c4b8a8",
   fogDensity: 0.012,

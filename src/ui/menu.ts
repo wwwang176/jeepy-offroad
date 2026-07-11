@@ -1,5 +1,4 @@
 import {
-  listBiomes,
   RANDOM_BIOME_ID,
   resolveBiomeId,
   type BiomeSelectId,
@@ -7,6 +6,12 @@ import {
 import { normalizeSeed, parseSeedInput } from "@/shared/seed";
 import type { BiomeId } from "@/shared/types";
 import { createMenuBackdrop } from "@/render/MenuBackdrop";
+import {
+  biomeDescription,
+  biomeDisplayName,
+  t,
+} from "@/i18n";
+import { createLangToggle, syncLangToggle } from "@/i18n/langToggle";
 
 export type MenuStartPayload = {
   biomeId: BiomeId;
@@ -24,14 +29,12 @@ export type MenuHandlers = {
 /**
  * Cinematic main menu:
  * - Full-bleed 3D jeep backdrop (front close-up, always driving)
- * - Stage home: title + 開始遊戲
- * - Stage select: terrain cards 隨機 / 沙地 / 雨林 / 自訂 SEED / ROAD
+ * - Stage home: title + Start game
+ * - Stage select: terrain cards Random / Sand / Rainforest / SEED / ROAD
+ * - SEED card opens a centered modal (blank = random, Go / Cancel)
+ * - EN|中 toggle (menu only; not during play)
  */
 export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => void {
-  const biomes = listBiomes();
-  const sand = biomes.find((b) => b.id === "sand");
-  const rain = biomes.find((b) => b.id === "rainforest");
-
   const root = document.createElement("div");
   root.className = "menu-overlay menu-cinematic";
   root.innerHTML = `
@@ -46,63 +49,66 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
               </h1>
               <div class="menu-title-rule" aria-hidden="true"></div>
             </div>
-            <button type="button" class="menu-cta" id="menu-start-game">
-              開始遊戲
-            </button>
+            <button type="button" class="menu-cta" id="menu-start-game"></button>
           </div>
 
           <div class="menu-stage menu-stage-select" data-stage="select">
-            <p class="menu-select-label">選擇地形</p>
+            <p class="menu-select-label" id="menu-select-label"></p>
             <div class="menu-cards" role="list"></div>
 
-            <div class="menu-seed-panel" id="menu-seed-panel">
-              <label class="menu-seed-label" for="menu-seed-input">SEED</label>
-              <input
-                id="menu-seed-input"
-                class="menu-seed-input"
-                type="text"
-                inputmode="numeric"
-                placeholder="空白 = 隨機"
-                autocomplete="off"
-                spellcheck="false"
-              />
-              <div class="menu-seed-actions">
-                <button type="button" class="menu-seed-go" id="menu-seed-go">出發</button>
-                <button type="button" class="menu-seed-cancel" id="menu-seed-cancel">取消</button>
-              </div>
-            </div>
-
-            <p class="menu-seed-error" id="menu-seed-error"></p>
-
-            <button type="button" class="menu-back" id="menu-back">返回</button>
+            <button type="button" class="menu-back" id="menu-back"></button>
           </div>
         </div>
 
-        <p class="menu-hints">WASD 駕駛 · 鬆鍵滑行 · 反向 W/S 剎車 · Shift 4H/4L · 拖曳視角 · C 鏡頭 · R 重生</p>
+        <p class="menu-hints" id="menu-hints"></p>
+      </div>
+    </div>
+
+    <div
+      class="menu-seed-modal"
+      id="menu-seed-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="menu-seed-title"
+      hidden
+    >
+      <div class="menu-seed-modal-panel panel modal-panel">
+        <h2 class="modal-title" id="menu-seed-title"></h2>
+        <label class="menu-seed-label" for="menu-seed-input" id="menu-seed-label"></label>
+        <input
+          id="menu-seed-input"
+          class="menu-seed-input"
+          type="text"
+          inputmode="numeric"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <p class="menu-seed-error" id="menu-seed-error" role="alert"></p>
+        <div class="menu-seed-actions">
+          <button type="button" class="menu-seed-go" id="menu-seed-go"></button>
+          <button type="button" class="menu-seed-cancel btn-ghost" id="menu-seed-cancel"></button>
+        </div>
       </div>
     </div>
   `;
 
+  const langToggle = createLangToggle(() => applyLocale());
+  root.appendChild(langToggle);
+
   const homeStage = root.querySelector<HTMLElement>(".menu-stage-home")!;
   const selectStage = root.querySelector<HTMLElement>(".menu-stage-select")!;
   const cardsEl = root.querySelector<HTMLElement>(".menu-cards")!;
-  const seedPanel = root.querySelector<HTMLElement>("#menu-seed-panel")!;
+  const seedModal = root.querySelector<HTMLElement>("#menu-seed-modal")!;
   const seedInput = root.querySelector<HTMLInputElement>("#menu-seed-input")!;
   const errorEl = root.querySelector<HTMLElement>("#menu-seed-error")!;
   const startGameBtn = root.querySelector<HTMLButtonElement>("#menu-start-game")!;
   const backBtn = root.querySelector<HTMLButtonElement>("#menu-back")!;
   const seedGo = root.querySelector<HTMLButtonElement>("#menu-seed-go")!;
   const seedCancel = root.querySelector<HTMLButtonElement>("#menu-seed-cancel")!;
-
-  const setStage = (next: "home" | "select"): void => {
-    // Class-based show/hide — CSS `display:flex` on .menu-stage was overriding [hidden]
-    homeStage.classList.toggle("is-active", next === "home");
-    selectStage.classList.toggle("is-active", next === "select");
-    if (next === "home") {
-      seedPanel.classList.remove("is-open");
-      clearError();
-    }
-  };
+  const selectLabel = root.querySelector<HTMLElement>("#menu-select-label")!;
+  const hintsEl = root.querySelector<HTMLElement>("#menu-hints")!;
+  const seedTitle = root.querySelector<HTMLElement>("#menu-seed-title")!;
+  const seedLabel = root.querySelector<HTMLElement>("#menu-seed-label")!;
 
   const clearError = (): void => {
     errorEl.classList.remove("is-visible");
@@ -114,6 +120,34 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
     errorEl.textContent = msg;
   };
 
+  const closeSeedModal = (): void => {
+    seedModal.classList.remove("is-open");
+    seedModal.hidden = true;
+    seedInput.value = "";
+    clearError();
+    for (const el of cardsEl.querySelectorAll(".menu-card")) {
+      el.classList.remove("is-selected");
+    }
+  };
+
+  const openSeedModal = (): void => {
+    clearError();
+    seedModal.hidden = false;
+    seedModal.classList.add("is-open");
+    requestAnimationFrame(() => {
+      seedInput.focus();
+      seedInput.select();
+    });
+  };
+
+  const setStage = (next: "home" | "select"): void => {
+    homeStage.classList.toggle("is-active", next === "home");
+    selectStage.classList.toggle("is-active", next === "select");
+    if (next === "home") {
+      closeSeedModal();
+    }
+  };
+
   const startWith = (selection: BiomeSelectId, seedRaw: string): void => {
     clearError();
     try {
@@ -121,57 +155,61 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
       const biomeId = resolveBiomeId(selection, seed);
       handlers.onStart({ biomeId, seed });
     } catch (e) {
-      showError(e instanceof Error ? e.message : String(e));
+      if (e instanceof Error && e.message.startsWith("Invalid seed:")) {
+        showError(t("seed.invalid", { raw: seedRaw }));
+      } else {
+        showError(e instanceof Error ? e.message : String(e));
+      }
     }
   };
 
   type CardDef = {
     id: string;
     icon: string;
-    name: string;
-    desc: string;
     kind: "biome" | "seed" | "road";
     biomeId?: BiomeSelectId;
+    nameKey?: "menu.card.random.name" | "menu.card.seed.name" | "menu.card.road.name";
+    descKey?: "menu.card.random.desc" | "menu.card.seed.desc" | "menu.card.road.desc";
+    /** biome id for name/desc via i18n */
+    localeBiome?: BiomeId;
   };
 
   const cards: CardDef[] = [
     {
       id: "random",
       icon: "🎲",
-      name: "隨機",
-      desc: "沙地 / 雨林",
       kind: "biome",
       biomeId: RANDOM_BIOME_ID,
+      nameKey: "menu.card.random.name",
+      descKey: "menu.card.random.desc",
     },
     {
       id: "sand",
       icon: "🏜",
-      name: sand?.displayName ?? "沙地",
-      desc: sand?.description ?? "乾燥沙丘",
       kind: "biome",
       biomeId: "sand",
+      localeBiome: "sand",
     },
     {
       id: "rainforest",
       icon: "🌴",
-      name: rain?.displayName ?? "雨林",
-      desc: rain?.description ?? "潮濕密林",
       kind: "biome",
       biomeId: "rainforest",
+      localeBiome: "rainforest",
     },
     {
       id: "seed",
       icon: "#",
-      name: "SEED",
-      desc: "自訂種子",
       kind: "seed",
+      nameKey: "menu.card.seed.name",
+      descKey: "menu.card.seed.desc",
     },
     {
       id: "road",
       icon: "🛣",
-      name: "ROAD",
-      desc: "平地練習",
       kind: "road",
+      nameKey: "menu.card.road.name",
+      descKey: "menu.card.road.desc",
     },
   ];
 
@@ -183,40 +221,67 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
     card.dataset.cardId = entry.id;
     card.innerHTML = `
       <span class="menu-card-icon" aria-hidden="true">${entry.icon}</span>
-      <span class="menu-card-name">${entry.name}</span>
-      <span class="menu-card-desc">${entry.desc}</span>
+      <span class="menu-card-name"></span>
+      <span class="menu-card-desc"></span>
     `;
     card.onclick = () => {
       clearError();
-      // Deselect visual
       for (const el of cardsEl.querySelectorAll(".menu-card")) {
         el.classList.remove("is-selected");
       }
       card.classList.add("is-selected");
 
       if (entry.kind === "biome" && entry.biomeId) {
-        seedPanel.classList.remove("is-open");
+        closeSeedModal();
         startWith(entry.biomeId, "");
         return;
       }
       if (entry.kind === "seed") {
-        seedPanel.classList.add("is-open");
-        seedInput.focus();
-        seedInput.select();
+        openSeedModal();
         return;
       }
       if (entry.kind === "road") {
-        seedPanel.classList.remove("is-open");
+        closeSeedModal();
         const road = handlers.onRoad ?? handlers.onFlatTest;
         if (road) {
           road();
-        } else {
-          showError("ROAD 尚未開放");
         }
       }
     };
     cardsEl.appendChild(card);
   }
+
+  const applyLocale = (): void => {
+    startGameBtn.textContent = t("menu.start");
+    selectLabel.textContent = t("menu.selectTerrain");
+    backBtn.textContent = t("menu.back");
+    hintsEl.textContent = t("menu.hints");
+    seedTitle.textContent = t("seed.title");
+    seedLabel.textContent = t("seed.label");
+    seedInput.placeholder = t("seed.placeholder");
+    seedGo.textContent = t("seed.go");
+    seedCancel.textContent = t("seed.cancel");
+    syncLangToggle(langToggle);
+
+    for (const entry of cards) {
+      const card = cardsEl.querySelector<HTMLElement>(
+        `[data-card-id="${entry.id}"]`,
+      );
+      if (!card) continue;
+      const nameEl = card.querySelector(".menu-card-name");
+      const descEl = card.querySelector(".menu-card-desc");
+      if (!nameEl || !descEl) continue;
+      if (entry.localeBiome) {
+        nameEl.textContent = biomeDisplayName(entry.localeBiome);
+        descEl.textContent = biomeDescription(entry.localeBiome);
+      } else if (entry.nameKey && entry.descKey) {
+        nameEl.textContent = t(entry.nameKey);
+        descEl.textContent = t(entry.descKey);
+      }
+    }
+  };
+
+  applyLocale();
 
   startGameBtn.addEventListener("click", (ev) => {
     ev.preventDefault();
@@ -225,23 +290,16 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
   });
   backBtn.addEventListener("click", (ev) => {
     ev.preventDefault();
-    seedPanel.classList.remove("is-open");
-    for (const el of cardsEl.querySelectorAll(".menu-card")) {
-      el.classList.remove("is-selected");
-    }
+    closeSeedModal();
     setStage("home");
   });
 
   seedGo.addEventListener("click", () =>
     startWith(RANDOM_BIOME_ID, seedInput.value),
   );
-  seedCancel.addEventListener("click", () => {
-    seedPanel.classList.remove("is-open");
-    seedInput.value = "";
-    clearError();
-    for (const el of cardsEl.querySelectorAll(".menu-card")) {
-      el.classList.remove("is-selected");
-    }
+  seedCancel.addEventListener("click", () => closeSeedModal());
+  seedModal.addEventListener("click", (ev) => {
+    if (ev.target === seedModal) closeSeedModal();
   });
   seedInput.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") {
@@ -251,7 +309,14 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
   });
   seedInput.addEventListener("input", clearError);
 
-  // Menu 3D backdrop (async). Abort on unmount so we never double-bind WebGL.
+  const onKeyDown = (ev: KeyboardEvent): void => {
+    if (ev.key === "Escape" && seedModal.classList.contains("is-open")) {
+      ev.preventDefault();
+      closeSeedModal();
+    }
+  };
+  window.addEventListener("keydown", onKeyDown);
+
   const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas");
   let backdrop: { dispose: () => void } | null = null;
   const backdropAbort = new AbortController();
@@ -273,6 +338,7 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
   parent.appendChild(root);
 
   return () => {
+    window.removeEventListener("keydown", onKeyDown);
     backdropAbort.abort();
     backdrop?.dispose();
     backdrop = null;

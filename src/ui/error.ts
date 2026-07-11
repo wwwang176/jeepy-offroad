@@ -1,3 +1,5 @@
+import { t } from "@/i18n";
+
 export function clearUi(): void {
   const root = document.querySelector("#ui-root");
   if (root) root.innerHTML = "";
@@ -11,10 +13,10 @@ export function showError(message: string, onRetry: () => void): void {
   wrap.className = "modal-overlay";
   wrap.innerHTML = `
     <div class="panel error-panel modal-panel">
-      <h2>Error</h2>
+      <h2>${t("error.title")}</h2>
       <p></p>
       <div class="error-actions">
-        <button type="button" id="error-retry">Retry</button>
+        <button type="button" id="error-retry">${t("error.retry")}</button>
       </div>
     </div>
   `;

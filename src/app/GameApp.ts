@@ -43,6 +43,7 @@ import {
 import { requestGameFullscreen } from "@/ui/fullscreen";
 import type { BiomeId } from "@/shared/types";
 import type { InputActions } from "@/input/types";
+import { biomeDisplayName, t } from "@/i18n";
 import {
   OffroadFx,
   SANDBOX_DUST_COLOR,
@@ -248,9 +249,10 @@ export class GameApp {
         if (root) {
           const panel = document.createElement("div");
           panel.className = "loading-overlay";
+          const biomeLabel = biomeDisplayName(state.biomeId);
           panel.innerHTML = `
             <div class="panel loading-panel modal-panel">
-              Loading <strong>${state.biomeId}</strong> · seed ${state.seed}…
+              ${t("loading", { biome: biomeLabel, seed: state.seed })}
             </div>
           `;
           root.appendChild(panel);

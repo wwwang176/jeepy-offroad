@@ -3,8 +3,9 @@ import type { BiomeProfile } from "../types";
 /** Dense tropical rainforest — green mud floor, many coconut palms. */
 export const rainforestBiome: BiomeProfile = {
   id: "rainforest",
-  displayName: "雨林",
-  description: "潮濕綠泥、小雨與成片椰子樹",
+  /** Canonical EN; UI prefers i18n biomeDisplayName(). */
+  displayName: "Rainforest",
+  description: "Wet mud, light rain, and coconut palms",
   skyColor: "#6a8a78",
   fogColor: "#5a7060",
   fogDensity: 0.022,
