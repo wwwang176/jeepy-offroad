@@ -51,13 +51,13 @@ export class TouchProvider implements InputProvider {
         <span class="touch-stick-label">STEER</span>
       </div>
       <div class="touch-actions">
-        <button type="button" class="touch-btn" data-touch-range title="4H / 4L">4H</button>
-        <button type="button" class="touch-btn" data-touch-camera title="Camera">CAM</button>
-        <button type="button" class="touch-btn" data-touch-respawn title="Respawn">R</button>
+        <div class="touch-btn" data-touch-range role="button" tabindex="-1" title="4H / 4L">4H</div>
+        <div class="touch-btn" data-touch-camera role="button" tabindex="-1" title="Camera">CAM</div>
+        <div class="touch-btn" data-touch-respawn role="button" tabindex="-1" title="Respawn">R</div>
       </div>
       <div class="touch-pedals">
-        <button type="button" class="touch-pedal touch-pedal-gas" data-touch-gas>▲</button>
-        <button type="button" class="touch-pedal touch-pedal-rev" data-touch-rev>▼</button>
+        <div class="touch-pedal touch-pedal-gas" data-touch-gas role="button" tabindex="-1">▲</div>
+        <div class="touch-pedal touch-pedal-rev" data-touch-rev role="button" tabindex="-1">▼</div>
       </div>
     `;
 
