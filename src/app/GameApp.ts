@@ -9,6 +9,7 @@ import { VehicleController } from "@/physics/vehicle/VehicleController";
 import { createTerrainCollider } from "@/physics/createTerrainCollider";
 import { InputRouter } from "@/input/InputRouter";
 import { KeyboardProvider } from "@/input/KeyboardProvider";
+import { TouchProvider } from "@/input/TouchProvider";
 import { createRenderer } from "@/render/createRenderer";
 import {
   createJeepMesh,
@@ -63,6 +64,7 @@ export class GameApp {
   private physics: PhysicsWorld | null = null;
   private vehicle: VehicleController | null = null;
   private input: InputRouter | null = null;
+  private touchProvider: TouchProvider | null = null;
   private jeepMesh: THREE.Group | null = null;
   private three: ReturnType<typeof createRenderer> | null = null;
   private gameScene: GameSceneHandles | null = null;
@@ -84,6 +86,11 @@ export class GameApp {
     throttle: number;
     brake: number;
   } = { throttle: 0, brake: 0 };
+  /**
+   * Respawn is only consumed inside the fixed-step loop. Latch so a press on a
+   * high-refresh frame with 0 physics steps is not dropped before the next step.
+   */
+  private latchedRespawn = false;
 
   async start(): Promise<void> {
     this.running = true;
@@ -151,11 +158,24 @@ export class GameApp {
     }
   }
 
+  /** Keyboard always on; on-screen pad when RWD width ≤ touch breakpoint. */
+  private createInputRouter(canvas: HTMLCanvasElement): InputRouter {
+    const uiRoot = document.querySelector<HTMLElement>("#ui-root");
+    if (!uiRoot) throw new Error("Missing #ui-root");
+    this.touchProvider = new TouchProvider(uiRoot);
+    return new InputRouter([
+      new KeyboardProvider(window, canvas),
+      this.touchProvider,
+    ]);
+  }
+
   private teardownSession(): void {
     this.sessionActive = false;
     this.sessionMode = null;
     this.input?.dispose();
     this.input = null;
+    this.touchProvider = null;
+    this.latchedRespawn = false;
     this.vehicle?.dispose();
     this.vehicle = null;
     this.physics?.destroy();
@@ -265,6 +285,8 @@ export class GameApp {
       }
       case "result": {
         this.sessionActive = false;
+        // Hide on-screen controls so they do not float above the result panel.
+        this.touchProvider?.setSuppressed(true);
         if (this.hud) {
           this.hud.dispose();
           this.hud = null;
@@ -346,7 +368,7 @@ export class GameApp {
       this.checkpointSystem,
       this.vehicle,
     );
-    this.input = new InputRouter(new KeyboardProvider(window, canvas));
+    this.input = this.createInputRouter(canvas);
     this.gameScene = createGameScene(canvas, level, biome);
     this.jeepMesh = this.gameScene.jeepMesh;
     this.cameraRig = new CameraRig(this.gameScene.camera);
@@ -388,7 +410,7 @@ export class GameApp {
       position: { x: 0, y: 2, z: 0 },
       yaw: 0,
     });
-    this.input = new InputRouter(new KeyboardProvider(window, canvas));
+    this.input = this.createInputRouter(canvas);
     this.three = createRenderer(canvas);
     // Neutral desert-ish ground for mesh review (matches reference vibe)
     const ground = new THREE.Mesh(
@@ -475,6 +497,8 @@ export class GameApp {
       // (Previously sample+applyLook lived only inside the while — skip a step and
       // drag deltas sat uncleared / unapplied until the next physics tick.)
       const actions = this.input.sample();
+      this.touchProvider?.setDriveRange(actions.driveRange);
+      if (actions.respawn) this.latchedRespawn = true;
       if (actions.cameraToggle && this.cameraRig) {
         this.cameraRig.toggle();
         // FP cabin view: hide windshield / side / rear glass
@@ -494,6 +518,12 @@ export class GameApp {
 
       while (this.acc >= FIXED_DT) {
         const poseBefore = this.vehicle.getPose();
+        // Deliver latched respawn only on a real physics step (then clear).
+        const stepActions: InputActions = {
+          ...actions,
+          respawn: this.latchedRespawn,
+        };
+        this.latchedRespawn = false;
 
         if (this.sessionMode === "level" && this.checkpointSystem) {
           this.checkpointSystem.update(poseBefore.position);
@@ -502,17 +532,17 @@ export class GameApp {
           this.respawnSystem.update(
             FIXED_DT,
             poseBefore.position,
-            actions,
+            stepActions,
           );
         }
 
         const drive: InputActions =
           this.respawnSystem?.inputLocked()
             ? {
-                ...actions,
+                ...stepActions,
                 ...ZERO_DRIVE,
               }
-            : actions;
+            : stepActions;
 
         this.lastDriveActions = {
           throttle: drive.throttle,

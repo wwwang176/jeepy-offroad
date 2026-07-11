@@ -52,7 +52,7 @@ export function createHud(
         <span class="hud-speed-value">0</span>
         <span class="hud-speed-unit">km/h</span>
       </div>
-      <div class="hud-gear panel" aria-live="polite" title="Shift: toggle 4H / 4L">
+      <div class="hud-gear panel" aria-live="polite" title="Shift or RANGE: toggle 4H / 4L">
         <span class="hud-gear-label">RANGE</span>
         <span class="hud-gear-value">4H</span>
         <span class="hud-gear-hint">Shift</span>

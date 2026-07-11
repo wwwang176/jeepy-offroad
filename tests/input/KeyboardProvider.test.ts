@@ -110,20 +110,47 @@ describe("KeyboardProvider", () => {
     provider.dispose();
   });
 
-  it("defaults to 4H and toggles transfer case on Shift (no auto-repeat)", () => {
+  it("emits rangeToggle edge on Shift (no auto-repeat; state on InputRouter)", () => {
     const win = createFakeWindow();
     const provider = new KeyboardProvider(win as unknown as Window);
 
-    expect(provider.sample().driveRange).toBe("H");
+    expect(provider.sample().rangeToggle).toBe(false);
 
     win.dispatch("keydown", { code: "ShiftLeft", repeat: false });
-    expect(provider.sample().driveRange).toBe("L");
+    expect(provider.sample().rangeToggle).toBe(true);
+    expect(provider.sample().rangeToggle).toBe(false);
 
     win.dispatch("keydown", { code: "ShiftLeft", repeat: true });
-    expect(provider.sample().driveRange).toBe("L");
+    expect(provider.sample().rangeToggle).toBe(false);
 
     win.dispatch("keydown", { code: "ShiftRight", repeat: false });
-    expect(provider.sample().driveRange).toBe("H");
+    expect(provider.sample().rangeToggle).toBe(true);
+
+    provider.dispose();
+  });
+
+  it("ignores touch pointer look drags", () => {
+    const win = createFakeWindow();
+    const canvas = createFakeCanvas();
+    const provider = new KeyboardProvider(
+      win as unknown as Window,
+      canvas as unknown as EventTarget,
+    );
+
+    canvas.dispatch("pointerdown", {
+      button: 0,
+      pointerId: 2,
+      pointerType: "touch",
+    });
+    win.dispatch("pointermove", {
+      pointerId: 2,
+      movementX: 40,
+      movementY: 10,
+    });
+
+    const a = provider.sample();
+    expect(a.lookDeltaX).toBe(0);
+    expect(a.lookDeltaY).toBe(0);
 
     provider.dispose();
   });

@@ -1,5 +1,12 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body, #app { width: 100%; height: 100%; overflow: hidden; background: #1a1a1a; }
+html, body, #app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #1a1a1a;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
 #game-canvas {
   position: absolute;
   inset: 0;
@@ -589,4 +596,213 @@ button.btn-ghost:active:not(:disabled),
   border-radius: 4px;
   background: #3a3a3a;
   image-rendering: pixelated;
+}
+
+/* —— Mobile RWD (≤900px): free bottom corners for virtual stick / pedals —— */
+@media (max-width: 900px) {
+  .hud-gear-hint {
+    display: none;
+  }
+  .hud-drive {
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    bottom: auto;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    right: auto;
+    transform: scale(0.85);
+    transform-origin: top left;
+  }
+  .hud-info {
+    top: calc(72px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    max-width: min(46vw, 200px);
+    font-size: 11px;
+  }
+  .hud-minimap {
+    width: 112px;
+    height: 112px;
+    right: calc(8px + env(safe-area-inset-right, 0px));
+    bottom: auto;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+  }
+  .hud-goal {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+  }
+}
+
+/* —— On-screen touch controls (TouchProvider) —— */
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  display: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.touch-controls.is-visible {
+  display: block;
+}
+/* Portrait: dim controls and block input until landscape (hint only). */
+.touch-controls.is-portrait .touch-stick,
+.touch-controls.is-portrait .touch-pedals,
+.touch-controls.is-portrait .touch-actions {
+  opacity: 0.28;
+  pointer-events: none;
+}
+.touch-rotate-hint {
+  display: none;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  padding: 14px 20px;
+  border-radius: 10px;
+  background: rgba(10, 12, 14, 0.88);
+  border: 1px solid rgba(201, 160, 74, 0.55);
+  color: #f0d090;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+  pointer-events: none;
+}
+.touch-controls.is-portrait .touch-rotate-hint {
+  display: block;
+}
+.touch-stick {
+  position: absolute;
+  left: calc(20px + env(safe-area-inset-left, 0px));
+  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  width: 128px;
+  height: 128px;
+  pointer-events: auto;
+  touch-action: none;
+}
+.touch-stick-ring {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  background: rgba(12, 16, 18, 0.38);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.25);
+}
+.touch-stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(232, 200, 120, 0.55);
+  border: 2px solid rgba(255, 230, 170, 0.75);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  will-change: transform;
+}
+.touch-stick.is-active .touch-stick-knob {
+  background: rgba(232, 200, 120, 0.85);
+}
+.touch-stick-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.touch-pedals {
+  position: absolute;
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: auto;
+}
+.touch-pedal {
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  background: rgba(12, 16, 18, 0.45);
+  color: #f2f2f2;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.touch-pedal-gas.is-active,
+.touch-pedal-gas:active {
+  background: rgba(60, 160, 90, 0.55);
+  border-color: rgba(120, 230, 150, 0.75);
+}
+.touch-pedal-rev.is-active,
+.touch-pedal-rev:active {
+  background: rgba(180, 80, 60, 0.5);
+  border-color: rgba(255, 150, 120, 0.7);
+}
+.touch-actions {
+  position: absolute;
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  bottom: calc(200px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+}
+.touch-btn {
+  min-width: 56px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(201, 160, 74, 0.55);
+  background: rgba(12, 16, 18, 0.55);
+  color: #e8c878;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.touch-btn.is-active,
+.touch-btn:active {
+  background: rgba(201, 160, 74, 0.35);
+  color: #fff0c8;
+}
+.touch-btn.is-low {
+  border-color: rgba(255, 170, 60, 0.8);
+  color: #ffb84a;
+}
+
+@media (max-height: 420px) and (orientation: landscape) {
+  .touch-stick {
+    width: 112px;
+    height: 112px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .touch-pedal {
+    width: 64px;
+    height: 58px;
+    font-size: 22px;
+  }
+  .touch-actions {
+    bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  }
+  .touch-btn {
+    height: 38px;
+    min-width: 50px;
+    font-size: 12px;
+  }
 }

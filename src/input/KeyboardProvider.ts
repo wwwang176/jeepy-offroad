@@ -1,15 +1,15 @@
-import type { DriveRange, InputActions, InputProvider } from "./types";
-import { DEFAULT_DRIVE_RANGE, toggleDriveRange } from "@/shared/driveTrain";
+import type { InputProvider, ProviderSample } from "./types";
 
 /**
  * Desktop keyboard + left-drag look.
  * Pointer drag is only started on the game canvas so menus/HUD stay clickable.
+ * Touch pointers are ignored for look (mobile uses TouchProvider + follow cam).
  */
 export class KeyboardProvider implements InputProvider {
   private keys = new Set<string>();
   private cameraPressed = false;
   private respawnPressed = false;
-  private driveRange: DriveRange = DEFAULT_DRIVE_RANGE;
+  private rangeTogglePressed = false;
   private lookX = 0;
   private lookY = 0;
   private dragging = false;
@@ -23,9 +23,9 @@ export class KeyboardProvider implements InputProvider {
     this.keys.add(e.code);
     if (e.code === "KeyC") this.cameraPressed = true;
     if (e.code === "KeyR") this.respawnPressed = true;
-    // Shift = transfer-case toggle (4H ↔ 4L)
+    // Shift = transfer-case toggle edge (4H ↔ 4L); state lives on InputRouter
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
-      this.driveRange = toggleDriveRange(this.driveRange);
+      this.rangeTogglePressed = true;
     }
   };
   private onUp = (e: KeyboardEvent) => {
@@ -34,6 +34,8 @@ export class KeyboardProvider implements InputProvider {
 
   private onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
+    // MVP: touch look off — avoid camera flick when holding phone / using sticks.
+    if (e.pointerType === "touch") return;
     const el = e.target as HTMLElement | null;
     if (!el || typeof el.closest !== "function") return;
     // Only start look-drag on the WebGL canvas (not buttons / minimap / menus).
@@ -77,7 +79,7 @@ export class KeyboardProvider implements InputProvider {
     target.addEventListener("pointercancel", this.onPointerUp as EventListener);
   }
 
-  sample(): InputActions {
+  sample(): ProviderSample {
     const up = this.keys.has("KeyW") || this.keys.has("ArrowUp");
     const down = this.keys.has("KeyS") || this.keys.has("ArrowDown");
     const left = this.keys.has("KeyA") || this.keys.has("ArrowLeft");
@@ -98,11 +100,11 @@ export class KeyboardProvider implements InputProvider {
     if (left) steer -= 1;
     if (right) steer += 1;
 
-    const actions: InputActions = {
+    const actions: ProviderSample = {
       throttle,
       steer,
       brake,
-      driveRange: this.driveRange,
+      rangeToggle: this.rangeTogglePressed,
       cameraToggle: this.cameraPressed,
       respawn: this.respawnPressed,
       lookDeltaX: this.lookX,
@@ -110,6 +112,7 @@ export class KeyboardProvider implements InputProvider {
     };
     this.cameraPressed = false;
     this.respawnPressed = false;
+    this.rangeTogglePressed = false;
     this.lookX = 0;
     this.lookY = 0;
     return actions;
