@@ -15,8 +15,8 @@ const RAIN_SPEED = 37.5;
 const WIND_X = 2;
 const WIND_Z = 5;
 
-const SPLASH_COUNT = 3000;
-const SPLASH_SPAWN_RATE = 300; // /s — half of 600
+const SPLASH_COUNT = 6000;
+const SPLASH_SPAWN_RATE = 600; // /s — ×2 vs prior light-rain baseline
 const SPLASH_RADIUS = 30;
 const SPLASH_LIFE_MIN = 0.08;
 const SPLASH_LIFE_MAX = 0.15;

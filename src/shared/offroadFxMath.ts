@@ -405,6 +405,22 @@ export function pondSurfaceYAt(
 }
 
 /**
+ * Height where rain hits: terrain bed, or pond free surface when over water
+ * (so drops/splashes stop on the lake, not under it).
+ */
+export function rainImpactHeight(
+  x: number,
+  z: number,
+  terrainY: number,
+  ponds: readonly PondWetnessInput[],
+): number {
+  if (!ponds.length) return terrainY;
+  const surf = pondSurfaceYAt(x, z, ponds);
+  if (surf == null) return terrainY;
+  return Math.max(terrainY, surf);
+}
+
+/**
  * Resolve free-surface Y for immersion: pond surface if wet, else null.
  * Streams have no surfaceY in wetness input — caller may fall back.
  */

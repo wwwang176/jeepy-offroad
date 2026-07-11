@@ -13,6 +13,7 @@ import {
   setShadowFlags,
   type FollowShadowHandles,
 } from "./followShadows";
+import { rainImpactHeight } from "@/shared/offroadFxMath";
 import { RainVFX } from "./RainVFX";
 
 export type GameSceneHandles = {
@@ -935,11 +936,14 @@ export function createGameScene(
   setShadowFlags(jeepMesh, { cast: true, receive: true });
   scene.add(jeepMesh);
 
-  // Rainforest: light rain + ground splash (½ island-conquest storm density)
+  // Rainforest: light rain + ground/water splash (½ island-conquest storm density)
   let rain: RainVFX | null = null;
   if (biome.id === "rainforest") {
+    const ponds = level.ponds ?? [];
     rain = new RainVFX(scene, {
-      getHeightAt: (x, z) => sampleHeight(level, x, z),
+      // Hit pond free surface when over water so drops don't fall under the lake mesh
+      getHeightAt: (x, z) =>
+        rainImpactHeight(x, z, sampleHeight(level, x, z), ponds),
     });
   }
 

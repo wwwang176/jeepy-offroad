@@ -15,6 +15,7 @@ import {
   immersionDepthM,
   pondWetness,
   pointInPolygonXZ,
+  rainImpactHeight,
   streamWetness,
   waterWetness,
   waterSplashColor,
@@ -249,6 +250,25 @@ describe("stream geometry", () => {
         totalWeight: 3,
       }),
     ).toBe(0);
+  });
+
+  it("rainImpactHeight uses pond surface over water, terrain on dry land", () => {
+    const ponds = [
+      {
+        center: { x: 0, z: 0 },
+        radius: 5,
+        surfaceY: 12,
+        polygon: [
+          { x: -4, z: -4 },
+          { x: 4, z: -4 },
+          { x: 4, z: 4 },
+          { x: -4, z: 4 },
+        ],
+      },
+    ];
+    // Bed is lower than free surface
+    expect(rainImpactHeight(0, 0, 10, ponds)).toBe(12);
+    expect(rainImpactHeight(50, 50, 10, ponds)).toBe(10);
   });
 
   it("bodyWaterSprayEmitRate scales with depth and speed when moving", () => {
