@@ -1052,8 +1052,8 @@ export function createGameScene(
       disposeObject3D(finishMesh);
       disposeObject3D(streamGroup);
       disposeObject3D(propGroup);
-      startPad.geometry.dispose();
-      (startPad.material as THREE.Material).dispose();
+      startRing.geometry.dispose();
+      (startRing.material as THREE.Material).dispose();
       disposeObject3D(jeepMesh);
       renderer.dispose();
     },
