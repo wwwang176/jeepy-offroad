@@ -312,37 +312,75 @@ export function createJeepMesh(): THREE.Group {
   // Original tub Z span ≈[-1.30,+1.20]; split around hollow cabin.
   box(g, bodyW, tubH, 0.4, PAL.body, 0, tubY, 1.0, "tub-front"); // Z[0.80,1.20]
   box(g, bodyW, tubH, 0.25, PAL.body, 0, tubY, -1.175, "tub-rear"); // Z[-1.30,-1.05]
-  // Thin belly under cabin — full old-tub length so side underside matches.
-  box(g, bodyW, 0.06, 2.5, PAL.bodyShade, 0, 0.02, -0.05, "tub-belly");
+  // Thin belly under cabin only (do not pierce solid tub-front / tub-rear).
+  // Cabin free Z∈[-1.05,+0.80]; leave ~1cm gaps so front faces are not coplanar.
+  box(g, bodyW, 0.06, 1.83, PAL.bodyShade, 0, 0.02, -0.125, "tub-belly");
 
   // ===== Hood (raised with body) =====
-  const hoodY = 0.48 * bodyScaleY;
-  box(g, bodyW * 0.98, 0.2 * bodyScaleY, 0.78, PAL.body, 0, hoodY, 0.95, "hood");
-  box(g, 0.5, 0.05, 0.34, PAL.black, 0, hoodY + 0.12, 0.92);
-  // Cowl shelf under windshield (meets raised door belt)
-  box(g, bodyW * 0.98, 0.14 * bodyScaleY, 0.18, PAL.body, 0, hoodY, 0.52, "cowl");
-  box(g, bodyW * 0.9, 0.04, 0.08, PAL.bodyShade, 0, hoodY + 0.08, 0.48);
+  // Sit just above tub top; front edge behind headlight face / grille (no pierce).
+  const hoodH = 0.2 * bodyScaleY;
+  const hoodY = tubY + tubH * 0.5 + hoodH * 0.5 + 0.005; // clear tub top
+  const hoodLz = 0.62;
+  const hoodCz = 0.885; // Z front ≈ 1.195 ≤ tub-front face
+  box(g, bodyW * 0.98, hoodH, hoodLz, PAL.body, 0, hoodY, hoodCz, "hood");
+  box(g, 0.5, 0.05, 0.34, PAL.black, 0, hoodY + hoodH * 0.5 + 0.01, 0.90);
+  // Cowl shelf under windshield — abuts hood rear, no volume pierce
+  const hoodRearZ = hoodCz - hoodLz * 0.5;
+  const cowlLz = 0.18;
+  const cowlCz = hoodRearZ - 0.002 - cowlLz * 0.5;
+  box(g, bodyW * 0.98, 0.14 * bodyScaleY, cowlLz, PAL.body, 0, hoodY, cowlCz, "cowl");
+  box(g, bodyW * 0.9, 0.04, 0.08, PAL.bodyShade, 0, hoodY + 0.08, cowlCz);
 
-  // ===== Front fenders (white; kept inward so tires can poke past) =====
+  // ===== Front fenders (outer skins — outside tub half-width, no tub pierce) =====
+  // Tub X∈[-halfW,+halfW]; keep fender fully exterior with a 1cm gap.
+  const fenderW = 0.12;
+  const fenderX = halfW + fenderW * 0.5 + 0.01; // outer face past body
   for (const sx of [-1, 1]) {
-    box(g, 0.22, 0.34 * bodyScaleY, 0.62, PAL.body, sx * (halfW - 0.2), 0.18 * bodyScaleY, 0.95);
+    box(
+      g,
+      fenderW,
+      0.34 * bodyScaleY,
+      0.58,
+      PAL.body,
+      sx * fenderX,
+      0.18 * bodyScaleY,
+      0.92,
+      sx < 0 ? "fender-L" : "fender-R",
+    );
   }
 
   // ===== 7-slot grille =====
   const gZ = 1.32;
+  const grilleD = 0.1;
   const grilleY = 0.36 * bodyScaleY;
-  box(g, 0.95, 0.5 * bodyScaleY, 0.1, PAL.grille, 0, grilleY, gZ, "grille");
+  const grilleFrontZ = gZ + grilleD * 0.5; // 1.37
+  box(g, 0.95, 0.5 * bodyScaleY, grilleD, PAL.grille, 0, grilleY, gZ, "grille");
+  // Slot bars / chrome fully proud of grille face (+2mm gap → no coplanar z-fight).
+  const slotD = 0.04;
+  const slotGap = 0.002;
+  const slotZ = grilleFrontZ + slotGap + slotD * 0.5;
   for (let i = 0; i < 7; i++) {
     const x = -0.36 + i * 0.12;
-    box(g, 0.04, 0.42 * bodyScaleY, 0.06, PAL.black, x, grilleY, gZ + 0.05);
+    box(g, 0.04, 0.42 * bodyScaleY, slotD, PAL.black, x, grilleY, slotZ);
   }
-  box(g, 0.28, 0.07, 0.04, PAL.chrome, 0, grilleY + 0.24 * bodyScaleY, gZ + 0.06);
+  const chromeD = 0.035;
+  box(
+    g,
+    0.28,
+    0.07,
+    chromeD,
+    PAL.chrome,
+    0,
+    grilleY + 0.24 * bodyScaleY,
+    grilleFrontZ + slotGap + chromeD * 0.5,
+  );
 
-  // Round headlights sit in white face beside grille
+  // Round headlights: white face between tub front (Z=1.20) and grille back (Z=1.27)
   for (const sx of [-1, 1]) {
     const lx = sx * 0.62;
     const ly = grilleY + 0.02;
-    box(g, 0.28, 0.36 * bodyScaleY, 0.08, PAL.body, lx, ly, gZ - 0.02);
+    // Face plate: proud of tub front (Z=1.20), clear of grille back (Z=1.27)
+    box(g, 0.28, 0.36 * bodyScaleY, 0.05, PAL.body, lx, ly, 1.235, sx < 0 ? "hl-face-L" : "hl-face-R");
     cyl(g, 0.14, 0.14, 0.1, 12, PAL.lightRing, lx, ly, gZ + 0.04, Math.PI / 2);
     cyl(g, 0.11, 0.11, 0.08, 12, PAL.light, lx, ly, gZ + 0.09, Math.PI / 2);
     box(g, 0.08, 0.05, 0.04, PAL.orange, sx * 0.72, ly + 0.18, gZ + 0.02);
