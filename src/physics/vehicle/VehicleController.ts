@@ -16,12 +16,22 @@ import {
   VEHICLE_COLLIDER_GROUPS,
 } from "@/physics/collisionGroups";
 import type { BiomeTraction } from "@/biome/types";
+import {
+  cloneRenderPose,
+  cloneWheelVisuals,
+  lerpRenderPose,
+  lerpWheelVisuals,
+  type RenderPose,
+  type RenderWheelVisual,
+} from "./visualInterpolation";
 
 function yawFromQuat(q: { x: number; y: number; z: number; w: number }): number {
   const siny = 2 * (q.w * q.y + q.z * q.x);
   const cosy = 1 - 2 * (q.y * q.y + q.x * q.x);
   return Math.atan2(siny, cosy);
 }
+
+export type { RenderPose, RenderWheelVisual };
 
 export type VehicleControllerOptions = {
   /** Biome surface grip (sand = ice-like). Omit = baseline. */
@@ -47,6 +57,16 @@ export class VehicleController {
   private steerCurrent = 0;
   /** Effective brake scale after biome traction (vs VEHICLE_CONFIG). */
   private readonly rapierBrakeScale: number;
+
+  /**
+   * Render double-buffer (Fix Your Timestep):
+   * after each fixed physics step, prev ← curr ← live body state.
+   * Frame render uses lerp(prev, curr, acc/FIXED_DT).
+   */
+  private prevRenderPose: RenderPose | null = null;
+  private currRenderPose: RenderPose | null = null;
+  private prevWheelVisuals: RenderWheelVisual[] | null = null;
+  private currWheelVisuals: RenderWheelVisual[] | null = null;
 
   constructor(
     world: RAPIER.World,
@@ -152,10 +172,68 @@ export class VehicleController {
       this.controller.setWheelSideFrictionStiffness(i, sideFriction);
     }
     this.numWheels = cfg.wheelPositions.length;
+    // Spawn: no history yet — snap both buffers so first frames don't ghost.
+    this.snapRenderState();
   }
 
   dispose(): void {
     this.world.removeVehicleController(this.controller);
+  }
+
+  /**
+   * Force prev = curr = live pose (spawn / respawn / teleport).
+   * Avoids interpolating across a discontinuity.
+   */
+  snapRenderState(): void {
+    const pose = this.getPose();
+    const wheels = this.getWheelVisuals();
+    this.prevRenderPose = cloneRenderPose(pose);
+    this.currRenderPose = cloneRenderPose(pose);
+    this.prevWheelVisuals = cloneWheelVisuals(wheels);
+    this.currWheelVisuals = cloneWheelVisuals(wheels);
+  }
+
+  /**
+   * Call once after each fixed `physics.step()` while the body is continuous.
+   * Shifts the render double-buffer forward by one physics tick.
+   */
+  commitRenderSnapshot(): void {
+    const pose = this.getPose();
+    const wheels = this.getWheelVisuals();
+    if (this.currRenderPose) {
+      this.prevRenderPose = this.currRenderPose;
+    } else {
+      this.prevRenderPose = cloneRenderPose(pose);
+    }
+    if (this.currWheelVisuals) {
+      this.prevWheelVisuals = this.currWheelVisuals;
+    } else {
+      this.prevWheelVisuals = cloneWheelVisuals(wheels);
+    }
+    this.currRenderPose = cloneRenderPose(pose);
+    this.currWheelVisuals = cloneWheelVisuals(wheels);
+  }
+
+  /**
+   * Pose for this render frame. `alpha` = remaining accumulator / FIXED_DT.
+   */
+  getRenderPose(alpha: number): RenderPose {
+    if (!this.prevRenderPose || !this.currRenderPose) {
+      return this.getPose();
+    }
+    return lerpRenderPose(this.prevRenderPose, this.currRenderPose, alpha);
+  }
+
+  /** Wheel visuals for this render frame (same alpha as getRenderPose). */
+  getRenderWheelVisuals(alpha: number): RenderWheelVisual[] {
+    if (!this.prevWheelVisuals || !this.currWheelVisuals) {
+      return this.getWheelVisuals();
+    }
+    return lerpWheelVisuals(
+      this.prevWheelVisuals,
+      this.currWheelVisuals,
+      alpha,
+    );
   }
 
   getChassisBody(): RAPIER.RigidBody {
@@ -312,6 +390,8 @@ export class VehicleController {
       this.controller.setWheelBrake(i, 0);
       this.controller.setWheelSteering(i, 0);
     }
+    // Teleport: do not interpolate from pre-reset pose.
+    this.snapRenderState();
   }
 
   /**

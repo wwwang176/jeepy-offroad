@@ -521,6 +521,8 @@ export class GameApp {
 
         this.vehicle.update(FIXED_DT, drive, this.physics.getWorld());
         this.physics.step();
+        // Advance render double-buffer after each fixed tick (Fix Your Timestep).
+        this.vehicle.commitRenderSnapshot();
         if (
           this.sessionMode === "level" &&
           this.finishSystem &&
@@ -536,8 +538,11 @@ export class GameApp {
         this.acc -= FIXED_DT;
       }
 
-      const pose = this.vehicle.getPose();
-      const wheelVisuals = this.vehicle.getWheelVisuals();
+      // Render between prev/curr physics states so 60Hz physics stays smooth
+      // on high-refresh displays (and when rAF dt jitters around 1/60).
+      const renderAlpha = this.acc / FIXED_DT;
+      const pose = this.vehicle.getRenderPose(renderAlpha);
+      const wheelVisuals = this.vehicle.getRenderWheelVisuals(renderAlpha);
       syncJeepMesh(this.jeepMesh, pose, wheelVisuals);
       // Keep glass visibility in sync if mode changed elsewhere
       if (this.cameraRig) {
