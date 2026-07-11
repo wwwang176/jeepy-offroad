@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 1020" width="1100" height="1020">
+  <title>Jeep cabin interior layout — dimensioned 3-view (dev reference)</title>
+  <rect width="1100" height="1020" fill="#14171c"/>
+
+  <text x="550" y="26" text-anchor="middle" fill="#f0f0ee" font-family="Consolas, ui-monospace, monospace" font-size="16" font-weight="700">Jeep interior DEV SPEC — cavity + 4 seats (shell thickness included)</text>
+  <text x="550" y="46" text-anchor="middle" fill="#8b939e" font-family="Consolas, ui-monospace, monospace" font-size="11">+X right · +Y up · +Z forward · m · bodyW=1.72 · shellT=0.06 · linerT=0.08 · cabin free W=1.44</text>
+
+  <!-- ============================================================ -->
+  <!-- TOP VIEW                                                      -->
+  <!-- ============================================================ -->
+  <g id="top" transform="translate(30,64)">
+    <rect x="0" y="0" width="520" height="400" rx="6" fill="#1b2028" stroke="#2a3340"/>
+    <text x="16" y="20" fill="#7ec8ff" font-family="Consolas, ui-monospace, monospace" font-size="13" font-weight="700">1) TOP (X–Z)  1m=100px</text>
+    <text x="16" y="36" fill="#6a7380" font-family="Consolas, ui-monospace, monospace" font-size="10">→ +X · ↑ +Z hood · outer / shell / liner / free cabin</text>
+
+    <g transform="translate(260,220) scale(100,-100)">
+      <!-- outer body footprint -->
+      <rect x="-0.86" y="-1.25" width="1.72" height="2.5" fill="none" stroke="#b8b8b4" stroke-width="0.022"/>
+      <!-- outer shell band (schematic): from 0.80..0.86 each side -->
+      <rect x="-0.86" y="-1.05" width="0.06" height="1.85" fill="#4a4a50" opacity="0.55"/>
+      <rect x="0.80" y="-1.05" width="0.06" height="1.85" fill="#4a4a50" opacity="0.55"/>
+      <!-- liner walls -->
+      <rect x="-0.80" y="-1.05" width="0.08" height="1.85" fill="#18181e" stroke="#0a0a0a" stroke-width="0.01"/>
+      <rect x="0.72" y="-1.05" width="0.08" height="1.85" fill="#18181e" stroke="#0a0a0a" stroke-width="0.01"/>
+      <!-- free cabin floor -->
+      <rect x="-0.72" y="-1.05" width="1.44" height="1.85" fill="#25252c" stroke="#0e0e12" stroke-width="0.016"/>
+      <!-- bulks -->
+      <rect x="-0.72" y="0.72" width="1.44" height="0.08" fill="#121216" stroke="#000" stroke-width="0.01"/>
+      <rect x="-0.72" y="-1.05" width="1.44" height="0.08" fill="#121216" stroke="#000" stroke-width="0.01"/>
+      <!-- seats -->
+      <!-- cushion W 0.528 (+10%), backrest W 0.44; center ±0.38 → outer |X|≈0.644 -->
+      <rect x="-0.644" y="0.10" width="0.528" height="0.40" rx="0.03" fill="#3d3d45" stroke="#111" stroke-width="0.014"/>
+      <rect x="-0.60" y="0.02" width="0.44" height="0.10" fill="#2a2a32" stroke="#0a0a0a" stroke-width="0.01"/>
+      <rect x="0.116" y="0.10" width="0.528" height="0.40" rx="0.03" fill="#3d3d45" stroke="#111" stroke-width="0.014"/>
+      <rect x="0.16" y="0.02" width="0.44" height="0.10" fill="#2a2a32" stroke="#0a0a0a" stroke-width="0.01"/>
+      <rect x="-0.644" y="-0.70" width="0.528" height="0.40" rx="0.03" fill="#3d3d45" stroke="#111" stroke-width="0.014"/>
+      <rect x="-0.60" y="-0.78" width="0.44" height="0.10" fill="#2a2a32" stroke="#0a0a0a" stroke-width="0.01"/>
+      <rect x="0.116" y="-0.70" width="0.528" height="0.40" rx="0.03" fill="#3d3d45" stroke="#111" stroke-width="0.014"/>
+      <rect x="0.16" y="-0.78" width="0.44" height="0.10" fill="#2a2a32" stroke="#0a0a0a" stroke-width="0.01"/>
+      <line x1="0" y1="-1.15" x2="0" y2="1.10" stroke="#4a5560" stroke-width="0.01" stroke-dasharray="0.05 0.04"/>
+    </g>
+
+    <text x="260" y="52" text-anchor="middle" fill="#e8c547" font-family="Consolas, ui-monospace, monospace" font-size="11">outer bodyW=1.72  (±0.86)</text>
+    <text x="260" y="68" text-anchor="middle" fill="#9aa" font-family="Consolas, ui-monospace, monospace" font-size="10">shellT=0.06 → outer-skin inner face ±0.80</text>
+    <text x="260" y="84" text-anchor="middle" fill="#7dcea0" font-family="Consolas, ui-monospace, monospace" font-size="10">linerT=0.08 → liner X [±0.72, ±0.80]  center ±0.76</text>
+    <text x="260" y="100" text-anchor="middle" fill="#7dcea0" font-family="Consolas, ui-monospace, monospace" font-size="11">cabin free W=1.44  (±0.72 inner faces)</text>
+
+    <text x="260" y="172" text-anchor="middle" fill="#f0a0a0" font-family="Consolas, ui-monospace, monospace" font-size="10">seat center X ±0.38 (track 0.76) · clearance to liner inner 0.08</text>
+    <text x="260" y="148" text-anchor="middle" fill="#c9a0ff" font-family="Consolas, ui-monospace, monospace" font-size="10">front cushion Z[0.10,0.50] cZ=0.30 · back foot Z[0.02,0.12]</text>
+    <text x="260" y="320" text-anchor="middle" fill="#c9a0ff" font-family="Consolas, ui-monospace, monospace" font-size="10">rear cushion Z[-0.70,-0.30] cZ=-0.50 · back foot Z[-0.78,-0.68]</text>
+    <text x="260" y="360" text-anchor="middle" fill="#7dcea0" font-family="Consolas, ui-monospace, monospace" font-size="10">cavity Lz=1.85  Z∈[-1.05,+0.80]  centerZ=-0.125</text>
+    <text x="16" y="384" fill="#aaa" font-family="Consolas, ui-monospace, monospace" font-size="10">total side wall pack = shellT+linerT = 0.14 (outer 0.86 → free 0.72)</text>
+    <text x="16" y="396" fill="#aaa" font-family="Consolas, ui-monospace, monospace" font-size="10">floor abuts liner INNER faces (no 2cm overlap)</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- SIDE VIEW                                                     -->
+  <!-- ============================================================ -->
+  <g id="side" transform="translate(560,64)">
+    <rect x="0" y="0" width="520" height="400" rx="6" fill="#1b2028" stroke="#2a3340"/>
+    <text x="16" y="20" fill="#7ec8ff" font-family="Consolas, ui-monospace, monospace" font-size="13" font-weight="700">2) SIDE (Z–Y)  1m=90px</text>
+    <text x="16" y="36" fill="#6a7380" font-family="Consolas, ui-monospace, monospace" font-size="10">→ +Z hood · ↑ +Y · left side</text>
+
+    <g transform="translate(200,290) scale(90,-90)">
+      <line x1="-1.5" y1="0" x2="1.45" y2="0" stroke="#3a4048" stroke-width="0.025"/>
+      <path d="M -1.35,0.12 L -1.35,0.55 L -1.15,0.70 L -1.15,1.36 L 0.55,1.36 L 0.55,0.70 L 1.15,0.70 L 1.32,0.48 L 1.32,0.12 Z"
+            fill="none" stroke="#b8b8b4" stroke-width="0.028"/>
+      <rect x="-1.15" y="0.70" width="1.70" height="0.66" fill="#1a2830" opacity="0.35" stroke="#3d7a6a" stroke-width="0.014" stroke-dasharray="0.04 0.03"/>
+      <!-- cavity free volume -->
+      <rect x="-1.05" y="0.12" width="1.85" height="0.58" fill="#25252c" stroke="#0e0e12" stroke-width="0.016" opacity="0.92"/>
+      <!-- floor thickness shell -->
+      <rect x="-1.05" y="0.10" width="1.85" height="0.04" fill="#121216" stroke="#000" stroke-width="0.01"/>
+      <!-- front/rear bulk depth -->
+      <rect x="0.72" y="0.12" width="0.08" height="0.58" fill="#18181e" opacity="0.85"/>
+      <rect x="-1.05" y="0.12" width="0.08" height="0.58" fill="#18181e" opacity="0.85"/>
+
+      <!-- glass lower edge = beltY ≈ 0.70 (green band bottom) -->
+      <line x1="-1.15" y1="0.70" x2="0.55" y2="0.70" stroke="#7ec8ff" stroke-width="0.02" stroke-dasharray="0.05 0.03"/>
+      <!-- whole seat after +¼ then −⅛ (~net +0.09): cushion Y 0.31–0.43, pivot 0.43, top≈1.04 -->
+      <rect x="0.10" y="0.31" width="0.40" height="0.12" rx="0.02" fill="#3d3d45" stroke="#111" stroke-width="0.014"/>
+      <!-- backrest H=0.65 · rigid top Y≈1.04 > glass sill 0.70 · run≈0.222 -->
+      <path d="M 0.08,0.43 L 0.18,0.43 L -0.042,1.04 L -0.142,1.04 Z" fill="#2a2a32" stroke="#0a0a0a" stroke-width="0.014"/>
+      <rect x="-0.70" y="0.31" width="0.40" height="0.12" rx="0.02" fill="#3d3d45" stroke="#111" stroke-width="0.014"/>
+      <path d="M -0.72,0.43 L -0.62,0.43 L -0.842,1.04 L -0.942,1.04 Z" fill="#2a2a32" stroke="#0a0a0a" stroke-width="0.014"/>
+      <circle cx="0.25" cy="1.15" r="0.045" fill="#7ec8ff"/>
+      <line x1="0.25" y1="1.15" x2="0.55" y2="1.15" stroke="#7ec8ff" stroke-width="0.02"/>
+    </g>
+
+    <text x="55" y="250" fill="#7dcea0" font-family="Consolas, ui-monospace, monospace" font-size="10">cavity Y 0.12→0.70 (h=0.58)</text>
+    <text x="55" y="280" fill="#7dcea0" font-family="Consolas, ui-monospace, monospace" font-size="10">floor slab centerY=0.12 T=0.04</text>
+    <text x="55" y="294" fill="#7dcea0" font-family="Consolas, ui-monospace, monospace" font-size="10">walk top ≈0.14 (= cushion bottom)</text>
+    <text x="55" y="208" fill="#e8c547" font-family="Consolas, ui-monospace, monospace" font-size="10">glass sill / beltY≈0.70</text>
+    <text x="55" y="222" fill="#e8c547" font-family="Consolas, ui-monospace, monospace" font-size="10">roofBottomY=1.36</text>
+    <text x="230" y="175" fill="#7ec8ff" font-family="Consolas, ui-monospace, monospace" font-size="11">FP eyeLocal (0, 1.15, 0.25)</text>
+
+    <text x="400" y="252" fill="#f0a0a0" font-family="Consolas, ui-monospace, monospace" font-size="10">cushion Y 0.31–0.43</text>
+    <text x="400" y="224" fill="#c9a0ff" font-family="Consolas, ui-monospace, monospace" font-size="10">pivot Y=0.43</text>
+    <text x="400" y="176" fill="#c9a0ff" font-family="Consolas, ui-monospace, monospace" font-size="10" font-weight="700">top Y≈1.04</text>
+    <text x="400" y="190" fill="#7ec8ff" font-family="Consolas, ui-monospace, monospace" font-size="10">↑ above glass sill</text>
+    <text x="400" y="162" fill="#c9a0ff" font-family="Consolas, ui-monospace, monospace" font-size="9">(+0.34 over belt)</text>
+
+    <text x="16" y="348" fill="#ffb86c" font-family="Consolas, ui-monospace, monospace" font-size="11" font-weight="700">REQ: −⅛ chair H from peak (~0.09) · TOP &gt; sill</text>
+    <text x="16" y="364" fill="#ffb86c" font-family="Consolas, ui-monospace, monospace" font-size="10">centerY=0.37 · H=0.65 · top=0.43+0.65·cos20°≈1.04</text>
+    <text x="16" y="380" fill="#ffb86c" font-family="Consolas, ui-monospace, monospace" font-size="10">under roof 1.36 · X inside body · cushion above floor ≈0.17</text>
+    <text x="16" y="396" fill="#aaa" font-family="Consolas, ui-monospace, monospace" font-size="10">pivot @ cushion rear top; mesh.pos (0, 0.325, 0) = H/2</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- FRONT VIEW — thickness callout                                -->
+  <!-- ============================================================ -->
+  <g id="front" transform="translate(30,484)">
+    <rect x="0" y="0" width="520" height="500" rx="6" fill="#1b2028" stroke="#2a3340"/>
+    <text x="16" y="20" fill="#7ec8ff" font-family="Consolas, ui-monospace, monospace" font-size="13" font-weight="700">3) FRONT (X–Y) + WALL THICKNESS  1m=100px</text>
+    <text x="16" y="36" fill="#6a7380" font-family="Consolas, ui-monospace, monospace" font-size="10">looking −Z · sandwich: outer shell | liner | free cabin</text>
+
+    <g transform="translate(260,300) scale(100,-100)">
+      <!-- outer outline -->
+      <rect x="-0.86" y="0.05" width="1.72" height="1.31" fill="none" stroke="#b8b8b4" stroke-width="0.02"/>
+      <rect x="-0.90" y="1.30" width="1.80" height="0.12" fill="none" stroke="#333" stroke-width="0.022"/>
+      <!-- outer shell bands L/R -->
+      <rect x="-0.86" y="0.12" width="0.06" height="0.58" fill="#5a5a62" stroke="#333" stroke-width="0.008"/>
+      <rect x="0.80" y="0.12" width="0.06" height="0.58" fill="#5a5a62" stroke="#333" stroke-width="0.008"/>
+      <!-- liners -->
+      <rect x="-0.80" y="0.12" width="0.08" height="0.58" fill="#18181e" stroke="#050508" stroke-width="0.01"/>
+      <rect x="0.72" y="0.12" width="0.08" height="0.58" fill="#18181e" stroke="#050508" stroke-width="0.01"/>
+      <!-- free cabin -->
+      <rect x="-0.72" y="0.12" width="1.44" height="0.58" fill="#25252c" stroke="#0e0e12" stroke-width="0.012"/>
+      <!-- glass sill line -->
+      <line x1="-0.86" y1="0.70" x2="0.86" y2="0.70" stroke="#7ec8ff" stroke-width="0.015" stroke-dasharray="0.04 0.03"/>
+      <!-- seats after −⅛ H: cushion Y0.31–0.43, backrest into glass band -->
+      <rect x="-0.644" y="0.31" width="0.528" height="0.12" rx="0.02" fill="#3d3d45" stroke="#111" stroke-width="0.012"/>
+      <rect x="-0.60" y="0.43" width="0.44" height="0.65" rx="0.025" fill="#2a2a32" stroke="#0a0a0a" stroke-width="0.012"/>
+      <rect x="0.116" y="0.31" width="0.528" height="0.12" rx="0.02" fill="#3d3d45" stroke="#111" stroke-width="0.012"/>
+      <rect x="0.16" y="0.43" width="0.44" height="0.65" rx="0.025" fill="#2a2a32" stroke="#0a0a0a" stroke-width="0.012"/>
+      <line x1="0" y1="0.12" x2="0" y2="0.70" stroke="#4a5560" stroke-width="0.01" stroke-dasharray="0.04 0.03"/>
+    </g>
+
+    <!-- thickness zoom labels on right half of panel -->
+    <text x="16" y="70" fill="#e8c547" font-family="Consolas, ui-monospace, monospace" font-size="11" font-weight="700">WALL STACK (each side)</text>
+    <text x="16" y="90" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">outer face     X = ±0.86   (body halfW)</text>
+    <text x="16" y="108" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">shellT         = 0.06</text>
+    <text x="16" y="126" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">shell inner    X = ±0.80</text>
+    <text x="16" y="144" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">linerT         = 0.08</text>
+    <text x="16" y="162" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">liner outer    X = ±0.80  (flush to shell inner)</text>
+    <text x="16" y="180" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">liner center   X = ±0.76</text>
+    <text x="16" y="198" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">liner inner    X = ±0.72  (= cabin free half)</text>
+    <text x="16" y="220" fill="#7dcea0" font-family="Consolas, ui-monospace, monospace" font-size="11" font-weight="700">total pack     = 0.14 = shellT + linerT</text>
+    <text x="16" y="238" fill="#7dcea0" font-family="Consolas, ui-monospace, monospace" font-size="11">cabin free W   = 1.44 = 2×0.72</text>
+
+    <text x="16" y="270" fill="#f0a0a0" font-family="Consolas, ui-monospace, monospace" font-size="11">FL centerX=-0.38 · FR=+0.38</text>
+    <text x="16" y="288" fill="#f0a0a0" font-family="Consolas, ui-monospace, monospace" font-size="10">cushion outer |X|≈0.644 · gap to liner 0.076 (W+10%)</text>
+    <text x="16" y="306" fill="#7ec8ff" font-family="Consolas, ui-monospace, monospace" font-size="10" font-weight="700">backrest top ≈1.08 upright / ≈1.04 reclined</text>
+    <text x="16" y="322" fill="#7ec8ff" font-family="Consolas, ui-monospace, monospace" font-size="10">clear sill 0.70 · lowered ⅛ chair H from peak</text>
+    <text x="16" y="348" fill="#ffb86c" font-family="Consolas, ui-monospace, monospace" font-size="11" font-weight="700">IMPL NOTE</text>
+    <text x="16" y="366" fill="#ccc" font-family="Consolas, ui-monospace, monospace" font-size="10">Hollow cabin shell+liner · no solid tub fill</text>
+    <text x="16" y="382" fill="#ccc" font-family="Consolas, ui-monospace, monospace" font-size="10">Seatbacks visible through side/rear glass</text>
+    <text x="16" y="410" fill="#8b939e" font-family="Consolas, ui-monospace, monospace" font-size="10">bulkT=0.08 · floorT=0.04 · wallH=0.58</text>
+    <text x="16" y="430" fill="#8b939e" font-family="Consolas, ui-monospace, monospace" font-size="10">X still inside body (±0.58 &lt; halfW 0.86)</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- BUILD TABLE                                                   -->
+  <!-- ============================================================ -->
+  <g id="spec" transform="translate(560,484)">
+    <rect x="0" y="0" width="520" height="500" rx="6" fill="#1b2028" stroke="#2a3340"/>
+    <text x="16" y="22" fill="#7ec8ff" font-family="Consolas, ui-monospace, monospace" font-size="13" font-weight="700">4) BUILD TABLE (copy into JeepMesh)</text>
+
+    <text x="16" y="48" fill="#e8c547" font-family="Consolas, ui-monospace, monospace" font-size="12" font-weight="700">CONSTANTS</text>
+    <text x="16" y="66" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">bodyW=1.72  halfW=0.86  beltY≈0.6988≈0.70  roofBottomY=1.36</text>
+    <text x="16" y="84" fill="#ffb86c" font-family="Consolas, ui-monospace, monospace" font-size="11">shellT=0.06  linerT=0.08  totalWall=0.14</text>
+    <text x="16" y="102" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">shellInnerX = ±(halfW − shellT) = ±0.80</text>
+    <text x="16" y="120" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">linerInnerX = ±(halfW − totalWall) = ±0.72</text>
+    <text x="16" y="138" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">cabinFreeW = 1.44  cavityZ=[-1.05,+0.80] Lz=1.85 cZ=-0.125</text>
+
+    <text x="16" y="164" fill="#e8c547" font-family="Consolas, ui-monospace, monospace" font-size="12" font-weight="700">OUTER SHELL (replace solid tub sides)</text>
+    <text x="16" y="182" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">skin L  size=(0.06, 0.58, 1.85)  pos=(-0.83, 0.41, -0.125)</text>
+    <text x="16" y="198" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">skin R  size=(0.06, 0.58, 1.85)  pos=(+0.83, 0.41, -0.125)</text>
+    <text x="16" y="214" fill="#8b939e" font-family="Consolas, ui-monospace, monospace" font-size="10">centerX = ±(0.80+0.86)/2 = ±0.83 · Y:0.12→0.70 · white/body mat</text>
+
+    <text x="16" y="240" fill="#e8c547" font-family="Consolas, ui-monospace, monospace" font-size="12" font-weight="700">CAVITY (dark recess)</text>
+    <text x="16" y="258" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">floor   size=(1.44, 0.04, 1.85)  pos=(0, 0.12, -0.125)</text>
+    <text x="16" y="274" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">liner L size=(0.08, 0.58, 1.85)  pos=(-0.76, 0.41, -0.125)</text>
+    <text x="16" y="290" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">liner R size=(0.08, 0.58, 1.85)  pos=(+0.76, 0.41, -0.125)</text>
+    <text x="16" y="306" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">bulk F  size=(1.44, 0.58, 0.08)  pos=(0, 0.41, +0.76)</text>
+    <text x="16" y="322" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">bulk R  size=(1.44, 0.58, 0.08)  pos=(0, 0.41, -1.01)</text>
+    <text x="16" y="338" fill="#8b939e" font-family="Consolas, ui-monospace, monospace" font-size="10">liner center ±0.76 = (0.72+0.80)/2 · color interior 0x1a1a1a</text>
+
+    <text x="16" y="356" fill="#f0a0a0" font-family="Consolas, ui-monospace, monospace" font-size="12" font-weight="700">SEATS ×4  (−⅛ chair H from peak ≈ −0.09)</text>
+    <text x="16" y="374" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">cushion size=(0.528, 0.12, 0.40)  // W +10%  centerY=0.37</text>
+    <text x="16" y="390" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">FL (−0.38, 0.37, +0.30)  FR (+0.38, 0.37, +0.30)</text>
+    <text x="16" y="406" fill="#ddd" font-family="Consolas, ui-monospace, monospace" font-size="11">RL (−0.38, 0.37, −0.50)  RR (+0.38, 0.37, −0.50)</text>
+    <text x="16" y="424" fill="#7ec8ff" font-family="Consolas, ui-monospace, monospace" font-size="11" font-weight="700">backrest size=(0.44, 0.65, 0.10)  // W +10%  rot.x=−0.349</text>
+    <text x="16" y="440" fill="#7ec8ff" font-family="Consolas, ui-monospace, monospace" font-size="11">TOP Y = 0.43 + 0.65·cos20° ≈ 1.04  &gt; sill 0.70</text>
+    <text x="16" y="456" fill="#ffb86c" font-family="Consolas, ui-monospace, monospace" font-size="10">pivot (0, 0.06, −0.20); mesh.pos (0, 0.325, 0); then rot.x</text>
+    <text x="16" y="472" fill="#7dcea0" font-family="Consolas, ui-monospace, monospace" font-size="10">inside body: X outer ±0.644 &lt; 0.72 liner · top 1.04 &lt; roof</text>
+    <text x="16" y="488" fill="#8b939e" font-family="Consolas, ui-monospace, monospace" font-size="10">floor≈0.14 · cushion bottom 0.31 · air gap ≈0.17</text>
+  </g>
+</svg>

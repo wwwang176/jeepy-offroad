@@ -26,6 +26,9 @@ const PAL = {
   bumper: 0x0a0a0a,
   orange: 0xff6a00,
   interior: 0x1a1a1a,
+  /** Seat upholstery — dark gray (not near-black). */
+  seat: 0x4a4a52,
+  seatShade: 0x3a3a42,
   chrome: 0x909090,
   red: 0xb01a1a,
 } as const;
@@ -298,9 +301,15 @@ export function createJeepMesh(): THREE.Group {
   // Body +15% taller, glass shorter; roof height stays fixed (see greenhouse).
   const bodyScaleY = 1.15;
 
-  // ===== Main white tub (taller body skin) =====
+  // ===== Main white tub — solid only outside cabin Z (see interior cavity) =====
+  // Cabin free Z∈[-1.05,+0.80]; keep filled volumes for nose / tail only.
   const tubH = 0.58 * bodyScaleY;
-  box(g, bodyW, tubH, 2.5, PAL.body, 0, 0.08 + tubH * 0.5 - 0.29, -0.05, "tub");
+  const tubY = 0.08 + tubH * 0.5 - 0.29;
+  // Original tub Z span ≈[-1.30,+1.20]; split around hollow cabin.
+  box(g, bodyW, tubH, 0.4, PAL.body, 0, tubY, 1.0, "tub-front"); // Z[0.80,1.20]
+  box(g, bodyW, tubH, 0.25, PAL.body, 0, tubY, -1.175, "tub-rear"); // Z[-1.30,-1.05]
+  // Thin belly under cabin so underside is not open (not a solid fill).
+  box(g, bodyW, 0.06, 1.85, PAL.bodyShade, 0, 0.02, -0.125, "tub-belly");
 
   // ===== Hood (raised with body) =====
   const hoodY = 0.48 * bodyScaleY;
@@ -361,14 +370,37 @@ export function createJeepMesh(): THREE.Group {
   // (belt climbs further so glass is clearly shorter while roof stays put)
   const doorTopYRaised = doorTopY + (1.36 - 0.52) * 0.12; // ~0.70
   const beltY = doorTopYRaised;
-  const greenH = roofBottomY - beltY; // shorter greenhouse (~0.66)
-  const greenMidY = beltY + greenH * 0.5;
 
-  // ===== White doors (taller) — tops meet raised glass beltline =====
+  // ===== White doors (taller) — L/R outer skins only (hollow cabin) =====
+  // docs/jeep-interior-layout.svg: shellT=0.06, no full-width door slabs.
   const doorH = 0.54 * bodyScaleY;
   const doorY = beltY - doorH * 0.5;
-  box(g, bodyW + 0.02, doorH, 0.78, PAL.body, 0, doorY, 0.18, "doors-f");
-  box(g, bodyW + 0.02, doorH, 0.78, PAL.body, 0, doorY, -0.58, "doors-r");
+  const shellT = 0.06;
+  const shellCenterX = halfW - shellT * 0.5; // ±0.83
+  for (const sx of [-1, 1]) {
+    box(
+      g,
+      shellT,
+      doorH,
+      0.78,
+      PAL.body,
+      sx * shellCenterX,
+      doorY,
+      0.18,
+      sx < 0 ? "door-f-L" : "door-f-R",
+    );
+    box(
+      g,
+      shellT,
+      doorH,
+      0.78,
+      PAL.body,
+      sx * shellCenterX,
+      doorY,
+      -0.58,
+      sx < 0 ? "door-r-L" : "door-r-R",
+    );
+  }
   for (const z of [0.55, -0.2, -0.95]) {
     box(g, 0.025, doorH - 0.04, 0.03, PAL.bodyShade, -halfW - 0.012, doorY, z);
     box(g, 0.025, doorH - 0.04, 0.03, PAL.bodyShade, halfW + 0.012, doorY, z);
@@ -604,10 +636,86 @@ export function createJeepMesh(): THREE.Group {
   box(spare, 0.14, 0.48, 0.16, PAL.black, 0, -0.04, 0.14);
   g.add(spare);
 
-  // ===== Interior peek =====
-  box(g, 0.4, 0.26, 0.4, PAL.interior, -0.32, 0.28, 0.02);
-  box(g, 0.4, 0.26, 0.4, PAL.interior, 0.32, 0.28, 0.02);
-  box(g, 0.95, 0.1, 0.26, PAL.black, 0, 0.52, 0.4);
+  // ===== Cabin cavity + 4 seats (docs/jeep-interior-layout.svg BUILD TABLE) =====
+  // Wall stack: shellT=0.06 outer + linerT=0.08 dark · free cabin W=1.44 (±0.72).
+  // Hollow Z∈[-1.05,+0.80] driven by seat envelope + bulks.
+  {
+    const linerT = 0.08;
+    const cabinLz = 1.85;
+    const cabinCz = -0.125;
+    const wallH = 0.58;
+    const wallMidY = 0.41; // Y 0.12→0.70
+    const linerCenterX = halfW - shellT - linerT * 0.5; // ±0.76
+    const freeW = 1.44;
+
+    // Continuous outer shell along cabin (joins door skins; fills gaps)
+    for (const sx of [-1, 1]) {
+      box(
+        g,
+        shellT,
+        wallH,
+        cabinLz,
+        PAL.body,
+        sx * shellCenterX,
+        wallMidY,
+        cabinCz,
+        sx < 0 ? "cabin-shell-L" : "cabin-shell-R",
+      );
+      box(
+        g,
+        linerT,
+        wallH,
+        cabinLz,
+        PAL.interior,
+        sx * linerCenterX,
+        wallMidY,
+        cabinCz,
+        sx < 0 ? "cabin-liner-L" : "cabin-liner-R",
+      );
+    }
+    box(g, freeW, 0.04, cabinLz, PAL.interior, 0, 0.12, cabinCz, "cabin-floor");
+    box(g, freeW, wallH, 0.08, PAL.interior, 0, wallMidY, 0.76, "cabin-bulk-F");
+    box(g, freeW, wallH, 0.08, PAL.interior, 0, wallMidY, -1.01, "cabin-bulk-R");
+
+    // Seat height ≈ 0.73; after +¼ then −⅛ → net +⅛ ≈ +0.09 from first raised pass.
+    // centerY=0.37 · cushion Y 0.31–0.43 · top ≈ 0.43+0.65·cos20° ≈ 1.04 (under roof 1.36)
+    const seatCenters: Array<[number, number, number]> = [
+      [-0.38, 0.37, 0.3],
+      [0.38, 0.37, 0.3],
+      [-0.38, 0.37, -0.5],
+      [0.38, 0.37, -0.5],
+    ];
+    const recline = -0.349; // −20° toward −Z
+    const backH = 0.65;
+    // Width +10% vs first pass (0.48 / 0.40)
+    const cushionW = 0.528;
+    const backW = 0.44;
+    for (const [cx, cy, cz] of seatCenters) {
+      const seat = new THREE.Group();
+      seat.name = "seat";
+      seat.position.set(cx, cy, cz);
+      const cushion = new THREE.Mesh(
+        new THREE.BoxGeometry(cushionW, 0.12, 0.4),
+        mat(PAL.seat),
+      );
+      cushion.name = "seat-cushion";
+      seat.add(cushion);
+      // Pivot at cushion rear top; mesh offset half-height so backrest sits above seat
+      const pivot = new THREE.Group();
+      pivot.name = "seat-back-pivot";
+      pivot.position.set(0, 0.06, -0.2);
+      pivot.rotation.x = recline;
+      const back = new THREE.Mesh(
+        new THREE.BoxGeometry(backW, backH, 0.1),
+        mat(PAL.seatShade),
+      );
+      back.name = "seat-backrest";
+      back.position.set(0, backH * 0.5, 0);
+      pivot.add(back);
+      seat.add(pivot);
+      g.add(seat);
+    }
+  }
 
   // ===== Meaty off-road wheels (visual track wider than body / physics) =====
   // Physics hardpoints stay on VEHICLE_CONFIG; mesh only is pushed out.
