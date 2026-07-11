@@ -278,6 +278,8 @@ export class GameApp {
             usedFallback: this.level.meta.usedFallback,
           });
         }
+        // clearUi() wiped TouchProvider DOM mounted during loadLevel — put it back.
+        if (root) this.touchProvider?.reattach(root);
         this.sessionActive = true;
         this.lastT = performance.now();
         this.acc = 0;
@@ -470,6 +472,8 @@ export class GameApp {
         this.hud?.dispose();
         this.hud = null;
       };
+      // clearUi() removed touch DOM created just above — reattach.
+      this.touchProvider?.reattach(root);
     }
   }
 

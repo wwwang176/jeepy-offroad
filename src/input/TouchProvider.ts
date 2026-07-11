@@ -106,6 +106,19 @@ export class TouchProvider implements InputProvider {
   }
 
   /**
+   * Re-append into #ui-root after clearUi() / innerHTML wipes.
+   * loadLevel mounts controls early; enter("playing") clears the root.
+   */
+  reattach(parent: HTMLElement): void {
+    if (this.root.parentElement !== parent) {
+      parent.appendChild(this.root);
+    }
+    this.suppressed = false;
+    this.syncVisibilityFromViewport();
+    this.updateOrientationClass();
+  }
+
+  /**
    * Force-hide (result screen) or re-enable RWD auto visibility.
    * While suppressed, resize will not bring controls back.
    */
