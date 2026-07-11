@@ -42,8 +42,8 @@ export class TouchProvider implements InputProvider {
     this.root.className = "touch-controls";
     this.root.setAttribute("aria-hidden", "true");
     this.root.innerHTML = `
-      <div class="touch-rotate-hint" data-touch-rotate>
-        <span>Rotate to landscape</span>
+      <div class="touch-rotate-mask" data-touch-rotate aria-live="polite">
+        <span class="touch-rotate-mask-text">請旋轉畫面</span>
       </div>
       <div class="touch-stick" data-touch-stick>
         <div class="touch-stick-ring"></div>

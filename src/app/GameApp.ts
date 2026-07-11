@@ -39,6 +39,7 @@ import {
   updateHudDrive,
   type HudHandles,
 } from "@/ui/hud";
+import { requestGameFullscreen } from "@/ui/fullscreen";
 import type { BiomeId } from "@/shared/types";
 import type { InputActions } from "@/input/types";
 import {
@@ -228,10 +229,13 @@ export class GameApp {
         if (root) {
           this.uiUnmount = mountMenu(root, {
             onStart: ({ biomeId, seed }) => {
+              // Must run in the tap gesture so mobile browsers allow fullscreen.
+              void requestGameFullscreen();
               this.dispatch({ type: "START", biomeId, seed });
             },
             // ROAD card → flat paved practice sandbox
             onRoad: () => {
+              void requestGameFullscreen();
               void this.startFlatSandbox();
             },
           });

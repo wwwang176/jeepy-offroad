@@ -644,33 +644,36 @@ button.btn-ghost:active:not(:disabled),
 .touch-controls.is-visible {
   display: block;
 }
-/* Portrait: dim controls and block input until landscape (hint only). */
+/* Portrait: block drive input under full-screen rotate mask. */
 .touch-controls.is-portrait .touch-stick,
 .touch-controls.is-portrait .touch-pedals,
 .touch-controls.is-portrait .touch-actions {
-  opacity: 0.28;
+  opacity: 0.2;
   pointer-events: none;
 }
-.touch-rotate-hint {
+/* Full-viewport dim mask (not a small toast). */
+.touch-rotate-mask {
   display: none;
   position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 30;
-  padding: 14px 20px;
-  border-radius: 10px;
-  background: rgba(10, 12, 14, 0.88);
-  border: 1px solid rgba(201, 160, 74, 0.55);
-  color: #f0d090;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-align: center;
-  pointer-events: none;
+  inset: 0;
+  z-index: 40;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  pointer-events: auto;
+  touch-action: none;
 }
-.touch-controls.is-portrait .touch-rotate-hint {
-  display: block;
+.touch-controls.is-portrait .touch-rotate-mask {
+  display: flex;
+}
+.touch-rotate-mask-text {
+  color: #f2f2f2;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+  padding: 0 20px;
+  text-align: center;
 }
 .touch-stick {
   position: absolute;
@@ -751,19 +754,24 @@ button.btn-ghost:active:not(:disabled),
   background: rgba(180, 80, 60, 0.5);
   border-color: rgba(255, 150, 120, 0.7);
 }
+/* Bottom-center row: 4H / CAM / R between stick and pedals. */
 .touch-actions {
   position: absolute;
-  right: calc(16px + env(safe-area-inset-right, 0px));
-  bottom: calc(200px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
   gap: 10px;
   pointer-events: auto;
+  z-index: 21;
 }
 .touch-btn {
-  min-width: 56px;
-  height: 44px;
-  padding: 0 10px;
+  min-width: 52px;
+  height: 42px;
+  padding: 0 12px;
   border-radius: 10px;
   border: 1px solid rgba(201, 160, 74, 0.55);
   background: rgba(12, 16, 18, 0.55);
@@ -798,11 +806,13 @@ button.btn-ghost:active:not(:disabled),
     font-size: 22px;
   }
   .touch-actions {
-    bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    gap: 8px;
   }
   .touch-btn {
-    height: 38px;
-    min-width: 50px;
+    height: 36px;
+    min-width: 48px;
     font-size: 12px;
+    padding: 0 10px;
   }
 }
