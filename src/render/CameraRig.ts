@@ -13,7 +13,21 @@ export type CameraPose = {
 /** Match original spring-arm: back 8m, up 3.5m. */
 const TP_DIST_DEFAULT = Math.hypot(8, 3.5);
 const TP_DEFAULT_PITCH = Math.atan2(3.5, 8);
-const LOOK_SENS = 0.005; // rad per pixel
+/** Must match `setMode` FOV values (deg). */
+const TP_FOV_DEG = 55;
+const FP_FOV_DEG = 72;
+/** Base look sens calibrated for third-person FOV (rad per pixel). */
+const LOOK_SENS = 0.005;
+/**
+ * FP uses wider FOV → same angular step sweeps less of the frame.
+ * Scale by tan(halfFov) so on-screen pan speed matches third-person,
+ * then /2 — FOV-only match still felt too fast in cabin view.
+ */
+const FP_LOOK_SENS =
+  (LOOK_SENS *
+    (Math.tan(((FP_FOV_DEG / 2) * Math.PI) / 180) /
+      Math.tan(((TP_FOV_DEG / 2) * Math.PI) / 180))) /
+  2;
 const TP_PITCH_MIN = 0.08;
 const TP_PITCH_MAX = 1.35;
 const FP_PITCH_MIN = -1.2;
@@ -37,7 +51,7 @@ export class CameraRig {
   private readonly current = new THREE.Vector3();
   private lookInitialized = false;
   /** Cabin eye in chassis local space (+Z = vehicle forward). */
-  private readonly eyeLocal = new THREE.Vector3(0, 1.25, 0.25);
+  private readonly eyeLocal = new THREE.Vector3(0, 1.15, 0.25);
   private readonly tmp = new THREE.Vector3();
   private readonly chassisQuat = new THREE.Quaternion();
   private readonly lookExtra = new THREE.Quaternion();
@@ -73,7 +87,7 @@ export class CameraRig {
 
   setMode(mode: CameraMode): void {
     this.mode = mode;
-    this.camera.fov = mode === "third" ? 55 : 72;
+    this.camera.fov = mode === "third" ? TP_FOV_DEG : FP_FOV_DEG;
     this.camera.updateProjectionMatrix();
     // Snap follow camera when entering third person
     if (mode === "third") {
@@ -113,10 +127,11 @@ export class CameraRig {
       return;
     }
     // Drive targets only; smoothed angles catch up in update().
-    this.fpYawTarget -= dx * LOOK_SENS;
+    // FOV-scaled so drag feels like third-person on-screen.
+    this.fpYawTarget -= dx * FP_LOOK_SENS;
     // Drag up (dy < 0) → look up (standard mouse-look).
     this.fpPitchTarget = clamp(
-      this.fpPitchTarget - dy * LOOK_SENS,
+      this.fpPitchTarget - dy * FP_LOOK_SENS,
       FP_PITCH_MIN,
       FP_PITCH_MAX,
     );
