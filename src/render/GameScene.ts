@@ -263,9 +263,8 @@ type PalmParts = {
 };
 
 /**
- * Local-space palm parts (ground at y=0), copied from island-conquest
- * `Island._generateVegetation` trunk bend + 6 BufferGeometry fronds.
- * Includes swayFactor / swayPhase for gentle wind (same scheme as reference).
+ * Local-space palm parts (ground at y=0), matched to island-conquest
+ * `Island._generateVegetation`: trunk bend + 6 fronds with sway + bob.
  */
 function buildCoconutPalmParts(rng: () => number): PalmParts {
   const trunkH = 6 + Math.abs(rng()) * 4.5;
@@ -326,7 +325,36 @@ function buildCoconutPalmParts(rng: () => number): PalmParts {
     );
     frondGeo.setAttribute(
       "swayPhase",
-      new THREE.BufferAttribute(new Float32Array(4).fill(treePhase + f * 0.2), 1),
+      new THREE.BufferAttribute(new Float32Array(4).fill(treePhase), 1),
+    );
+    // Per-frond bob phase (~60° apart) — island-conquest
+    frondGeo.setAttribute(
+      "bobPhase",
+      new THREE.BufferAttribute(
+        new Float32Array(4).fill(treePhase + f * 1.047),
+        1,
+      ),
+    );
+    // Anchor = frond base (tree tip) before world bake; bakePalmWorld transforms it
+    frondGeo.setAttribute(
+      "anchor",
+      new THREE.BufferAttribute(
+        new Float32Array([
+          topX,
+          topY,
+          topZ,
+          topX,
+          topY,
+          topZ,
+          topX,
+          topY,
+          topZ,
+          topX,
+          topY,
+          topZ,
+        ]),
+        3,
+      ),
     );
     frondGeo.translate(topX, topY, topZ);
     frondGeo.computeVertexNormals();
@@ -336,33 +364,60 @@ function buildCoconutPalmParts(rng: () => number): PalmParts {
   return { trunk, fronds };
 }
 
+/** GLSL vertex injection shared by color + depth palm materials. */
+function palmSwayBeginVertexGlsl(withBob: boolean): string {
+  if (withBob) {
+    // island-conquest frond path: rotate about tip, then XZ wind
+    return /* glsl */ `#include <begin_vertex>
+vec3 off = transformed - anchor;
+float rAx = sin(uSwayTime * 2.0 + bobPhase * 2.3) * 0.08;
+float crx = cos(rAx), srx = sin(rAx);
+vec3 r1 = vec3(off.x, off.y * crx - off.z * srx, off.y * srx + off.z * crx);
+float rAz = sin(uSwayTime * 1.7 + bobPhase * 1.9) * 0.08;
+float crz = cos(rAz), srz = sin(rAz);
+transformed = anchor + vec3(r1.x * crz - r1.y * srz, r1.x * srz + r1.y * crz, r1.z);
+transformed.x += sin(uSwayTime * 1.5 + swayPhase) * 0.2 * swayFactor;
+transformed.z += sin(uSwayTime * 1.1 + swayPhase * 1.7) * 0.15 * swayFactor;
+`;
+  }
+  return /* glsl */ `#include <begin_vertex>
+transformed.x += sin(uSwayTime * 1.5 + swayPhase) * 0.2 * swayFactor;
+transformed.z += sin(uSwayTime * 1.1 + swayPhase * 1.7) * 0.15 * swayFactor;
+`;
+}
+
+function palmSwayCommonGlsl(withBob: boolean): string {
+  return (
+    /* glsl */ `#include <common>
+attribute float swayFactor;
+attribute float swayPhase;
+uniform float uSwayTime;
+` + (withBob ? /* glsl */ `attribute float bobPhase;
+attribute vec3 anchor;
+` : "")
+  );
+}
+
 /**
- * Gentle wind via onBeforeCompile — same idea as island-conquest palm sway
- * (sin offsets weighted by swayFactor / phase). Amplitude kept mild.
+ * Palm wind via onBeforeCompile — matched to island-conquest Island.js.
+ * Trunk: XZ sway only. Fronds (withBob): tip rotation bob + XZ sway.
  */
 function createPalmSwayMaterial(
   params: THREE.MeshLambertMaterialParameters,
   swayTime: { value: number },
   cacheKey: string,
+  withBob = false,
 ): THREE.MeshLambertMaterial {
   const mat = new THREE.MeshLambertMaterial(params);
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uSwayTime = swayTime;
     shader.vertexShader = shader.vertexShader.replace(
       "#include <common>",
-      /* glsl */ `#include <common>
-attribute float swayFactor;
-attribute float swayPhase;
-uniform float uSwayTime;
-`,
+      palmSwayCommonGlsl(withBob),
     );
     shader.vertexShader = shader.vertexShader.replace(
       "#include <begin_vertex>",
-      /* glsl */ `#include <begin_vertex>
-// Mild wind (≈ half of island-conquest reference amp)
-transformed.x += sin(uSwayTime * 1.5 + swayPhase) * 0.12 * swayFactor;
-transformed.z += sin(uSwayTime * 1.1 + swayPhase * 1.7) * 0.09 * swayFactor;
-`,
+      palmSwayBeginVertexGlsl(withBob),
     );
   };
   mat.customProgramCacheKey = () => cacheKey;
@@ -371,6 +426,7 @@ transformed.z += sin(uSwayTime * 1.1 + swayPhase * 1.7) * 0.09 * swayFactor;
 
 function createPalmSwayDepthMaterial(
   swayTime: { value: number },
+  withBob = false,
 ): THREE.MeshDepthMaterial {
   const mat = new THREE.MeshDepthMaterial({
     depthPacking: THREE.RGBADepthPacking,
@@ -379,21 +435,15 @@ function createPalmSwayDepthMaterial(
     shader.uniforms.uSwayTime = swayTime;
     shader.vertexShader = shader.vertexShader.replace(
       "#include <common>",
-      /* glsl */ `#include <common>
-attribute float swayFactor;
-attribute float swayPhase;
-uniform float uSwayTime;
-`,
+      palmSwayCommonGlsl(withBob),
     );
     shader.vertexShader = shader.vertexShader.replace(
       "#include <begin_vertex>",
-      /* glsl */ `#include <begin_vertex>
-transformed.x += sin(uSwayTime * 1.5 + swayPhase) * 0.12 * swayFactor;
-transformed.z += sin(uSwayTime * 1.1 + swayPhase * 1.7) * 0.09 * swayFactor;
-`,
+      palmSwayBeginVertexGlsl(withBob),
     );
   };
-  mat.customProgramCacheKey = () => "palm-sway-depth-v1";
+  mat.customProgramCacheKey = () =>
+    withBob ? "palm-sway-depth-bob-v2" : "palm-sway-depth-v2";
   return mat;
 }
 
@@ -412,6 +462,17 @@ function bakePalmWorld(
     new THREE.Vector3(scale, scale, scale),
   );
   geo.applyMatrix4(m);
+  // applyMatrix4 only moves position/normal — keep frond tip anchor in world space
+  const anchor = geo.getAttribute("anchor");
+  if (anchor && "isBufferAttribute" in anchor) {
+    const v = new THREE.Vector3();
+    for (let i = 0; i < anchor.count; i++) {
+      v.fromBufferAttribute(anchor as THREE.BufferAttribute, i);
+      v.applyMatrix4(m);
+      (anchor as THREE.BufferAttribute).setXYZ(i, v.x, v.y, v.z);
+    }
+    anchor.needsUpdate = true;
+  }
   return geo;
 }
 
@@ -781,8 +842,9 @@ function createDecorativeProps(
     }
   }
 
-  // --- Merged palm batches (2–3 draw calls) + shared wind materials ---
-  const swayDepth = createPalmSwayDepthMaterial(palmSwayTime);
+  // --- Merged palm batches + wind (trunk XZ sway; fronds bob+sway like island) ---
+  const swayDepthTrunk = createPalmSwayDepthMaterial(palmSwayTime, false);
+  const swayDepthFrond = createPalmSwayDepthMaterial(palmSwayTime, true);
   const trunkMerged = mergeOrNull(palmTrunks);
   if (trunkMerged) {
     const mesh = new THREE.Mesh(
@@ -790,12 +852,13 @@ function createDecorativeProps(
       createPalmSwayMaterial(
         { color: 0x8b6508, flatShading: true },
         palmSwayTime,
-        "palm-sway-trunk-v1",
+        "palm-sway-trunk-v2",
+        false,
       ),
     );
     mesh.name = "palms-trunks";
     mesh.castShadow = true;
-    mesh.customDepthMaterial = swayDepth;
+    mesh.customDepthMaterial = swayDepthTrunk;
     group.add(mesh);
   }
   const frondMerged = mergeOrNull(palmFronds);
@@ -809,12 +872,14 @@ function createDecorativeProps(
           flatShading: true,
         },
         palmSwayTime,
-        "palm-sway-frond-v1",
+        "palm-sway-frond-bob-v2",
+        true,
       ),
     );
     mesh.name = "palms-fronds";
     mesh.castShadow = true;
-    mesh.customDepthMaterial = swayDepth;
+    // Bob on depth too so shadows follow frond motion
+    mesh.customDepthMaterial = swayDepthFrond;
     group.add(mesh);
   }
 
