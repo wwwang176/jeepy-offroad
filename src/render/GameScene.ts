@@ -984,18 +984,22 @@ export function createGameScene(
   setShadowFlags(propGroup, { cast: true, receive: false });
   scene.add(propGroup);
 
-  // Simple path markers (start pad)
-  const startPad = new THREE.Mesh(
-    new THREE.CylinderGeometry(2.5, 2.5, 0.15, 16),
-    new THREE.MeshLambertMaterial({ color: 0x66aaff }),
+  // Start marker: flat blue ring (not a solid disc)
+  const startRing = new THREE.Mesh(
+    new THREE.RingGeometry(2.0, 2.55, 48),
+    new THREE.MeshLambertMaterial({
+      color: 0x66aaff,
+      side: THREE.DoubleSide,
+    }),
   );
-  startPad.position.set(
+  startRing.rotation.x = -Math.PI / 2;
+  startRing.position.set(
     level.start.position.x,
-    level.start.position.y + 0.05,
+    level.start.position.y + 0.08,
     level.start.position.z,
   );
-  startPad.receiveShadow = true;
-  scene.add(startPad);
+  startRing.receiveShadow = true;
+  scene.add(startRing);
 
   const jeepMesh = createJeepMesh();
   setShadowFlags(jeepMesh, { cast: true, receive: true });
