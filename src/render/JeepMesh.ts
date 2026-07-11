@@ -331,20 +331,21 @@ export function createJeepMesh(): THREE.Group {
   box(g, bodyW * 0.98, 0.14 * bodyScaleY, cowlLz, PAL.body, 0, hoodY, cowlCz, "cowl");
   box(g, bodyW * 0.9, 0.04, 0.08, PAL.bodyShade, 0, hoodY + 0.08, cowlCz);
 
-  // ===== Front fenders (outer skins — outside tub half-width, no tub pierce) =====
-  // Tub X∈[-halfW,+halfW]; keep fender fully exterior with a 1cm gap.
-  const fenderW = 0.12;
-  const fenderX = halfW + fenderW * 0.5 + 0.01; // outer face past body
+  // ===== Front fenders (white shoulder bulk, inset inside body half-width) =====
+  // Must stay inside |X|<halfW so they clear black wheel-arch flares
+  // (flares sit at halfW+xOff ≈ outer lip). Y unchanged from original.
+  // These intentionally sit in the tub-front volume as solid fill for the
+  // low-poly nose shoulder — not outer skins (outer skins fight the arches).
   for (const sx of [-1, 1]) {
     box(
       g,
-      fenderW,
+      0.22,
       0.34 * bodyScaleY,
-      0.58,
+      0.62,
       PAL.body,
-      sx * fenderX,
+      sx * (halfW - 0.2),
       0.18 * bodyScaleY,
-      0.92,
+      0.95,
       sx < 0 ? "fender-L" : "fender-R",
     );
   }
