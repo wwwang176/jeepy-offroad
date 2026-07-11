@@ -151,15 +151,23 @@ button.btn-ghost:active:not(:disabled),
   z-index: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   /* Left column inside the 1000px shell (~40% of shell) */
   width: 40%;
   min-width: 260px;
   max-width: 400px;
-  min-height: 100%;
+  min-height: 0;
   height: 100%;
+  max-height: 100%;
   padding: clamp(28px, 6vh, 56px) clamp(22px, 3vw, 36px);
   box-sizing: border-box;
+  /* Scroll when home/select content is taller than the viewport */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-gutter: stable;
 }
 /* Logo only on stage 1 (home), stacked above CTA */
 .menu-brand {
@@ -169,16 +177,19 @@ button.btn-ghost:active:not(:disabled),
   pointer-events: none;
   margin-bottom: 8px;
 }
-/* Buttons / cards vertically centered in the 40% column */
+/*
+ * Grow with content; min-height fills column so short menus stay vertically
+ * centered, tall menus expand and .menu-left scrolls.
+ */
 .menu-center {
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: flex-start;
   width: 100%;
-  flex: 1 1 auto;
-  min-height: 0;
-  padding-bottom: 48px; /* clear absolute hints */
+  flex: 1 0 auto;
+  min-height: calc(100% - 3.5rem);
+  padding-bottom: 12px;
 }
 .menu-stage-home {
   gap: 28px;
@@ -359,11 +370,12 @@ button.btn-ghost:active:not(:disabled),
   padding: 6px 12px;
 }
 .menu-hints {
-  position: absolute;
-  left: clamp(22px, 3vw, 36px);
-  right: clamp(22px, 3vw, 36px);
-  bottom: clamp(18px, 3.5vh, 32px);
-  margin: 0;
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  margin: 16px 0 0;
+  flex: 0 0 auto;
   font-size: 11px;
   opacity: 0.55;
   line-height: 1.45;
@@ -391,13 +403,13 @@ button.btn-ghost:active:not(:disabled),
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    justify-content: flex-end;
-    padding-bottom: 28px;
+    padding-bottom: max(28px, env(safe-area-inset-bottom, 0px));
   }
   .menu-center {
-    justify-content: flex-end;
+    justify-content: flex-start;
+    min-height: auto;
     padding-top: 24px;
-    padding-bottom: 56px;
+    padding-bottom: 24px;
   }
   .menu-card {
     width: 100%;
