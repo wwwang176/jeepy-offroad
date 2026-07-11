@@ -1,11 +1,15 @@
 /**
  * Request browser fullscreen for the game shell.
- * Must be called from a user gesture (tap "開始遊戲") when possible.
+ * Must be called from a user gesture (tap start / throttle pedals) when possible.
  * iOS Safari may ignore; failures are silent.
  */
 export async function requestGameFullscreen(): Promise<void> {
   if (typeof document === "undefined") return;
-  if (document.fullscreenElement) return;
+
+  const doc = document as Document & {
+    webkitFullscreenElement?: Element | null;
+  };
+  if (doc.fullscreenElement || doc.webkitFullscreenElement) return;
 
   const el = document.documentElement as HTMLElement & {
     webkitRequestFullscreen?: () => void;

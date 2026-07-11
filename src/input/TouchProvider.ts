@@ -1,5 +1,6 @@
 import type { DriveRange } from "@/shared/driveTrain";
 import { DRIVE_RANGES } from "@/shared/driveTrain";
+import { requestGameFullscreen } from "@/ui/fullscreen";
 import type { InputProvider, ProviderSample } from "./types";
 import { prefersTouchUi, stickSteerFromOffset } from "./touchMath";
 
@@ -260,6 +261,8 @@ export class TouchProvider implements InputProvider {
       if (kind === "rev" && this.revDown) return;
       e.preventDefault();
       e.stopPropagation();
+      // Re-enter fullscreen from this gesture (browser may have exited).
+      void requestGameFullscreen();
       try {
         el.setPointerCapture?.(e.pointerId);
       } catch {
