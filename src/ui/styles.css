@@ -798,13 +798,12 @@ button.btn-ghost:active:not(:disabled),
   cursor: pointer;
   outline: none;
 }
-.touch-pedal-gas.is-active {
-  background: rgba(60, 160, 90, 0.55);
-  border-color: rgba(120, 230, 150, 0.75);
-}
+/* Forward / reverse: same gold press highlight as brand primary */
+.touch-pedal-gas.is-active,
 .touch-pedal-rev.is-active {
-  background: rgba(180, 80, 60, 0.5);
-  border-color: rgba(255, 150, 120, 0.7);
+  background: rgba(201, 160, 74, 0.45);
+  border-color: rgba(232, 200, 120, 0.85);
+  color: #fff0c8;
 }
 /* Bottom-center row: 4H / CAM / R between stick and pedals. */
 .touch-actions {
