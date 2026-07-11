@@ -1,10 +1,15 @@
+import { prefersTouchUi } from "@/input/touchMath";
+
 /**
  * Request browser fullscreen for the game shell.
- * Must be called from a user gesture (tap start / throttle pedals) when possible.
+ * Mobile / narrow RWD only (same breakpoint as on-screen controls).
+ * Desktop stays windowed. Must be called from a user gesture when possible.
  * iOS Safari may ignore; failures are silent.
  */
 export async function requestGameFullscreen(): Promise<void> {
   if (typeof document === "undefined") return;
+  // Computer / wide layout: never enter browser fullscreen.
+  if (!prefersTouchUi()) return;
 
   const doc = document as Document & {
     webkitFullscreenElement?: Element | null;

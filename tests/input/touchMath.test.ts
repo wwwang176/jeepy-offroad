@@ -28,41 +28,21 @@ describe("stickSteerFromOffset", () => {
 describe("prefersTouchUi (RWD max-width)", () => {
   it("true when viewport is at or below breakpoint", () => {
     expect(
-      prefersTouchUi(
-        (q) => ({
-          matches: q.includes(`max-width: ${TOUCH_UI_MAX_WIDTH_PX}px`),
-        }),
-        { search: "" },
-      ),
+      prefersTouchUi((q) => ({
+        matches: q.includes(`max-width: ${TOUCH_UI_MAX_WIDTH_PX}px`),
+      })),
     ).toBe(true);
   });
 
   it("false when viewport is wider than breakpoint", () => {
-    expect(prefersTouchUi(() => ({ matches: false }), { search: "" })).toBe(
-      false,
-    );
-  });
-
-  it("true with ?touch=1 force flag", () => {
-    expect(
-      prefersTouchUi(() => ({ matches: false }), { search: "?touch=1" }),
-    ).toBe(true);
-  });
-
-  it("false with ?touch=0 even if narrow", () => {
-    expect(
-      prefersTouchUi(() => ({ matches: true }), { search: "?touch=0" }),
-    ).toBe(false);
+    expect(prefersTouchUi(() => ({ matches: false }))).toBe(false);
   });
 
   it("false when matchMedia throws", () => {
     expect(
-      prefersTouchUi(
-        () => {
-          throw new Error("no mq");
-        },
-        { search: "" },
-      ),
+      prefersTouchUi(() => {
+        throw new Error("no mq");
+      }),
     ).toBe(false);
   });
 });

@@ -19,36 +19,24 @@ export function stickSteerFromOffset(
 
 /**
  * Breakpoint (px) at/below which on-screen drive controls are shown.
- * RWD-only: no pointer/hover/maxTouchPoints heuristics.
- * Override with `?touch=1` / `?controls=1` (force on) or `?touch=0` (force off).
+ * RWD-only: no pointer/hover/maxTouchPoints or query-string overrides.
  */
 export const TOUCH_UI_MAX_WIDTH_PX = 900;
 
 /**
  * Show virtual controls when the layout is "phone/tablet width".
  * Pure RWD via max-width — matches how HUD/CSS already reflow.
+ * Also gates mobile-only fullscreen.
  */
 export function prefersTouchUi(
   matchMedia: (q: string) => { matches: boolean } = globalThis.matchMedia?.bind(
     globalThis,
   ) ?? (() => ({ matches: false })),
   opts?: {
-    search?: string;
     maxWidthPx?: number;
   },
 ): boolean {
   try {
-    const search =
-      opts?.search ??
-      (typeof location !== "undefined" ? location.search : "");
-    const params = new URLSearchParams(search);
-    if (params.get("touch") === "1" || params.get("controls") === "1") {
-      return true;
-    }
-    if (params.get("touch") === "0") {
-      return false;
-    }
-
     const maxW = opts?.maxWidthPx ?? TOUCH_UI_MAX_WIDTH_PX;
     return matchMedia(`(max-width: ${maxW}px)`).matches;
   } catch {
