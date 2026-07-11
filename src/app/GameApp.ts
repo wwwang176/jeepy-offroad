@@ -470,8 +470,29 @@ export class GameApp {
       const dt = Math.min(0.05, (t - this.lastT) / 1000);
       this.lastT = t;
       this.acc += dt;
+
+      // Sample once per render frame so look is never stuck waiting on fixed steps.
+      // (Previously sample+applyLook lived only inside the while — skip a step and
+      // drag deltas sat uncleared / unapplied until the next physics tick.)
+      const actions = this.input.sample();
+      if (actions.cameraToggle && this.cameraRig) {
+        this.cameraRig.toggle();
+        // FP cabin view: hide windshield / side / rear glass
+        if (this.jeepMesh) {
+          setJeepGlassVisible(
+            this.jeepMesh,
+            this.cameraRig.mode !== "first",
+          );
+        }
+      }
+      if (this.cameraRig) {
+        this.cameraRig.applyLookDelta(
+          actions.lookDeltaX,
+          actions.lookDeltaY,
+        );
+      }
+
       while (this.acc >= FIXED_DT) {
-        const actions = this.input.sample();
         const poseBefore = this.vehicle.getPose();
 
         if (this.sessionMode === "level" && this.checkpointSystem) {
@@ -482,23 +503,6 @@ export class GameApp {
             FIXED_DT,
             poseBefore.position,
             actions,
-          );
-        }
-
-        if (actions.cameraToggle && this.cameraRig) {
-          this.cameraRig.toggle();
-          // FP cabin view: hide windshield / side / rear glass
-          if (this.jeepMesh) {
-            setJeepGlassVisible(
-              this.jeepMesh,
-              this.cameraRig.mode !== "first",
-            );
-          }
-        }
-        if (this.cameraRig) {
-          this.cameraRig.applyLookDelta(
-            actions.lookDeltaX,
-            actions.lookDeltaY,
           );
         }
 

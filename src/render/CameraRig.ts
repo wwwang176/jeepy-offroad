@@ -20,6 +20,8 @@ const FP_PITCH_MIN = -1.2;
 const FP_PITCH_MAX = 1.2;
 /** First-person free-look follow rate (higher = snappier). */
 const FP_LOOK_SMOOTH = 14;
+/** Third-person orbit look follow rate (mouse yaw/pitch ease). */
+const TP_LOOK_SMOOTH = 14;
 
 /**
  * Third-person vertical / look-pitch ease rate (higher = snappier).
@@ -49,10 +51,13 @@ export class CameraRig {
     Math.PI,
   );
 
-  /** Third-person orbit relative to vehicle yaw (rad). */
+  /** Third-person orbit relative to vehicle yaw (rad, smoothed). */
   private orbitYaw = 0;
-  /** Third-person elevation angle from horizontal (rad). */
+  /** Third-person elevation angle from horizontal (rad, smoothed). */
   private orbitPitch = TP_DEFAULT_PITCH;
+  /** Mouse targets; `update` eases `orbitYaw`/`orbitPitch` toward these. */
+  private orbitYawTarget = 0;
+  private orbitPitchTarget = TP_DEFAULT_PITCH;
   /** Spring-arm length (m). */
   private orbitDist = TP_DIST_DEFAULT;
   /** First-person free look (smoothed) relative to chassis (rad). */
@@ -75,6 +80,9 @@ export class CameraRig {
       this.current.copy(this.camera.position);
       // Next update will hard-snap look to vehicle (avoid stale look from FP)
       this.lookInitialized = false;
+      // No lag from previous session's orbit targets
+      this.orbitYaw = this.orbitYawTarget;
+      this.orbitPitch = this.orbitPitchTarget;
     } else {
       // Entering FP: no lag from previous third-person session
       this.fpYaw = this.fpYawTarget;
@@ -93,11 +101,12 @@ export class CameraRig {
   applyLookDelta(dx: number, dy: number): void {
     if (dx === 0 && dy === 0) return;
     if (this.mode === "third") {
+      // Drive targets only; smoothed angles catch up in update().
       // Drag right → orbit so the view pans right around the jeep.
-      this.orbitYaw -= dx * LOOK_SENS;
+      this.orbitYawTarget -= dx * LOOK_SENS;
       // Drag up (negative dy) → lower pitch → more level / hood view.
-      this.orbitPitch = clamp(
-        this.orbitPitch + dy * LOOK_SENS,
+      this.orbitPitchTarget = clamp(
+        this.orbitPitchTarget + dy * LOOK_SENS,
         TP_PITCH_MIN,
         TP_PITCH_MAX,
       );
@@ -117,6 +126,8 @@ export class CameraRig {
   resetLook(): void {
     this.orbitYaw = 0;
     this.orbitPitch = TP_DEFAULT_PITCH;
+    this.orbitYawTarget = 0;
+    this.orbitPitchTarget = TP_DEFAULT_PITCH;
     this.fpYaw = 0;
     this.fpPitch = 0;
     this.fpYawTarget = 0;
@@ -126,11 +137,15 @@ export class CameraRig {
   /**
    * Absolute third-person orbit. Useful for visual QA screenshots.
    * orbitYaw/pitch in radians (relative to vehicle yaw); optional arm length m.
+   * Snaps both current and target (no ease lag).
    */
   setOrbit(orbitYaw: number, orbitPitch?: number, dist?: number): void {
     this.orbitYaw = orbitYaw;
+    this.orbitYawTarget = orbitYaw;
     if (orbitPitch != null) {
-      this.orbitPitch = clamp(orbitPitch, TP_PITCH_MIN, TP_PITCH_MAX);
+      const p = clamp(orbitPitch, TP_PITCH_MIN, TP_PITCH_MAX);
+      this.orbitPitch = p;
+      this.orbitPitchTarget = p;
     }
     if (dist != null && dist > 0.5) {
       this.orbitDist = dist;
@@ -143,6 +158,16 @@ export class CameraRig {
 
   update(dt: number, pose: CameraPose, opts?: { snap?: boolean }): void {
     if (this.mode === "third") {
+      // Ease orbit look toward mouse targets (exponential, frame-rate independent)
+      if (opts?.snap || dt <= 0 || !this.lookInitialized) {
+        this.orbitYaw = this.orbitYawTarget;
+        this.orbitPitch = this.orbitPitchTarget;
+      } else {
+        const lookK = 1 - Math.exp(-TP_LOOK_SMOOTH * dt);
+        this.orbitYaw += (this.orbitYawTarget - this.orbitYaw) * lookK;
+        this.orbitPitch += (this.orbitPitchTarget - this.orbitPitch) * lookK;
+      }
+
       const yaw = pose.yaw + this.orbitYaw;
       const pitch = this.orbitPitch;
       const dist = this.orbitDist;
