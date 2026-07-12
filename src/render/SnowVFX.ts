@@ -1,9 +1,10 @@
 import * as THREE from "three";
+import { createSoftDiscTexture } from "./particles/softDiscTexture";
 
 /**
- * Alpine snow atmosphere: falling + near-ground blowing snow.
- * Both use thin rain-like streaks aligned to **per-particle motion**
- * (down when falling / following terrain downhill).
+ * Alpine snow atmosphere:
+ * - Falling: soft round flakes (discs)
+ * - Near-ground blow: thin streaks aligned to per-particle velocity
  */
 
 const FALL_COUNT = 350;
@@ -28,7 +29,7 @@ const DEAD_Y = -9999;
 
 /**
  * Streaks follow attribute aDir (world motion). Same projection as RainVFX.
- * Extra-thin core for airflow / fine snow threads.
+ * Extra-thin core for airflow / fine snow threads (ground blow only).
  */
 const streakVertexShader = /* glsl */ `
 attribute vec3 aDir;
@@ -49,7 +50,6 @@ void main() {
   vStreakDir = len > 0.001 ? sv / len : vec2(0.0, -1.0);
   float cosAim = abs(dot(normalize(vd), normalize(vp)));
   float streakScale = 1.0 - cosAim * 0.9;
-  // Slightly smaller points = finer threads
   gl_PointSize = max(2.0, 11.0 * streakScale * (200.0 / negZ));
   gl_Position = projectionMatrix * mvPosition;
 }
@@ -64,7 +64,6 @@ void main() {
   float along = dot(uv, dir);
   vec2 perp = uv - along * dir;
   float across = length(perp);
-  // Very thin line
   float maskAcross = smoothstep(0.035, 0.0, across);
   float maskAlong = smoothstep(0.5, 0.04, abs(along));
   float mask = maskAcross * maskAlong;
@@ -88,8 +87,7 @@ export class SnowVFX {
   private readonly fallPos: Float32Array;
   private readonly fallSpeed: Float32Array;
   private readonly fallPhase: Float32Array;
-  private readonly fallOpacity: Float32Array;
-  private readonly fallDir: Float32Array;
+  private readonly fallSize: Float32Array;
   private readonly fallGeo: THREE.BufferGeometry;
   private readonly fallMesh: THREE.Points;
 
@@ -101,6 +99,7 @@ export class SnowVFX {
   private readonly blowGeo: THREE.BufferGeometry;
   private readonly blowMesh: THREE.Points;
 
+  private readonly sharedTex: THREE.CanvasTexture;
   private time = 0;
 
   constructor(scene: THREE.Scene, opts: SnowVFXOptions) {
@@ -109,13 +108,13 @@ export class SnowVFX {
     const dens = Math.max(0.25, Math.min(2, opts.density ?? 1));
     this.fallCount = Math.max(80, Math.floor(FALL_COUNT * dens));
     this.blowCount = Math.max(60, Math.floor(BLOW_COUNT * dens));
+    this.sharedTex = createSoftDiscTexture(48);
 
-    // --- Falling (streaks, motion mostly downward) ---
+    // --- Falling: soft round flakes ---
     this.fallPos = new Float32Array(this.fallCount * 3);
     this.fallSpeed = new Float32Array(this.fallCount);
     this.fallPhase = new Float32Array(this.fallCount);
-    this.fallOpacity = new Float32Array(this.fallCount);
-    this.fallDir = new Float32Array(this.fallCount * 3);
+    this.fallSize = new Float32Array(this.fallCount);
     for (let i = 0; i < this.fallCount; i++) {
       this.fallPos[i * 3] = (Math.random() - 0.5) * FALL_AREA;
       this.fallPos[i * 3 + 1] = Math.random() * FALL_HEIGHT;
@@ -123,10 +122,7 @@ export class SnowVFX {
       this.fallSpeed[i] =
         FALL_SPEED_MIN + Math.random() * (FALL_SPEED_MAX - FALL_SPEED_MIN);
       this.fallPhase[i] = Math.random() * Math.PI * 2;
-      this.fallOpacity[i] = 0.4 + Math.random() * 0.55;
-      this.fallDir[i * 3] = FALL_WIND_X;
-      this.fallDir[i * 3 + 1] = -this.fallSpeed[i]!;
-      this.fallDir[i * 3 + 2] = FALL_WIND_Z;
+      this.fallSize[i] = 3.5 + Math.random() * 5.5;
     }
     this.fallGeo = new THREE.BufferGeometry();
     this.fallGeo.setAttribute(
@@ -134,18 +130,37 @@ export class SnowVFX {
       new THREE.BufferAttribute(this.fallPos, 3),
     );
     this.fallGeo.setAttribute(
-      "aDir",
-      new THREE.BufferAttribute(this.fallDir, 3),
-    );
-    this.fallGeo.setAttribute(
-      "aOpacity",
-      new THREE.BufferAttribute(this.fallOpacity, 1),
+      "aSize",
+      new THREE.BufferAttribute(this.fallSize, 1),
     );
     const fallMat = new THREE.ShaderMaterial({
-      vertexShader: streakVertexShader,
-      fragmentShader: streakFragmentShader,
+      uniforms: {
+        uTex: { value: this.sharedTex },
+        uColor: { value: new THREE.Color(0.95, 0.97, 1.0) },
+        uOpacity: { value: 0.78 },
+      },
+      vertexShader: /* glsl */ `
+        attribute float aSize;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = max(1.5, aSize * (180.0 / -mv.z));
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uTex;
+        uniform vec3 uColor;
+        uniform float uOpacity;
+        void main() {
+          vec4 t = texture2D(uTex, gl_PointCoord);
+          float a = t.a * uOpacity;
+          if (a < 0.02) discard;
+          gl_FragColor = vec4(uColor, a);
+        }
+      `,
       transparent: true,
       depthWrite: false,
+      blending: THREE.NormalBlending,
     });
     this.fallMesh = new THREE.Points(this.fallGeo, fallMat);
     this.fallMesh.name = "snow-fall";
@@ -153,7 +168,7 @@ export class SnowVFX {
     this.fallMesh.renderOrder = 4;
     scene.add(this.fallMesh);
 
-    // --- Ground blow (streaks, aDir = actual velocity each frame) ---
+    // --- Ground blow: thin streaks, aDir = velocity ---
     this.blowPos = new Float32Array(this.blowCount * 3);
     this.blowSpeed = new Float32Array(this.blowCount);
     this.blowPhase = new Float32Array(this.blowCount);
@@ -214,7 +229,6 @@ export class SnowVFX {
     camPos: { x: number; y: number; z: number },
   ): void {
     const pos = this.fallPos;
-    const dir = this.fallDir;
     const half = FALL_AREA * 0.5;
     const t = this.time;
 
@@ -224,19 +238,9 @@ export class SnowVFX {
       const spd = this.fallSpeed[i]!;
       const swayX = Math.sin(t * 1.6 + phase) * 0.55;
       const swayZ = Math.cos(t * 1.1 + phase) * 0.35;
-      const vx = FALL_WIND_X + swayX;
-      const vy = -spd;
-      const vz = FALL_WIND_Z + swayZ;
-
-      pos[i3]! += vx * dt;
-      pos[i3 + 1]! += vy * dt;
-      pos[i3 + 2]! += vz * dt;
-
-      // Streak points along motion (down when falling)
-      const inv = 1 / Math.max(1e-4, Math.hypot(vx, vy, vz));
-      dir[i3] = vx * inv;
-      dir[i3 + 1] = vy * inv;
-      dir[i3 + 2] = vz * inv;
+      pos[i3]! += (FALL_WIND_X + swayX) * dt;
+      pos[i3 + 1]! -= spd * dt;
+      pos[i3 + 2]! += (FALL_WIND_Z + swayZ) * dt;
 
       const dx = pos[i3]! - camPos.x;
       const dz = pos[i3 + 2]! - camPos.z;
@@ -255,7 +259,6 @@ export class SnowVFX {
       }
     }
     this.fallGeo.attributes.position!.needsUpdate = true;
-    this.fallGeo.attributes.aDir!.needsUpdate = true;
   }
 
   private updateBlow(
@@ -292,7 +295,6 @@ export class SnowVFX {
         (BLOW_HEIGHT_MAX - BLOW_HEIGHT_MIN) * (0.35 + 0.65 * ((i % 7) / 7)) +
         lift;
       pos[i3 + 1] = prevY * 0.85 + targetY * 0.15;
-      // Vertical from terrain follow — streak tilts down when ground drops
       const vy = (pos[i3 + 1]! - prevY) / Math.max(dt, 1e-4);
 
       const inv = 1 / Math.max(1e-4, Math.hypot(vx, vy, vz));
@@ -347,5 +349,7 @@ export class SnowVFX {
     this.scene.remove(this.blowMesh);
     this.blowGeo.dispose();
     (this.blowMesh.material as THREE.Material).dispose();
+
+    this.sharedTex.dispose();
   }
 }
