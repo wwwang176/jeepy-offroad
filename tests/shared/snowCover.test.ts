@@ -86,13 +86,48 @@ describe("placeSnowMounds", () => {
 
     expect(mounds.length).toBeGreaterThan(5);
     for (const m of mounds) {
-      expect(m.radius).toBeGreaterThan(2);
-      expect(m.peakThickness).toBeGreaterThan(0.1);
-      // Not on path centerline
-      expect(Math.abs(m.x)).toBeGreaterThan(2);
+      expect(m.radius).toBeGreaterThan(1);
+      expect(m.peakThickness).toBeGreaterThan(0.05);
     }
+    // Most centers off the path ribbon (x≈0); allow rare road snow
+    const offPath = mounds.filter((m) => Math.abs(m.x) > 4);
+    expect(offPath.length).toBeGreaterThan(mounds.length * 0.6);
     // At least some mounds on the high (+x) side
     const highSide = mounds.filter((m) => m.x > 10);
     expect(highSide.length).toBeGreaterThan(0);
+  });
+
+  it("can place occasional mounds on the path when chance is high", () => {
+    const resolution = 33;
+    const worldSize = 64;
+    const heightmap = new Float32Array(resolution * resolution).fill(20);
+    const pathPolyline = Array.from({ length: 20 }, (_, i) => ({
+      x: 0,
+      z: -25 + i * 2.5,
+    }));
+    const sampleY = () => 20;
+    // Force many attempts on a flat map; high pathSnowChance → some on ribbon
+    const mounds = placeSnowMounds({
+      heightmap,
+      resolution,
+      worldSize,
+      pathPolyline,
+      pathHalfWidth: 6,
+      cfg: {
+        ...cfg,
+        thickCount: 40,
+        patchCount: 40,
+        thickLineT: 0,
+        patchMinT: 0,
+        pathSnowChance: 1,
+        clearPath: true,
+      },
+      rng: mulberry32(7),
+      sampleY,
+    });
+    expect(mounds.length).toBeGreaterThan(0);
+    // With chance=1, on-path candidates are not rejected for path reason
+    const nearPath = mounds.filter((m) => Math.abs(m.x) < 5);
+    expect(nearPath.length).toBeGreaterThan(0);
   });
 });

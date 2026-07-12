@@ -53,7 +53,9 @@ export const alpineBiome: BiomeProfile = {
     patchCount: 40,
     thickLineT: 0.48,
     patchMinT: 0.22,
+    /** Prefer off-road; ~12% of on-path candidates still accepted. */
     clearPath: true,
+    pathSnowChance: 0.12,
     opacity: 0.98,
   },
 };

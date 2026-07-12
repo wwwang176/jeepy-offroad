@@ -31,8 +31,21 @@ export type SnowCoverConfig = {
   thickLineT: number;
   /** Residual patches prefer t above this. */
   patchMinT: number;
-  /** Clear snow centers near the drive ribbon. Default true. */
+  /**
+   * Soft path avoid: prefer off-road, but still allow some snow on the ribbon.
+   * When true (default), candidates on the path are accepted with
+   * {@link pathSnowChance} only.
+   */
   clearPath?: boolean;
+  /**
+   * Chance to keep a mound whose center sits on the drive ribbon (0..1).
+   * Default 0.12 — mostly clear, occasional road snow.
+   */
+  pathSnowChance?: number;
+  /**
+   * pathProximity above this counts as "on road" for soft avoid. Default 0.35.
+   */
+  pathAvoidProximity?: number;
   opacity?: number;
   /**
    * @deprecated Prefer peakThicknessM — kept so old profiles/tests don't break.
@@ -145,7 +158,9 @@ export function placeSnowMounds(input: PlaceSnowMoundsInput): SnowMound[] {
     sampleY,
   } = input;
   const { minH, maxH } = heightRange(heightmap);
-  const clearPath = cfg.clearPath !== false;
+  const softAvoidPath = cfg.clearPath !== false;
+  const pathSnowChance = clamp(cfg.pathSnowChance ?? 0.12, 0, 1);
+  const pathAvoidProx = cfg.pathAvoidProximity ?? 0.35;
   const half = worldSize * 0.5 - 8;
   const mounds: SnowMound[] = [];
 
@@ -168,20 +183,27 @@ export function placeSnowMounds(input: PlaceSnowMoundsInput): SnowMound[] {
     for (let a = 0; a < attempts; a++) {
       const x = (rng() * 2 - 1) * half;
       const z = (rng() * 2 - 1) * half;
-      if (clearPath && pathProximity(x, z, pathPolyline, pathHalfWidth) > 0.4) {
+      const onPath =
+        pathProximity(x, z, pathPolyline, pathHalfWidth) > pathAvoidProx;
+      // Mostly skip the road; rare accept so snow can spill onto the track.
+      if (softAvoidPath && onPath && rng() > pathSnowChance) {
         continue;
       }
       const t = sampleHeightT(x, z, minH, maxH, sampleY);
       if (t < preferTMin || t > preferTMax) continue;
       // Prefer higher t within band
       if (rng() > 0.35 + t * 0.65) continue;
-      const radius = rMin + rng() * Math.max(0.01, rMax - rMin);
+      let radius = rMin + rng() * Math.max(0.01, rMax - rMin);
+      // Road snow: smaller so the track stays mostly readable
+      if (onPath) radius *= 0.55 + rng() * 0.25;
       if (tooClose(x, z, radius)) continue;
+      let peakUse = peak * (0.85 + rng() * 0.3);
+      if (onPath) peakUse *= 0.65;
       mounds.push({
         x,
         z,
         radius,
-        peakThickness: peak * (0.85 + rng() * 0.3),
+        peakThickness: peakUse,
         phase: rng() * Math.PI * 2,
       });
       return;
