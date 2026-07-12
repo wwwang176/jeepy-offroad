@@ -6,6 +6,10 @@
 
 由 **Grok 4.5** vibe coding 製作。
 
+## 線上遊玩
+
+https://wwwang176.github.io/jeepy-offroad/
+
 ## 截圖
 
 ### 沙地
@@ -33,10 +37,6 @@
 - **小地圖 + 終點指示**，較不容易迷路
 - **桌機與手機** — 鍵盤或虛擬搖桿／踏板
 - **EN / 中文** 主選單語言切換
-
-## 線上遊玩
-
-https://wwwang176.github.io/jeepy-offroad/
 
 ## 操作
 

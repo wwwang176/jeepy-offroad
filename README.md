@@ -6,6 +6,10 @@ Browser off-road game: a low-poly jeep, procedural trails, and three biomes. Rac
 
 Built with **Grok 4.5** vibe coding.
 
+## Play online
+
+https://wwwang176.github.io/jeepy-offroad/
+
 ## Screenshots
 
 ### Sand
@@ -33,10 +37,6 @@ Built with **Grok 4.5** vibe coding.
 - **Minimap + finish beacon** so you can stay on the trail
 - **Desktop & mobile** — keyboard or on-screen stick / pedals
 - **EN / 中文** language toggle on the main menu
-
-## Play online
-
-https://wwwang176.github.io/jeepy-offroad/
 
 ## Controls
 
