@@ -43,7 +43,8 @@ describe("biome registry", () => {
     expect(a.displayName).toBe("Alpine");
     expect(a.macroRelief?.startToFinishDropM).toBeGreaterThanOrEqual(100);
     expect(a.snowCover).toBeDefined();
-    expect(a.snowCover!.liftM).toBeGreaterThan(0);
+    expect(a.snowCover!.peakThicknessM).toBeGreaterThan(0);
+    expect(a.snowCover!.thickCount).toBeGreaterThan(0);
     expect(a.streamDensity).toBeLessThanOrEqual(0.15);
     expect(a.traction?.frictionSlipScale ?? 1).toBeLessThan(0.6);
     expect(

@@ -1,81 +1,78 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildSnowCoverMask,
-  snowCoverAmount,
+  placeSnowMounds,
+  snowDomeFalloff,
   type SnowCoverConfig,
 } from "@/shared/snowCover";
+import { sampleBilinear } from "@/levelgen/heightmap";
 import { gridToWorld } from "@/shared/coords";
+import { mulberry32 } from "@/levelgen/rng";
 
 const cfg: SnowCoverConfig = {
   color: "#f2f7fc",
-  liftM: 0.16,
-  thickLineT: 0.48,
-  patchMinT: 0.22,
-  patchNoiseThreshold: 0.52,
+  peakThicknessM: 0.85,
+  patchThicknessM: 0.38,
+  thickRadiusMinM: 8,
+  thickRadiusMaxM: 14,
+  patchRadiusMinM: 3,
+  patchRadiusMaxM: 7,
+  thickCount: 20,
+  patchCount: 25,
+  thickLineT: 0.45,
+  patchMinT: 0.2,
   clearPath: true,
 };
 
-describe("snowCoverAmount", () => {
-  it("is solid on high ground", () => {
-    expect(snowCoverAmount(0, 0, 0.9, cfg)).toBeGreaterThanOrEqual(0.5);
-  });
-
-  it("is not solid on very low ground without noise luck", () => {
-    // Low t: only rare patches; sample enough XZ
-    let any = false;
-    for (let i = 0; i < 40; i++) {
-      if (snowCoverAmount(i * 3.1, i * 2.7, 0.05, cfg) >= 0.5) any = true;
-    }
-    // Most low samples should be bare rock; allow zero or few
-    expect(any).toBe(false);
+describe("snowDomeFalloff", () => {
+  it("is 1 at center and 0 at rim (rounded mound)", () => {
+    expect(snowDomeFalloff(0)).toBeCloseTo(1, 5);
+    expect(snowDomeFalloff(1)).toBeCloseTo(0, 5);
+    // Mid radius still has body — soft curve, not a hard cylinder
+    expect(snowDomeFalloff(0.5)).toBeGreaterThan(0.3);
+    expect(snowDomeFalloff(0.5)).toBeLessThan(0.8);
+    // Monotone decreasing on [0,1]
+    expect(snowDomeFalloff(0.25)).toBeGreaterThan(snowDomeFalloff(0.5));
+    expect(snowDomeFalloff(0.5)).toBeGreaterThan(snowDomeFalloff(0.75));
   });
 });
 
-describe("buildSnowCoverMask", () => {
-  it("marks high cells and clears the path ribbon", () => {
-    const resolution = 33;
-    const worldSize = 64;
+describe("placeSnowMounds", () => {
+  it("places mounds on a ramped heightmap, prefers high for thick", () => {
+    const resolution = 65;
+    const worldSize = 128;
     const heightmap = new Float32Array(resolution * resolution);
-    // Ramp high on +x
     for (let row = 0; row < resolution; row++) {
       for (let col = 0; col < resolution; col++) {
         const { x } = gridToWorld(col, row, worldSize, resolution);
-        heightmap[row * resolution + col] = 10 + (x + 32) * 0.5;
+        heightmap[row * resolution + col] = 10 + (x + 64) * 0.4;
       }
     }
-    // Path along z at x=0
-    const pathPolyline = Array.from({ length: 20 }, (_, i) => ({
+    const pathPolyline = Array.from({ length: 30 }, (_, i) => ({
       x: 0,
-      z: -30 + i * 3,
+      z: -50 + i * 3.5,
     }));
-    const mask = buildSnowCoverMask({
+    const sampleY = (x: number, z: number) =>
+      sampleBilinear(heightmap, resolution, worldSize, x, z);
+    const mounds = placeSnowMounds({
       heightmap,
       resolution,
       worldSize,
       pathPolyline,
       pathHalfWidth: 4,
       cfg,
-      gridToWorld,
+      rng: mulberry32(42),
+      sampleY,
     });
 
-    let snow = 0;
-    let pathSnow = 0;
-    let highSnow = 0;
-    for (let row = 0; row < resolution; row++) {
-      for (let col = 0; col < resolution; col++) {
-        const i = row * resolution + col;
-        const { x } = gridToWorld(col, row, worldSize, resolution);
-        if (mask[i]) {
-          snow++;
-          if (Math.abs(x) < 2) pathSnow++;
-          if (x > 20) highSnow++;
-        }
-      }
+    expect(mounds.length).toBeGreaterThan(5);
+    for (const m of mounds) {
+      expect(m.radius).toBeGreaterThan(2);
+      expect(m.peakThickness).toBeGreaterThan(0.1);
+      // Not on path centerline
+      expect(Math.abs(m.x)).toBeGreaterThan(2);
     }
-    expect(snow).toBeGreaterThan(20);
-    // Path should be mostly clear
-    expect(pathSnow).toBeLessThan(snow * 0.15);
-    // High side should have snow
-    expect(highSnow).toBeGreaterThan(5);
+    // At least some mounds on the high (+x) side
+    const highSide = mounds.filter((m) => m.x > 10);
+    expect(highSide.length).toBeGreaterThan(0);
   });
 });

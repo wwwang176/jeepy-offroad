@@ -1,7 +1,7 @@
 import type { BiomeProfile } from "../types";
 
 /**
- * Cold alpine pass — grey schist ground + draped snow blankets (no collision),
+ * Cold alpine pass — grey schist ground + soft rounded snow mounds (no collision),
  * long high→low descent.
  */
 export const alpineBiome: BiomeProfile = {
@@ -12,7 +12,7 @@ export const alpineBiome: BiomeProfile = {
   skyColor: "#8fa8c0",
   fogColor: "#d0dbe6",
   fogDensity: 0.018,
-  /** Rock only — snow is a separate draped mesh (snowCover). */
+  /** Rock only — snow is separate soft mounds (snowCover). */
   groundPalette: {
     high: "#8a929c",
     mid: "#5c646e",
@@ -36,23 +36,24 @@ export const alpineBiome: BiomeProfile = {
     { meshKey: "rock_pile", weight: 1, collides: true },
     { meshKey: "pillar_rock", weight: 0.75, collides: true },
   ],
-  /**
-   * Large W→E dump. Path grade-clamp keeps the ribbon drivable while
-   * net altitude loss stays huge.
-   */
   macroRelief: { startToFinishDropM: 160 },
   /**
-   * Thick snow on high rock + residual mid-slope patches.
-   * Mesh drapes heightmap + lift; no Rapier collider (same idea as ponds).
+   * Soft rounded snow piles on rock (pond-like sites, no collider).
+   * Thick high-ground mounds + smaller mid-slope residual patches.
    */
   snowCover: {
     color: "#f2f7fc",
-    liftM: 0.16,
+    peakThicknessM: 0.85,
+    patchThicknessM: 0.38,
+    thickRadiusMinM: 9,
+    thickRadiusMaxM: 18,
+    patchRadiusMinM: 3.5,
+    patchRadiusMaxM: 8,
+    thickCount: 28,
+    patchCount: 40,
     thickLineT: 0.48,
     patchMinT: 0.22,
-    patchNoiseThreshold: 0.52,
-    thickBlend: 0.12,
     clearPath: true,
-    opacity: 0.96,
+    opacity: 0.98,
   },
 };

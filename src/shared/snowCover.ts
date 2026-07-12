@@ -1,32 +1,56 @@
 import { clamp } from "./math";
 import { pathProximity } from "./terrainColor";
 
-/** Decorative snow blanket (visual only — no collider). */
+/**
+ * Rounded snow mounds (visual only — no collider).
+ * Shape: soft dome on rock — thick center, feathered edge — NOT terrain-grid drape.
+ *
+ *       ___thick___
+ * -----/-----------\---- rock ----
+ */
 export type SnowCoverConfig = {
   /** Snow albedo hex. */
   color: string;
-  /** Lift above terrain so the blanket reads as a layer (m). */
-  liftM: number;
+  /** Peak thickness of a high-ground "thick" mound (m). */
+  peakThicknessM: number;
+  /** Peak thickness of residual mid-slope patches (m). */
+  patchThicknessM: number;
+  /** Min/max radius for thick mounds (m). */
+  thickRadiusMinM: number;
+  thickRadiusMaxM: number;
+  /** Min/max radius for residual patches (m). */
+  patchRadiusMinM: number;
+  patchRadiusMaxM: number;
+  /** Target count of thick high-ground mounds. */
+  thickCount: number;
+  /** Target count of residual patches. */
+  patchCount: number;
   /**
-   * Height fraction t=(h-min)/(max-min) above which snow is solid (thick cover).
-   * 0..1 of the map height range.
+   * Height fraction t=(h-min)/(max-min) preferred for thick mounds.
    */
   thickLineT: number;
-  /** Below thick line, residual patches may appear above this t. */
+  /** Residual patches prefer t above this. */
   patchMinT: number;
-  /** Noise must exceed this (0..1) for a mid-slope patch. Higher = sparser. */
-  patchNoiseThreshold: number;
-  /** Soften thick-line edge (t units). */
-  thickBlend?: number;
-  /** Clear snow on the drive ribbon so the rock path reads. Default true. */
+  /** Clear snow centers near the drive ribbon. Default true. */
   clearPath?: boolean;
   opacity?: number;
+  /**
+   * @deprecated Prefer peakThicknessM — kept so old profiles/tests don't break.
+   */
+  liftM?: number;
 };
 
-/**
- * Deterministic 0..1 value noise for residual snow patches.
- * Same family as former alpineSnow vertex mode — stable for a seed's heightmap.
- */
+export type SnowMound = {
+  x: number;
+  z: number;
+  radius: number;
+  /** Center thickness above terrain (m). */
+  peakThickness: number;
+  /** Angular phase for slight radial irregularity. */
+  phase: number;
+};
+
+/** Deterministic 0..1 noise (placement bias / tests). */
 export function snowPatchNoise(x: number, z: number): number {
   const n1 = hash2(x * 0.07, z * 0.07);
   const n2 = hash2(x * 0.19 + 17.1, z * 0.19 - 9.3);
@@ -56,56 +80,19 @@ function hash1(ix: number, iz: number): number {
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
 }
 
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
-  return t * t * (3 - 2 * t);
+/**
+ * Radial dome falloff: 1 at center, 0 at rim.
+ * Smooth rounded profile (not a flat slab).
+ */
+export function snowDomeFalloff(u: number): number {
+  // u = r / radius in [0,1]
+  const t = clamp(u, 0, 1);
+  // (1 - t^2)^2 — soft mound; derivative 0 at center
+  const s = 1 - t * t;
+  return s * s;
 }
 
-/**
- * Snow amount 0..1 at world XZ / height fraction t.
- * ≥0.5 is treated as "has snow" for mesh mask.
- */
-export function snowCoverAmount(
-  x: number,
-  z: number,
-  heightT: number,
-  cfg: SnowCoverConfig,
-): number {
-  const blend = cfg.thickBlend ?? 0.1;
-  const thick = smoothstep(cfg.thickLineT, cfg.thickLineT + blend, heightT);
-
-  const n = snowPatchNoise(x, z);
-  const patchGate = smoothstep(cfg.patchMinT, cfg.patchMinT + 0.12, heightT);
-  const patch =
-    patchGate *
-    smoothstep(cfg.patchNoiseThreshold - 0.08, cfg.patchNoiseThreshold + 0.12, n) *
-    (1 - thick * 0.9);
-
-  return clamp(thick + patch * 0.95, 0, 1);
-}
-
-export type SnowMaskInput = {
-  heightmap: Float32Array;
-  resolution: number;
-  worldSize: number;
-  pathPolyline: readonly { x: number; z: number }[];
-  pathHalfWidth: number;
-  cfg: SnowCoverConfig;
-  /** Sample world XZ for cell (col,row). */
-  gridToWorld: (
-    col: number,
-    row: number,
-    worldSize: number,
-    resolution: number,
-  ) => { x: number; z: number };
-};
-
-/**
- * Per-cell snow mask (1 = snow). Used by draped snow mesh builder.
- */
-export function buildSnowCoverMask(input: SnowMaskInput): Uint8Array {
-  const { heightmap, resolution, worldSize, pathPolyline, pathHalfWidth, cfg } =
-    input;
+function heightRange(heightmap: Float32Array): { minH: number; maxH: number } {
   let minH = Infinity;
   let maxH = -Infinity;
   for (let i = 0; i < heightmap.length; i++) {
@@ -113,22 +100,117 @@ export function buildSnowCoverMask(input: SnowMaskInput): Uint8Array {
     if (h < minH) minH = h;
     if (h > maxH) maxH = h;
   }
-  const hRange = Math.max(1e-3, maxH - minH);
-  const clearPath = cfg.clearPath !== false;
-  const mask = new Uint8Array(resolution * resolution);
+  if (!Number.isFinite(minH)) {
+    minH = 0;
+    maxH = 1;
+  }
+  return { minH, maxH: Math.max(maxH, minH + 1e-3) };
+}
 
-  for (let row = 0; row < resolution; row++) {
-    for (let col = 0; col < resolution; col++) {
-      const i = row * resolution + col;
-      const h = heightmap[i]!;
-      const t = (h - minH) / hRange;
-      const { x, z } = input.gridToWorld(col, row, worldSize, resolution);
-      if (clearPath && pathProximity(x, z, pathPolyline, pathHalfWidth) > 0.35) {
-        mask[i] = 0;
+function sampleHeightT(
+  x: number,
+  z: number,
+  minH: number,
+  maxH: number,
+  sampleY: (x: number, z: number) => number,
+): number {
+  const y = sampleY(x, z);
+  return clamp((y - minH) / (maxH - minH), 0, 1);
+}
+
+export type PlaceSnowMoundsInput = {
+  heightmap: Float32Array;
+  resolution: number;
+  worldSize: number;
+  pathPolyline: readonly { x: number; z: number }[];
+  pathHalfWidth: number;
+  cfg: SnowCoverConfig;
+  rng: () => number;
+  /** Terrain Y at world XZ (usually bilinear sample). */
+  sampleY: (x: number, z: number) => number;
+};
+
+/**
+ * Place soft snow mounds: large thick ones on high rock, smaller residual patches mid-slope.
+ * Pond-like sites (no carving); pure decoration list for the renderer.
+ */
+export function placeSnowMounds(input: PlaceSnowMoundsInput): SnowMound[] {
+  const {
+    heightmap,
+    worldSize,
+    pathPolyline,
+    pathHalfWidth,
+    cfg,
+    rng,
+    sampleY,
+  } = input;
+  const { minH, maxH } = heightRange(heightmap);
+  const clearPath = cfg.clearPath !== false;
+  const half = worldSize * 0.5 - 8;
+  const mounds: SnowMound[] = [];
+
+  const tooClose = (x: number, z: number, r: number): boolean => {
+    for (const m of mounds) {
+      const d = Math.hypot(x - m.x, z - m.z);
+      if (d < (r + m.radius) * 0.55) return true;
+    }
+    return false;
+  };
+
+  const tryPlace = (
+    preferTMin: number,
+    preferTMax: number,
+    rMin: number,
+    rMax: number,
+    peak: number,
+    attempts: number,
+  ): void => {
+    for (let a = 0; a < attempts; a++) {
+      const x = (rng() * 2 - 1) * half;
+      const z = (rng() * 2 - 1) * half;
+      if (clearPath && pathProximity(x, z, pathPolyline, pathHalfWidth) > 0.4) {
         continue;
       }
-      mask[i] = snowCoverAmount(x, z, t, cfg) >= 0.5 ? 1 : 0;
+      const t = sampleHeightT(x, z, minH, maxH, sampleY);
+      if (t < preferTMin || t > preferTMax) continue;
+      // Prefer higher t within band
+      if (rng() > 0.35 + t * 0.65) continue;
+      const radius = rMin + rng() * Math.max(0.01, rMax - rMin);
+      if (tooClose(x, z, radius)) continue;
+      mounds.push({
+        x,
+        z,
+        radius,
+        peakThickness: peak * (0.85 + rng() * 0.3),
+        phase: rng() * Math.PI * 2,
+      });
+      return;
     }
+  };
+
+  const thickPeak = cfg.peakThicknessM || cfg.liftM || 0.5;
+  const patchPeak = cfg.patchThicknessM || thickPeak * 0.45;
+
+  for (let i = 0; i < cfg.thickCount; i++) {
+    tryPlace(
+      cfg.thickLineT,
+      1.01,
+      cfg.thickRadiusMinM,
+      cfg.thickRadiusMaxM,
+      thickPeak,
+      80,
+    );
   }
-  return mask;
+  for (let i = 0; i < cfg.patchCount; i++) {
+    tryPlace(
+      cfg.patchMinT,
+      cfg.thickLineT + 0.08,
+      cfg.patchRadiusMinM,
+      cfg.patchRadiusMaxM,
+      patchPeak,
+      60,
+    );
+  }
+
+  return mounds;
 }
