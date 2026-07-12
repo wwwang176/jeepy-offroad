@@ -28,6 +28,15 @@ import {
   type TerrainColorContext,
   type TerrainColorMode,
 } from "@/shared/terrainColor";
+import {
+  placeSnowMounds,
+  snowCoverageAt,
+  snowDustColor,
+  SNOW_MOUND_SEED_XOR,
+  type SnowCoverConfig,
+  type SnowMound,
+} from "@/shared/snowCover";
+import { mulberry32 } from "@/levelgen/rng";
 import { ParticlePool } from "./ParticlePool";
 import { createSoftDiscTexture } from "./softDiscTexture";
 
@@ -120,6 +129,10 @@ export type OffroadFxOptions = {
     groundPalette: GroundPalette;
     pathWidth?: number;
     terrainColorMode?: TerrainColorMode;
+    /** Level seed — required with snowCover so mounds match the mesh. */
+    seed?: number;
+    /** Alpine (etc.) soft snow mounds → white tire dust when covered. */
+    snowCover?: SnowCoverConfig;
   };
   /** Sandbox / no heightmap */
   fallbackDustColor?: Rgb;
@@ -152,6 +165,8 @@ export class OffroadFx {
   private heightmap: Float32Array | null = null;
   private resolution = 0;
   private worldSize = 0;
+  private snowMounds: readonly SnowMound[] = [];
+  private snowDust: Rgb = snowDustColor();
   private prevContact: boolean[] = [false, false, false, false];
   private prevBodyContactCount = 0;
   /** Previous wheel rotation (rad); NaN = not primed. */
@@ -221,13 +236,63 @@ export class OffroadFx {
       pathWidth: terrain.pathWidth,
       terrainColorMode: terrain.terrainColorMode,
     });
+    this.snowMounds = [];
+    if (terrain.snowCover && terrain.seed != null) {
+      const pathHalf = (terrain.pathWidth ?? 4) * 0.75;
+      const sampleY = (wx: number, wz: number) =>
+        sampleBilinear(
+          terrain.heightmap,
+          terrain.resolution,
+          terrain.worldSize,
+          wx,
+          wz,
+        );
+      this.snowMounds = placeSnowMounds({
+        heightmap: terrain.heightmap,
+        resolution: terrain.resolution,
+        worldSize: terrain.worldSize,
+        pathPolyline: terrain.pathPolyline,
+        pathHalfWidth: pathHalf,
+        cfg: terrain.snowCover,
+        rng: mulberry32((terrain.seed ^ SNOW_MOUND_SEED_XOR) >>> 0),
+        sampleY,
+      });
+      this.snowDust = snowDustColor(terrain.snowCover.color);
+    }
   }
 
   /**
    * Sample dust RGB under world XZ (matches TerrainMesh vertex color, shaded
-   * for unlit sprites).
+   * for unlit sprites). On snow mounds → bright white puffs.
    */
   sampleDustColor(x: number, z: number): Rgb {
+    if (this.snowMounds.length > 0) {
+      const cover = snowCoverageAt(x, z, this.snowMounds);
+      // Soft threshold: outer skirt still a bit white, center fully snow
+      if (cover >= 0.2) {
+        if (cover >= 0.45) return this.snowDust;
+        // Blend rock dust → snow at the mound fringe
+        if (this.terrainCtx && this.heightmap) {
+          const h = sampleBilinear(
+            this.heightmap,
+            this.resolution,
+            this.worldSize,
+            x,
+            z,
+          );
+          const rock = dustColorFromTerrainAlbedo(
+            terrainAlbedoAt(x, z, h, this.terrainCtx),
+          );
+          const u = (cover - 0.2) / 0.25;
+          return {
+            r: rock.r + (this.snowDust.r - rock.r) * u,
+            g: rock.g + (this.snowDust.g - rock.g) * u,
+            b: rock.b + (this.snowDust.b - rock.b) * u,
+          };
+        }
+        return this.snowDust;
+      }
+    }
     if (!this.terrainCtx || !this.heightmap) {
       return this.fallbackDust;
     }

@@ -63,6 +63,48 @@ export type SnowMound = {
   phase: number;
 };
 
+/** Mix into level seed so mesh + dust VFX share the same mound layout. */
+export const SNOW_MOUND_SEED_XOR = 0x50e411;
+
+/**
+ * Soft coverage 0..1 under snow mounds (same radial lobe as the mesh).
+ * Used for tire dust tint when driving on snow.
+ */
+export function snowCoverageAt(
+  x: number,
+  z: number,
+  mounds: readonly SnowMound[],
+): number {
+  let best = 0;
+  for (let i = 0; i < mounds.length; i++) {
+    const m = mounds[i]!;
+    const dx = x - m.x;
+    const dz = z - m.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > m.radius * 1.2) continue;
+    const ang = Math.atan2(dz, dx);
+    const lob =
+      1 +
+      0.1 * Math.sin(ang * 2 + m.phase) +
+      0.06 * Math.cos(ang * 3 - m.phase * 0.7);
+    const rEff = m.radius * lob;
+    if (dist >= rEff || rEff < 1e-4) continue;
+    const c = snowDomeFalloff(dist / rEff);
+    if (c > best) best = c;
+  }
+  return best;
+}
+
+/** Bright dust for unlit particles on snow (not darkened rock dust). */
+export function snowDustColor(snowHex?: string): { r: number; g: number; b: number } {
+  // Near-white puffs; mild cool bias so they read as snow not grey rock
+  if (snowHex && snowHex.length >= 7) {
+    // Soften pure hex toward white for sprite read
+    return { r: 0.93, g: 0.95, b: 0.98 };
+  }
+  return { r: 0.93, g: 0.95, b: 0.98 };
+}
+
 /** Deterministic 0..1 noise (placement bias / tests). */
 export function snowPatchNoise(x: number, z: number): number {
   const n1 = hash2(x * 0.07, z * 0.07);

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   placeSnowMounds,
+  snowCoverageAt,
   snowDomeFalloff,
+  snowDustColor,
   type SnowCoverConfig,
 } from "@/shared/snowCover";
 import { buildSnowMoundGeometry } from "@/render/SnowCoverMesh";
@@ -23,6 +25,23 @@ const cfg: SnowCoverConfig = {
   patchMinT: 0.2,
   clearPath: true,
 };
+
+describe("snowCoverageAt / snowDustColor", () => {
+  it("is high at mound center and low outside", () => {
+    const mounds = [
+      { x: 0, z: 0, radius: 8, peakThickness: 0.8, phase: 0 },
+    ];
+    expect(snowCoverageAt(0, 0, mounds)).toBeGreaterThan(0.9);
+    expect(snowCoverageAt(20, 0, mounds)).toBe(0);
+  });
+
+  it("snow dust is bright near-white", () => {
+    const c = snowDustColor("#fbfcfe");
+    expect(c.r).toBeGreaterThan(0.9);
+    expect(c.g).toBeGreaterThan(0.9);
+    expect(c.b).toBeGreaterThan(0.9);
+  });
+});
 
 describe("snowDomeFalloff", () => {
   it("is 1 at center and 0 at rim (rounded mound)", () => {

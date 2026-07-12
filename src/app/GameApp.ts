@@ -395,6 +395,8 @@ export class GameApp {
       groundPalette: biome.groundPalette,
       pathWidth: biome.pathWidth,
       terrainColorMode: biome.terrainColorMode,
+      seed: level.seed,
+      snowCover: biome.snowCover,
     };
     this.offroadFx = new OffroadFx(this.gameScene.scene, {
       streams: level.streams,

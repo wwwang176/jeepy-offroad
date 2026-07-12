@@ -6,6 +6,7 @@ import { mulberry32 } from "@/levelgen/rng";
 import {
   placeSnowMounds,
   snowDomeFalloff,
+  SNOW_MOUND_SEED_XOR,
   type SnowCoverConfig,
   type SnowMound,
 } from "@/shared/snowCover";
@@ -100,7 +101,7 @@ export function createSnowCoverMesh(
       z,
     );
 
-  const rng = mulberry32((level.seed ^ 0x50e411) >>> 0);
+  const rng = mulberry32((level.seed ^ SNOW_MOUND_SEED_XOR) >>> 0);
   const mounds = placeSnowMounds({
     heightmap: level.heightmap,
     resolution: level.resolution,
