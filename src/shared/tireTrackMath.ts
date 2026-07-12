@@ -158,7 +158,6 @@ export function trackSegmentLife(surface: TrackSurface, strength: number): numbe
 export function snowTrackVertexColors(
   strength: number,
 ): readonly [Rgb, Rgb, Rgb, Rgb] {
-  const packed = trackMarkColor("snow", { r: 1, g: 1, b: 1 }, strength * 0.55);
   const edge = trackMarkColor(
     "snow",
     { r: 1, g: 1, b: 1 },
