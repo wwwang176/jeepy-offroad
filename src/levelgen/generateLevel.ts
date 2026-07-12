@@ -32,10 +32,13 @@ const FINISH_FLAT_RADIUS_M = 5.5;
 /** Smooth blend from pad to surrounding terrain (m). */
 const PAD_FALLOFF_M = 2.5;
 /**
- * Extra fill/cut vs base per meter of biome macro drop so alpine ribbons can
- * follow the grade-limited path instead of leaving undrivable cliffs.
+ * Extra fill/cut vs base per meter of biome macro drop (alpine only).
+ * Keep modest so mid-path still has roughness; pad approaches are fixed
+ * separately with a short corridor stamp.
  */
-const MACRO_PATH_CAP_SCALE = 0.45;
+const MACRO_PATH_CAP_SCALE = 0.2;
+/** Arc length (m) of grade-enforced corridor at start / finish for macro biomes. */
+const PAD_APPROACH_M = 56;
 
 function ribbonWidth(biome: BiomeProfile, vehicle: VehicleCapabilities): number {
   return biome.pathWidth ?? vehicle.trackWidth + 2 * vehicle.pathClearance;
@@ -185,14 +188,107 @@ export function carveAndDecorate(
     mapSize,
     vehicle,
   );
-  // Force ribbon to the grade-limited path Y (ponds may have dug holes).
-  stampPathRibbon(hm, resolution, mapSize, path);
+  // Do NOT full-path stamp here — that turned every biome into a smooth highway.
+  // Macro biomes only get short start/finish corridors after pad flatten.
 
   hydrologyCache.set(hm, hydro);
   rng();
   rng();
 
   return { heightmap: hm, baseHeightmap, path };
+}
+
+/** Indices covering the first `arcM` meters of path. */
+function pathPrefixByArc(path: Vec3[], arcM: number): number {
+  let acc = 0;
+  for (let i = 1; i < path.length; i++) {
+    acc += Math.hypot(
+      path[i]!.x - path[i - 1]!.x,
+      path[i]!.z - path[i - 1]!.z,
+    );
+    if (acc >= arcM) return i;
+  }
+  return path.length - 1;
+}
+
+/** First index such that arc length from there to end is ≥ arcM. */
+function pathSuffixStartByArc(path: Vec3[], arcM: number): number {
+  let acc = 0;
+  for (let i = path.length - 1; i > 0; i--) {
+    acc += Math.hypot(
+      path[i]!.x - path[i - 1]!.x,
+      path[i]!.z - path[i - 1]!.z,
+    );
+    if (acc >= arcM) return i - 1;
+  }
+  return 0;
+}
+
+/**
+ * Grade-limit + stamp only a short corridor near start/finish so pad mesas
+ * are reachable without flattening the whole track.
+ */
+function enforcePadApproachCorridors(
+  heightmap: Float32Array,
+  resolution: number,
+  mapSize: number,
+  points: Vec3[],
+  vehicle: VehicleCapabilities,
+  startPos: { x: number; y: number; z: number },
+  finishPos: { x: number; y: number; z: number },
+  approachM: number,
+): void {
+  if (points.length < 3) return;
+
+  for (const p of points) {
+    p.y = sampleBilinear(heightmap, resolution, mapSize, p.x, p.z);
+  }
+
+  // --- Finish approach ---
+  const fin0 = pathSuffixStartByArc(points, approachM);
+  const finishSeg = points.slice(fin0).map((p) => ({ ...p }));
+  if (finishSeg.length >= 2) {
+    finishSeg[finishSeg.length - 1]!.y = finishPos.y;
+    const gradedF = assignPathHeights(finishSeg, vehicle);
+    for (let i = 0; i < gradedF.length; i++) {
+      points[fin0 + i]!.y = gradedF[i]!.y;
+    }
+    stampPathRibbon(
+      heightmap,
+      resolution,
+      mapSize,
+      points.slice(fin0),
+    );
+  }
+
+  // --- Start departure ---
+  const startEnd = pathPrefixByArc(points, approachM);
+  const startSeg = points.slice(0, startEnd + 1).map((p) => ({ ...p }));
+  if (startSeg.length >= 2) {
+    startSeg[0]!.y = startPos.y;
+    // Re-sample non-end from terrain so mid of corridor isn't finish-stamped junk
+    for (let i = 1; i < startSeg.length; i++) {
+      const p = points[i]!;
+      startSeg[i]!.y = sampleBilinear(
+        heightmap,
+        resolution,
+        mapSize,
+        p.x,
+        p.z,
+      );
+    }
+    startSeg[0]!.y = startPos.y;
+    const gradedS = assignPathHeights(startSeg, vehicle);
+    for (let i = 0; i < gradedS.length; i++) {
+      points[i]!.y = gradedS[i]!.y;
+    }
+    stampPathRibbon(
+      heightmap,
+      resolution,
+      mapSize,
+      points.slice(0, startEnd + 1),
+    );
+  }
 }
 
 const hydrologyCache = new WeakMap<
@@ -299,39 +395,36 @@ export function buildLevelData(
     finishPos.z,
   );
 
-  // Pads can leave mesa cliffs when the approach ribbon diverged (esp. alpine
-  // macro drop). Re-sample path Y, pin ends to pad heights, grade-limit, then
-  // stamp the ribbon. Final authority is the grade-limited ribbon — do not
-  // hard-flatten pads again (that recreated undrivable walls).
-  const padStartY = startPos.y;
-  const padFinishY = finishPos.y;
-  for (const p of points) {
-    p.y = sampleBilinear(heightmap, resolution, mapSize, p.x, p.z);
+  // Macro biomes only: short start/finish corridors (not full-path stamp).
+  // Sand/rainforest keep classic pad flatten + local polyline sync.
+  const macroDrop = input.biome.macroRelief?.startToFinishDropM ?? 0;
+  if (macroDrop > 0) {
+    enforcePadApproachCorridors(
+      heightmap,
+      resolution,
+      mapSize,
+      points,
+      input.vehicle,
+      startPos,
+      finishPos,
+      PAD_APPROACH_M,
+    );
+    startPos.y = sampleBilinear(
+      heightmap,
+      resolution,
+      mapSize,
+      startPos.x,
+      startPos.z,
+    );
+    finishPos.y = sampleBilinear(
+      heightmap,
+      resolution,
+      mapSize,
+      finishPos.x,
+      finishPos.z,
+    );
   }
-  points[0]!.y = padStartY;
-  points[points.length - 1]!.y = padFinishY;
-  const graded = assignPathHeights(points, input.vehicle);
-  for (let i = 0; i < points.length; i++) {
-    points[i]!.y = graded[i]!.y;
-  }
-  stampPathRibbon(heightmap, resolution, mapSize, points);
-  startPos.y = sampleBilinear(
-    heightmap,
-    resolution,
-    mapSize,
-    startPos.x,
-    startPos.z,
-  );
-  finishPos.y = sampleBilinear(
-    heightmap,
-    resolution,
-    mapSize,
-    finishPos.x,
-    finishPos.z,
-  );
-  // Keep polyline ends in sync with stamped pad terrain
-  points[0]!.y = startPos.y;
-  points[points.length - 1]!.y = finishPos.y;
+  // Keep polyline Y on pads (all biomes)
   for (const p of points) {
     const ds = Math.hypot(p.x - startPos.x, p.z - startPos.z);
     if (ds <= START_FLAT_RADIUS_M) p.y = startPos.y;

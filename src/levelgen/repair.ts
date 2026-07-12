@@ -74,8 +74,8 @@ export type StampPathRibbonOpts = {
 
 /**
  * Blend heightmap toward path polyline Y (no lifetime cap vs base).
- * Use after grade-limited path fit / pad flatten so the drive ribbon is
- * actually driveable — not only the abstract path polyline.
+ * Prefer passing a **short corridor** (start/finish approach), not the whole
+ * route — full-path stamps flatten mid-track drama into a grade highway.
  */
 export function stampPathRibbon(
   heightmap: Float32Array,
