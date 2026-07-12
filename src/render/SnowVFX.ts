@@ -103,6 +103,13 @@ export class SnowVFX {
 
   private readonly sharedTex: THREE.CanvasTexture;
   private time = 0;
+  /** False until first update with real camera — avoid world-origin burst. */
+  private seededAroundCamera = false;
+  /** Blow particles activate gradually (not full scatter on first frame). */
+  private blowActiveCount = 0;
+  private blowIntroAccum = 0;
+  /** ~particles/s entering the blow volume after load. */
+  private static readonly BLOW_INTRO_PER_SEC = 90;
 
   constructor(scene: THREE.Scene, opts: SnowVFXOptions) {
     this.scene = scene;
@@ -112,15 +119,15 @@ export class SnowVFX {
     this.blowCount = Math.max(60, Math.floor(BLOW_COUNT * dens));
     this.sharedTex = createSoftDiscTexture(48);
 
-    // --- Falling: soft round flakes ---
+    // --- Falling: soft round flakes (park dead until first camera seed) ---
     this.fallPos = new Float32Array(this.fallCount * 3);
     this.fallSpeed = new Float32Array(this.fallCount);
     this.fallPhase = new Float32Array(this.fallCount);
     this.fallSize = new Float32Array(this.fallCount);
     for (let i = 0; i < this.fallCount; i++) {
-      this.fallPos[i * 3] = (Math.random() - 0.5) * FALL_AREA;
-      this.fallPos[i * 3 + 1] = Math.random() * FALL_HEIGHT;
-      this.fallPos[i * 3 + 2] = (Math.random() - 0.5) * FALL_AREA;
+      this.fallPos[i * 3] = 0;
+      this.fallPos[i * 3 + 1] = DEAD_Y;
+      this.fallPos[i * 3 + 2] = 0;
       this.fallSpeed[i] =
         FALL_SPEED_MIN + Math.random() * (FALL_SPEED_MAX - FALL_SPEED_MIN);
       this.fallPhase[i] = Math.random() * Math.PI * 2;
@@ -176,10 +183,11 @@ export class SnowVFX {
     this.blowPhase = new Float32Array(this.blowCount);
     this.blowOpacity = new Float32Array(this.blowCount);
     this.blowDir = new Float32Array(this.blowCount * 3);
+    // Blow stays DEAD until gradual intro after camera seed (no full first-frame scatter)
     for (let i = 0; i < this.blowCount; i++) {
-      this.blowPos[i * 3] = (Math.random() - 0.5) * BLOW_AREA;
+      this.blowPos[i * 3] = 0;
       this.blowPos[i * 3 + 1] = DEAD_Y;
-      this.blowPos[i * 3 + 2] = (Math.random() - 0.5) * BLOW_AREA;
+      this.blowPos[i * 3 + 2] = 0;
       this.blowSpeed[i] =
         BLOW_SPEED_MIN + Math.random() * (BLOW_SPEED_MAX - BLOW_SPEED_MIN);
       this.blowPhase[i] = Math.random() * Math.PI * 2;
@@ -212,18 +220,46 @@ export class SnowVFX {
     this.blowMesh.frustumCulled = false;
     this.blowMesh.renderOrder = 4;
     scene.add(this.blowMesh);
-
-    for (let i = 0; i < this.blowCount; i++) {
-      this.respawnBlow(i, { x: 0, y: 10, z: 0 }, true);
-    }
   }
 
   update(dt: number, camPos: { x: number; y: number; z: number }): void {
     if (dt <= 0) return;
     const step = Math.min(dt, 0.05);
     this.time += step;
+    if (!this.seededAroundCamera) {
+      this.seedFallAroundCamera(camPos);
+      this.seededAroundCamera = true;
+      // Blow: start empty; introduce gradually below
+    }
     this.updateFall(step, camPos);
     this.updateBlow(step, camPos);
+  }
+
+  /**
+   * First live frame: place fall flakes around the real camera with random heights
+   * (not world origin). Avoids a single teleported wave when the level starts.
+   */
+  private seedFallAroundCamera(camPos: {
+    x: number;
+    y: number;
+    z: number;
+  }): void {
+    for (let i = 0; i < this.fallCount; i++) {
+      const i3 = i * 3;
+      const x = camPos.x + (Math.random() - 0.5) * FALL_AREA;
+      const z = camPos.z + (Math.random() - 0.5) * FALL_AREA;
+      const gY = this.getHeightAt(x, z);
+      // Full column: near ground up to high above camera
+      const y =
+        gY +
+        0.5 +
+        Math.random() * Math.max(FALL_HEIGHT, camPos.y - gY + FALL_HEIGHT * 0.5);
+      this.fallPos[i3] = x;
+      this.fallPos[i3 + 1] = y;
+      this.fallPos[i3 + 2] = z;
+      this.fallPhase[i] = Math.random() * Math.PI * 2;
+    }
+    this.fallGeo.attributes.position!.needsUpdate = true;
   }
 
   private updateFall(
@@ -275,10 +311,24 @@ export class SnowVFX {
     const wx = BLOW_WIND_X / windLen;
     const wz = BLOW_WIND_Z / windLen;
 
+    // Gradual intro: do not full-scatter on first frame
+    if (this.blowActiveCount < this.blowCount) {
+      this.blowIntroAccum += SnowVFX.BLOW_INTRO_PER_SEC * dt;
+      while (
+        this.blowIntroAccum >= 1 &&
+        this.blowActiveCount < this.blowCount
+      ) {
+        this.blowIntroAccum -= 1;
+        const i = this.blowActiveCount++;
+        // Enter from upwind edge, not random full volume
+        this.respawnBlow(i, camPos, false);
+      }
+    }
+
     for (let i = 0; i < this.blowCount; i++) {
       const i3 = i * 3;
-      if (pos[i3 + 1]! <= DEAD_Y + 1) {
-        this.respawnBlow(i, camPos, true);
+      // Not yet introduced
+      if (i >= this.blowActiveCount || pos[i3 + 1]! <= DEAD_Y + 1) {
         continue;
       }
       const spd = this.blowSpeed[i]!;
