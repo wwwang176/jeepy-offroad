@@ -40,7 +40,7 @@ export const alpineBiome: BiomeProfile = {
   macroRelief: { startToFinishDropM: 160 },
   /**
    * Soft rounded snow piles on rock (pond-like sites, no collider).
-   * Thick high-ground mounds + smaller mid-slope residual patches.
+   * Thick high-ground mounds + residual patches down to valley floor.
    */
   snowCover: {
     color: "#ffffff",
@@ -50,10 +50,13 @@ export const alpineBiome: BiomeProfile = {
     thickRadiusMaxM: 18,
     patchRadiusMinM: 3.5,
     patchRadiusMaxM: 8,
-    thickCount: 28,
-    patchCount: 40,
-    thickLineT: 0.48,
-    patchMinT: 0.22,
+    /** Scaled up with wider height bands so coverage stays dense. */
+    thickCount: 44,
+    patchCount: 52,
+    /** Thick mounds from mid-low elevations up (t ≥ 0.2). */
+    thickLineT: 0.2,
+    /** Residual snow allowed from valley floor up into the thick band. */
+    patchMinT: 0,
     /** Prefer off-road; ~12% of on-path candidates still accepted. */
     clearPath: true,
     pathSnowChance: 0.12,
