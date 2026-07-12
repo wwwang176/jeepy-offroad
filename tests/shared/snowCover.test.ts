@@ -4,6 +4,7 @@ import {
   snowCoverageAt,
   snowDomeFalloff,
   snowDustColor,
+  snowRimRadiusScale,
   type SnowCoverConfig,
 } from "@/shared/snowCover";
 import { buildSnowMoundGeometry } from "@/render/SnowCoverMesh";
@@ -40,6 +41,20 @@ describe("snowCoverageAt / snowDustColor", () => {
     expect(c.r).toBeGreaterThan(0.9);
     expect(c.g).toBeGreaterThan(0.9);
     expect(c.b).toBeGreaterThan(0.9);
+  });
+});
+
+describe("snowRimRadiusScale", () => {
+  it("varies with angle (warped outline, not a constant circle)", () => {
+    const phase = 1.7;
+    const samples = Array.from({ length: 16 }, (_, i) =>
+      snowRimRadiusScale((i / 16) * Math.PI * 2, phase),
+    );
+    const min = Math.min(...samples);
+    const max = Math.max(...samples);
+    expect(max - min).toBeGreaterThan(0.25);
+    expect(min).toBeGreaterThanOrEqual(0.5);
+    expect(max).toBeLessThanOrEqual(1.55);
   });
 });
 

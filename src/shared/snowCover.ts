@@ -67,7 +67,27 @@ export type SnowMound = {
 export const SNOW_MOUND_SEED_XOR = 0x50e411;
 
 /**
- * Soft coverage 0..1 under snow mounds (same radial lobe as the mesh).
+ * Angular rim scale for irregular blob outline (noise-warped, not a circle).
+ * Shared by mesh build + tire-dust coverage.
+ * Typical range ~0.55–1.45 around base radius.
+ */
+export function snowRimRadiusScale(ang: number, phase: number): number {
+  // Multi-frequency angular “noise” — deterministic, no grid artifacts
+  const n =
+    0.5 * Math.sin(ang * 2 + phase) +
+    0.38 * Math.sin(ang * 3 - phase * 1.4) +
+    0.3 * Math.cos(ang * 5 + phase * 0.75) +
+    0.22 * Math.sin(ang * 7 - phase * 2.2) +
+    0.16 * Math.cos(ang * 4 + phase * 1.85) +
+    0.1 * Math.sin(ang * 9 + phase * 0.4);
+  return clamp(1 + 0.38 * n, 0.52, 1.5);
+}
+
+/** Max rim scale — for broad-phase culling in coverage queries. */
+export const SNOW_RIM_SCALE_MAX = 1.5;
+
+/**
+ * Soft coverage 0..1 under snow mounds (same warped rim as the mesh).
  * Used for tire dust tint when driving on snow.
  */
 export function snowCoverageAt(
@@ -81,13 +101,9 @@ export function snowCoverageAt(
     const dx = x - m.x;
     const dz = z - m.z;
     const dist = Math.hypot(dx, dz);
-    if (dist > m.radius * 1.2) continue;
+    if (dist > m.radius * SNOW_RIM_SCALE_MAX) continue;
     const ang = Math.atan2(dz, dx);
-    const lob =
-      1 +
-      0.1 * Math.sin(ang * 2 + m.phase) +
-      0.06 * Math.cos(ang * 3 - m.phase * 0.7);
-    const rEff = m.radius * lob;
+    const rEff = m.radius * snowRimRadiusScale(ang, m.phase);
     if (dist >= rEff || rEff < 1e-4) continue;
     const c = snowDomeFalloff(dist / rEff);
     if (c > best) best = c;

@@ -6,17 +6,19 @@ import { mulberry32 } from "@/levelgen/rng";
 import {
   placeSnowMounds,
   snowDomeFalloff,
+  snowRimRadiusScale,
   SNOW_MOUND_SEED_XOR,
   type SnowCoverConfig,
   type SnowMound,
 } from "@/shared/snowCover";
 
-const RADIAL_SEGMENTS = 24;
-const RINGS = 6;
+/** More segments so noise-warped rims stay smooth. */
+const RADIAL_SEGMENTS = 32;
+const RINGS = 7;
 
 /**
- * Build one soft snow dome: rounded mound sitting on the rock.
- * Center thick, rim feathers to terrain — not a heightfield grid drape.
+ * Soft snow mound with noise-warped outline (not a circle).
+ * Center thick, rim feathers to terrain; radial scale varies by angle.
  */
 export function buildSnowMoundGeometry(
   mound: SnowMound,
@@ -35,16 +37,13 @@ export function buildSnowMoundGeometry(
     const falloff = snowDomeFalloff(u);
     for (let s = 0; s < RADIAL_SEGMENTS; s++) {
       const ang = (s / RADIAL_SEGMENTS) * Math.PI * 2;
-      // Slight lobe so patches aren't perfect circles
-      const lob =
-        1 +
-        0.1 * Math.sin(ang * 2 + phase) +
-        0.06 * Math.cos(ang * 3 - phase * 0.7);
-      const r = radius * u * lob;
+      // Noise-warped rim: each angle has its own edge distance
+      const rim = snowRimRadiusScale(ang, phase);
+      const r = radius * rim * u;
       const x = cx + Math.cos(ang) * r;
       const z = cz + Math.sin(ang) * r;
       const ground = sampleY(x, z);
-      // Rounded volume above rock; edge ~ flush with terrain
+      // Thickness falls off by normalized radius to THIS angle's edge
       const y = ground + peakThickness * falloff + 0.02;
       positions.push(x, y, z);
     }
