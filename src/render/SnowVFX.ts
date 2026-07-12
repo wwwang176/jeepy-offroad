@@ -6,22 +6,22 @@ import * as THREE from "three";
  * (down when falling / following terrain downhill).
  */
 
-const FALL_COUNT = 700;
+const FALL_COUNT = 350;
 const FALL_AREA = 52;
 const FALL_HEIGHT = 32;
-const FALL_SPEED_MIN = 2.2;
-const FALL_SPEED_MAX = 4.8;
-const FALL_WIND_X = 1.4;
-const FALL_WIND_Z = 2.6;
+const FALL_SPEED_MIN = 4.4;
+const FALL_SPEED_MAX = 9.6;
+const FALL_WIND_X = 2.8;
+const FALL_WIND_Z = 5.2;
 
-const BLOW_COUNT = 1100;
+const BLOW_COUNT = 550;
 const BLOW_AREA = 42;
 const BLOW_HEIGHT_MIN = 0.08;
 const BLOW_HEIGHT_MAX = 0.55;
-const BLOW_SPEED_MIN = 9;
-const BLOW_SPEED_MAX = 18;
-const BLOW_WIND_X = 9.5;
-const BLOW_WIND_Z = 3.8;
+const BLOW_SPEED_MIN = 18;
+const BLOW_SPEED_MAX = 36;
+const BLOW_WIND_X = 19;
+const BLOW_WIND_Z = 7.6;
 
 const DEAD_Y = -9999;
 
