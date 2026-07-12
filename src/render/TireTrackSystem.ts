@@ -199,9 +199,10 @@ export class TireTrackSystem {
         }
       `,
       transparent: true,
+      // Transparent marks: don't write depth (avoids holes), but DO test depth
+      // so tracks occlude correctly under jeep/rocks — not flat screen overlays.
       depthWrite: false,
-      // Off so shallow snow grooves (Y slightly under snow surface) stay visible
-      depthTest: false,
+      depthTest: true,
       side: THREE.DoubleSide,
       polygonOffset: true,
       polygonOffsetFactor: -2,
@@ -211,8 +212,7 @@ export class TireTrackSystem {
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.name = "tire-track-mesh";
     this.mesh.frustumCulled = false;
-    // Above snow cover mesh so shallow grooves remain readable
-    this.mesh.renderOrder = 3;
+    this.mesh.renderOrder = 2;
     this.group.add(this.mesh);
     scene.add(this.group);
 
@@ -306,10 +306,12 @@ export class TireTrackSystem {
         snowCover >= 0.2
           ? snowThicknessAt(contact.x, contact.z, this.snowMounds)
           : 0;
-      // On snow: sit just under the visual snow surface (fake groove, no mesh crush)
+      // On snow: slightly under snow surface for a shallow groove read.
+      // Keep sink small so depthTest vs snow still works with polygonOffset
+      // (deep sink + depthTest would fully hide marks under opaque snow).
       const y =
         snowLift > 0.04
-          ? groundY + snowLift - SNOW_TRACK_GROOVE_DEPTH_M
+          ? groundY + snowLift - Math.min(SNOW_TRACK_GROOVE_DEPTH_M, 0.028)
           : groundY + Y_BIAS;
       const pathW = this.terrainCtx
         ? pathProximity(
