@@ -4,6 +4,7 @@ import {
   snowDomeFalloff,
   type SnowCoverConfig,
 } from "@/shared/snowCover";
+import { buildSnowMoundGeometry } from "@/render/SnowCoverMesh";
 import { sampleBilinear } from "@/levelgen/heightmap";
 import { gridToWorld } from "@/shared/coords";
 import { mulberry32 } from "@/levelgen/rng";
@@ -33,6 +34,25 @@ describe("snowDomeFalloff", () => {
     // Monotone decreasing on [0,1]
     expect(snowDomeFalloff(0.25)).toBeGreaterThan(snowDomeFalloff(0.5));
     expect(snowDomeFalloff(0.5)).toBeGreaterThan(snowDomeFalloff(0.75));
+  });
+});
+
+describe("buildSnowMoundGeometry", () => {
+  it("has vertex normals pointing mostly skyward (+Y)", () => {
+    const geo = buildSnowMoundGeometry(
+      { x: 0, z: 0, radius: 6, peakThickness: 0.8, phase: 0 },
+      () => 10,
+    );
+    const nAttr = geo.getAttribute("normal");
+    expect(nAttr).toBeTruthy();
+    let sumY = 0;
+    for (let i = 0; i < nAttr!.count; i++) {
+      sumY += nAttr!.getY(i);
+    }
+    const meanY = sumY / nAttr!.count;
+    // Wrong winding yields meanY ≈ −1; correct ≈ +1
+    expect(meanY).toBeGreaterThan(0.5);
+    geo.dispose();
   });
 });
 

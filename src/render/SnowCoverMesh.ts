@@ -49,13 +49,14 @@ export function buildSnowMoundGeometry(
     }
   }
 
-  // Center → first ring
+  // Center → first ring. Winding must face +Y (CCW from above).
+  // Order 0,a,b with a=+X then b=+Z yields normal −Y — flip to 0,b,a.
   for (let s = 0; s < RADIAL_SEGMENTS; s++) {
     const a = 1 + s;
     const b = 1 + ((s + 1) % RADIAL_SEGMENTS);
-    indices.push(0, a, b);
+    indices.push(0, b, a);
   }
-  // Ring quads
+  // Ring quads (same flip so outer rings also face sky)
   for (let ring = 1; ring < RINGS; ring++) {
     const ringStart = 1 + (ring - 1) * RADIAL_SEGMENTS;
     const nextStart = 1 + ring * RADIAL_SEGMENTS;
@@ -65,7 +66,7 @@ export function buildSnowMoundGeometry(
       const b = ringStart + s1;
       const c = nextStart + s;
       const d = nextStart + s1;
-      indices.push(a, c, b, b, c, d);
+      indices.push(a, b, c, b, d, c);
     }
   }
 
