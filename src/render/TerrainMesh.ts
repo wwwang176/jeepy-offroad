@@ -11,8 +11,8 @@ import {
  * Grid mesh matching heightfield collider: same samples, origin, and world size.
  * Vertex colors from biome palette + path ribbon (shared terrainColor helpers).
  *
- * Uses THREE.Color so hex is converted into the working (linear) color space —
- * raw 0–1 sRGB channel writes look washed-out / too bright under MeshLambert.
+ * Albedo is already linear working-space RGB (same as historical
+ * `new THREE.Color(hex)` + lerp). Write channels directly for MeshLambert.
  */
 export function createTerrainMesh(
   level: LevelData,
@@ -42,11 +42,9 @@ export function createTerrainMesh(
       positions[vi * 3 + 2] = z;
 
       const albedo = terrainAlbedoAt(x, z, y, colorCtx);
-      // Feed sRGB-ish 0–1 into THREE.Color so MeshLambert matches prior look.
-      const c = new THREE.Color(albedo.r, albedo.g, albedo.b);
-      colors[vi * 3] = c.r;
-      colors[vi * 3 + 1] = c.g;
-      colors[vi * 3 + 2] = c.b;
+      colors[vi * 3] = albedo.r;
+      colors[vi * 3 + 1] = albedo.g;
+      colors[vi * 3 + 2] = albedo.b;
     }
   }
 

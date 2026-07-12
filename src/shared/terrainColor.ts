@@ -11,6 +11,11 @@ export type GroundPalette = {
 export type TerrainColorMode = "default" | "alpineSnow";
 
 export type TerrainColorContext = {
+  /**
+   * Palette in **linear** working space (same as `new THREE.Color("#hex")`
+   * with ColorManagement enabled). Blends + vertex colors stay linear so
+   * MeshLambert matches pre-refactor TerrainMesh (not washed-out sRGB).
+   */
   palette: {
     high: Rgb;
     mid: Rgb;
@@ -24,6 +29,28 @@ export type TerrainColorContext = {
   pathPolyline: readonly { x: number; z: number }[];
   mode: TerrainColorMode;
 };
+
+/**
+ * IEC 61966-2-1 sRGB channel → linear (matches THREE.ColorManagement).
+ * Used so hex palettes match historical `THREE.Color(hex)` mesh colors.
+ */
+export function srgbChannelToLinear(c: number): number {
+  const x = clamp(c, 0, 1);
+  return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+}
+
+export function srgbRgbToLinear(rgb: Rgb): Rgb {
+  return {
+    r: srgbChannelToLinear(rgb.r),
+    g: srgbChannelToLinear(rgb.g),
+    b: srgbChannelToLinear(rgb.b),
+  };
+}
+
+/** Parse `#rrggbb` into linear RGB (THREE.Color hex equivalent). */
+export function parseHexRgbLinear(hex: string): Rgb {
+  return srgbRgbToLinear(parseHexRgb(hex));
+}
 
 /** Match TerrainMesh path ribbon falloff (point samples along polyline). */
 export function pathProximity(
@@ -123,7 +150,8 @@ function albedoAlpineSnow(
 }
 
 /**
- * Ground albedo at a point — same blend as TerrainMesh vertex colors.
+ * Ground albedo at a point — linear RGB for TerrainMesh vertex colors
+ * (and dust/tracks derived from the same sample).
  */
 export function terrainAlbedoAt(
   x: number,
@@ -151,6 +179,7 @@ export function terrainAlbedoAt(
 /**
  * Unlit point sprites read brighter than MeshLambert terrain.
  * Darken + mild desaturate so lofted dust matches the lit ground read.
+ * Expects **linear** albedo (same space as terrainAlbedoAt).
  */
 export function dustColorFromTerrainAlbedo(
   albedo: Rgb,
@@ -192,12 +221,13 @@ export function buildTerrainColorContext(opts: {
     maxH = 1;
   }
   const gp = opts.groundPalette;
+  // Linear palette: matches pre-refactor `new THREE.Color(hex)` + Color.lerp.
   return {
     palette: {
-      high: parseHexRgb(gp.high),
-      mid: parseHexRgb(gp.mid),
-      low: parseHexRgb(gp.low),
-      path: parseHexRgb(gp.path),
+      high: parseHexRgbLinear(gp.high),
+      mid: parseHexRgbLinear(gp.mid),
+      low: parseHexRgbLinear(gp.low),
+      path: parseHexRgbLinear(gp.path),
     },
     minH,
     maxH,

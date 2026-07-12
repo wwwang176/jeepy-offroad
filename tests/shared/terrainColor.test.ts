@@ -3,7 +3,9 @@ import { parseHexRgb } from "@/shared/offroadFxMath";
 import {
   buildTerrainColorContext,
   dustColorFromTerrainAlbedo,
+  parseHexRgbLinear,
   pathProximity,
+  srgbChannelToLinear,
   terrainAlbedoAt,
 } from "@/shared/terrainColor";
 
@@ -41,37 +43,45 @@ describe("terrainAlbedoAt", () => {
     pathWidth: 4,
   });
 
-  it("uses low palette at low elevations", () => {
-    const low = parseHexRgb(cliffsPalette.low);
+  it("uses low palette at low elevations (linear space)", () => {
+    const low = parseHexRgbLinear(cliffsPalette.low);
     const c = terrainAlbedoAt(20, 20, ctx.minH, ctx);
-    expect(c.r).toBeCloseTo(low.r, 2);
-    expect(c.g).toBeCloseTo(low.g, 2);
-    expect(c.b).toBeCloseTo(low.b, 2);
+    expect(c.r).toBeCloseTo(low.r, 5);
+    expect(c.g).toBeCloseTo(low.g, 5);
+    expect(c.b).toBeCloseTo(low.b, 5);
   });
 
-  it("uses high palette at high elevations", () => {
-    const high = parseHexRgb(cliffsPalette.high);
+  it("uses high palette at high elevations (linear space)", () => {
+    const high = parseHexRgbLinear(cliffsPalette.high);
     const c = terrainAlbedoAt(20, 20, ctx.maxH, ctx);
-    expect(c.r).toBeCloseTo(high.r, 2);
-    expect(c.g).toBeCloseTo(high.g, 2);
-    expect(c.b).toBeCloseTo(high.b, 2);
+    expect(c.r).toBeCloseTo(high.r, 5);
+    expect(c.g).toBeCloseTo(high.g, 5);
+    expect(c.b).toBeCloseTo(high.b, 5);
   });
 
   it("blends toward path color on the ribbon", () => {
     const midH = (ctx.minH + ctx.maxH) * 0.5;
     const off = terrainAlbedoAt(30, 0, midH, ctx);
     const on = terrainAlbedoAt(0, 0, midH, ctx);
-    const path = parseHexRgb(cliffsPalette.path);
+    const path = parseHexRgbLinear(cliffsPalette.path);
     // On-path should be closer to path color than off-path
     const dist = (a: { r: number; g: number; b: number }, b: typeof path) =>
       Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
     expect(dist(on, path)).toBeLessThan(dist(off, path));
   });
+
+  it("is darker in linear than raw sRGB (restores pre-refactor depth)", () => {
+    // Rainforest low #1e3220 — sRGB ~0.12 vs linear ~0.013
+    const srgb = parseHexRgb("#1e3220");
+    const lin = parseHexRgbLinear("#1e3220");
+    expect(lin.r).toBeLessThan(srgb.r * 0.2);
+    expect(lin.g).toBeCloseTo(srgbChannelToLinear(srgb.g), 8);
+  });
 });
 
 describe("dustColorFromTerrainAlbedo", () => {
   it("is darker than raw albedo (deeper dust read)", () => {
-    const albedo = parseHexRgb("#a89880");
+    const albedo = parseHexRgbLinear("#a89880");
     const dust = dustColorFromTerrainAlbedo(albedo);
     expect(dust.r).toBeLessThan(albedo.r * 0.7);
     expect(dust.g).toBeLessThan(albedo.g * 0.7);
@@ -79,7 +89,7 @@ describe("dustColorFromTerrainAlbedo", () => {
   });
 
   it("stays in the same hue family as cliffs mid", () => {
-    const albedo = parseHexRgb(cliffsPalette.mid);
+    const albedo = parseHexRgbLinear(cliffsPalette.mid);
     const dust = dustColorFromTerrainAlbedo(albedo);
     // Warm dirt: r >= g >= b-ish
     expect(dust.r).toBeGreaterThanOrEqual(dust.b);
