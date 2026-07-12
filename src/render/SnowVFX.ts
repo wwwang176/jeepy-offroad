@@ -17,7 +17,7 @@ const FALL_SPEED_MAX = 19.2;
 const FALL_WIND_X = 7.5;
 const FALL_WIND_Z = 11;
 
-const BLOW_COUNT = 550;
+const BLOW_COUNT = 2200;
 /** Larger wrap box so spindrift is visible farther from the player/camera. */
 const BLOW_AREA = 160;
 const BLOW_HEIGHT_MIN = 0.08;
@@ -109,7 +109,7 @@ export class SnowVFX {
   private blowActiveCount = 0;
   private blowIntroAccum = 0;
   /** ~particles/s entering the blow volume after load. */
-  private static readonly BLOW_INTRO_PER_SEC = 90;
+  private static readonly BLOW_INTRO_PER_SEC = 360;
 
   constructor(scene: THREE.Scene, opts: SnowVFXOptions) {
     this.scene = scene;
@@ -311,7 +311,7 @@ export class SnowVFX {
     const wx = BLOW_WIND_X / windLen;
     const wz = BLOW_WIND_Z / windLen;
 
-    // Gradual intro: do not full-scatter on first frame
+    // Gradual intro: scatter into full wrap volume (not upwind-only)
     if (this.blowActiveCount < this.blowCount) {
       this.blowIntroAccum += SnowVFX.BLOW_INTRO_PER_SEC * dt;
       while (
@@ -320,8 +320,7 @@ export class SnowVFX {
       ) {
         this.blowIntroAccum -= 1;
         const i = this.blowActiveCount++;
-        // Enter from upwind edge, not random full volume
-        this.respawnBlow(i, camPos, false);
+        this.respawnBlow(i, camPos);
       }
     }
 
@@ -340,48 +339,48 @@ export class SnowVFX {
       pos[i3]! += vx * dt;
       pos[i3 + 2]! += vz * dt;
 
+      // Camera-relative toroidal wrap (same as RainVFX / fall snow).
+      // Keeps density ahead of a fast-moving camera instead of only
+      // re-spawning on the world upwind edge.
+      const dx = pos[i3]! - camPos.x;
+      const dz = pos[i3 + 2]! - camPos.z;
+      if (dx > half) pos[i3]! -= BLOW_AREA;
+      else if (dx < -half) pos[i3]! += BLOW_AREA;
+      if (dz > half) pos[i3 + 2]! -= BLOW_AREA;
+      else if (dz < -half) pos[i3 + 2]! += BLOW_AREA;
+
       const gY = this.getHeightAt(pos[i3]!, pos[i3 + 2]!);
       const targetY =
         gY +
         BLOW_HEIGHT_MIN +
         (BLOW_HEIGHT_MAX - BLOW_HEIGHT_MIN) * (0.35 + 0.65 * ((i % 7) / 7)) +
         lift;
-      pos[i3 + 1] = prevY * 0.85 + targetY * 0.15;
+      // Snap when wrap jumps to very different terrain; else soft track
+      const yErr = Math.abs(prevY - targetY);
+      pos[i3 + 1] =
+        yErr > 2.5 ? targetY : prevY * 0.85 + targetY * 0.15;
       const vy = (pos[i3 + 1]! - prevY) / Math.max(dt, 1e-4);
 
       const inv = 1 / Math.max(1e-4, Math.hypot(vx, vy, vz));
       dir[i3] = vx * inv;
       dir[i3 + 1] = vy * inv;
       dir[i3 + 2] = vz * inv;
-
-      const dx = pos[i3]! - camPos.x;
-      const dz = pos[i3 + 2]! - camPos.z;
-      if (dx > half || dx < -half || dz > half || dz < -half) {
-        this.respawnBlow(i, camPos, false);
-      }
     }
     this.blowGeo.attributes.position!.needsUpdate = true;
     this.blowGeo.attributes.aDir!.needsUpdate = true;
   }
 
+  /** Place one blow particle in the camera wrap box (intro only). */
   private respawnBlow(
     i: number,
     camPos: { x: number; y: number; z: number },
-    scatter: boolean,
   ): void {
     const i3 = i * 3;
     const windLen = Math.hypot(BLOW_WIND_X, BLOW_WIND_Z) || 1;
     const wx = BLOW_WIND_X / windLen;
     const wz = BLOW_WIND_Z / windLen;
-    if (scatter) {
-      this.blowPos[i3] = camPos.x + (Math.random() - 0.5) * BLOW_AREA;
-      this.blowPos[i3 + 2] = camPos.z + (Math.random() - 0.5) * BLOW_AREA;
-    } else {
-      const side = (Math.random() - 0.5) * BLOW_AREA;
-      this.blowPos[i3] = camPos.x - wx * (BLOW_AREA * 0.48) + -wz * side * 0.35;
-      this.blowPos[i3 + 2] =
-        camPos.z - wz * (BLOW_AREA * 0.48) + wx * side * 0.35;
-    }
+    this.blowPos[i3] = camPos.x + (Math.random() - 0.5) * BLOW_AREA;
+    this.blowPos[i3 + 2] = camPos.z + (Math.random() - 0.5) * BLOW_AREA;
     const gY = this.getHeightAt(this.blowPos[i3]!, this.blowPos[i3 + 2]!);
     this.blowPos[i3 + 1] =
       gY +
