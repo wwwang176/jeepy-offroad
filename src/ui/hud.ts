@@ -16,6 +16,13 @@ export interface HudModel {
   path?: { x: number; z: number }[];
 }
 
+export interface HudHandlers {
+  /** Confirmed leave to main menu (after abandon modal). */
+  onQuitToMenu: () => void;
+  /** Modal open/close — pause drive / suppress touch while open. */
+  onQuitModalChange?: (open: boolean) => void;
+}
+
 export interface HudHandles {
   root: HTMLElement;
   minimapCanvas: HTMLCanvasElement;
@@ -24,6 +31,10 @@ export interface HudHandles {
   infoEl: HTMLElement;
   gearEl: HTMLElement;
   speedEl: HTMLElement;
+  menuBtn: HTMLButtonElement;
+  openQuitModal: () => void;
+  closeQuitModal: () => void;
+  isQuitModalOpen: () => boolean;
   dispose: () => void;
 }
 
@@ -32,7 +43,8 @@ const MINIMAP_SIZE = 180;
 const MPS_TO_KMH = 3.6;
 
 /**
- * Mount play HUD: biome/seed, speed, transfer-case, goal arrow, minimap.
+ * Mount play HUD: biome/seed, speed, transfer-case, goal arrow, minimap,
+ * menu button (left of map) + quit-confirm modal.
  */
 export function createHud(
   parent: HTMLElement,
@@ -43,6 +55,7 @@ export function createHud(
     driveLabel?: string;
     speedMps?: number;
   },
+  handlers?: HudHandlers,
 ): HudHandles {
   const root = document.createElement("div");
   root.className = "hud";
@@ -63,7 +76,25 @@ export function createHud(
       <div class="hud-goal-arrow">▲</div>
       <div class="hud-goal-label">${t("hud.finish")}</div>
     </div>
+    <button type="button" class="hud-menu-btn" id="hud-menu-btn">${t("hud.menu")}</button>
     <canvas class="hud-minimap" width="${MINIMAP_SIZE}" height="${MINIMAP_SIZE}"></canvas>
+    <div
+      class="hud-quit-modal"
+      id="hud-quit-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="hud-quit-title"
+      hidden
+    >
+      <div class="hud-quit-panel panel modal-panel">
+        <h2 class="modal-title" id="hud-quit-title">${t("hud.quit.title")}</h2>
+        <p class="hud-quit-copy">${t("hud.quit.copy")}</p>
+        <div class="hud-quit-actions">
+          <button type="button" class="hud-quit-stay" id="hud-quit-stay">${t("hud.quit.stay")}</button>
+          <button type="button" class="btn-ghost hud-quit-leave" id="hud-quit-leave">${t("hud.quit.leave")}</button>
+        </div>
+      </div>
+    </div>
   `;
 
   const infoEl = root.querySelector<HTMLElement>(".hud-info")!;
@@ -79,6 +110,56 @@ export function createHud(
   const minimapCtx = minimapCanvas.getContext("2d");
   if (!minimapCtx) throw new Error("2D context unavailable for minimap");
 
+  const menuBtn = root.querySelector<HTMLButtonElement>("#hud-menu-btn")!;
+  const quitModal = root.querySelector<HTMLElement>("#hud-quit-modal")!;
+  const stayBtn = root.querySelector<HTMLButtonElement>("#hud-quit-stay")!;
+  const leaveBtn = root.querySelector<HTMLButtonElement>("#hud-quit-leave")!;
+
+  let quitOpen = false;
+
+  const setQuitOpen = (open: boolean): void => {
+    if (quitOpen === open) return;
+    quitOpen = open;
+    quitModal.hidden = !open;
+    quitModal.classList.toggle("is-open", open);
+    handlers?.onQuitModalChange?.(open);
+    if (open) {
+      // Prefer stay so Enter doesn't leave by accident
+      requestAnimationFrame(() => stayBtn.focus());
+    }
+  };
+
+  const openQuitModal = (): void => setQuitOpen(true);
+  const closeQuitModal = (): void => setQuitOpen(false);
+
+  menuBtn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    openQuitModal();
+  });
+  stayBtn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    closeQuitModal();
+  });
+  leaveBtn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    closeQuitModal();
+    handlers?.onQuitToMenu?.();
+  });
+  quitModal.addEventListener("click", (ev) => {
+    if (ev.target === quitModal) closeQuitModal();
+  });
+
+  const onKeyDown = (ev: KeyboardEvent): void => {
+    if (ev.key !== "Escape") return;
+    // Only handle while this HUD is mounted (playing / sandbox).
+    if (!root.isConnected) return;
+    ev.preventDefault();
+    if (quitOpen) closeQuitModal();
+    else openQuitModal();
+  };
+  window.addEventListener("keydown", onKeyDown);
+
   parent.appendChild(root);
 
   return {
@@ -89,7 +170,16 @@ export function createHud(
     infoEl,
     gearEl,
     speedEl,
+    menuBtn,
+    openQuitModal,
+    closeQuitModal,
+    isQuitModalOpen: () => quitOpen,
     dispose: () => {
+      window.removeEventListener("keydown", onKeyDown);
+      if (quitOpen) {
+        quitOpen = false;
+        handlers?.onQuitModalChange?.(false);
+      }
       root.remove();
     },
   };

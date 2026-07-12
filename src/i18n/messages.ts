@@ -46,6 +46,11 @@ export type MessageKey =
   | "hud.range"
   | "hud.info"
   | "hud.info.fallback"
+  | "hud.menu"
+  | "hud.quit.title"
+  | "hud.quit.copy"
+  | "hud.quit.stay"
+  | "hud.quit.leave"
   | "touch.rotate"
   | "lang.aria";
 
@@ -99,6 +104,11 @@ export const messages: Record<Locale, MessageTable> = {
     "hud.range": "RANGE",
     "hud.info": "{biome} · seed {seed}",
     "hud.info.fallback": "{biome} · seed {seed} · fallback path",
+    "hud.menu": "Menu",
+    "hud.quit.title": "Leave map?",
+    "hud.quit.copy": "Your progress on this run will be lost.",
+    "hud.quit.stay": "Continue",
+    "hud.quit.leave": "Main menu",
     "touch.rotate": "Rotate your device",
     "lang.aria": "Language",
   },
@@ -148,6 +158,11 @@ export const messages: Record<Locale, MessageTable> = {
     "hud.range": "RANGE",
     "hud.info": "{biome} · 種子 {seed}",
     "hud.info.fallback": "{biome} · 種子 {seed} · 備用路徑",
+    "hud.menu": "選單",
+    "hud.quit.title": "離開地圖？",
+    "hud.quit.copy": "目前進度將會放棄。",
+    "hud.quit.stay": "繼續",
+    "hud.quit.leave": "主選單",
     "touch.rotate": "請旋轉畫面",
     "lang.aria": "語言",
   },

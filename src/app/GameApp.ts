@@ -38,6 +38,7 @@ import {
   updateHud,
   updateHudDrive,
   type HudHandles,
+  type HudHandlers,
 } from "@/ui/hud";
 import { requestGameFullscreen } from "@/ui/fullscreen";
 import { mountLoading, type LoadingHandles } from "@/ui/loading";
@@ -121,6 +122,10 @@ export class GameApp {
   private lastT = 0;
   private sessionActive = false;
   private sessionMode: "sandbox" | "level" | null = null;
+  /**
+   * True while quit-confirm modal is open — freeze physics / drive, keep render.
+   */
+  private drivePaused = false;
   /** Last drive inputs (for VFX). */
   private lastDriveActions: {
     throttle: number;
@@ -209,9 +214,28 @@ export class GameApp {
     ]);
   }
 
+  /** HUD quit button + confirm modal → main menu. */
+  private makeHudHandlers(): HudHandlers {
+    return {
+      onQuitToMenu: () => this.dispatch({ type: "TO_MENU" }),
+      onQuitModalChange: (open) => {
+        this.drivePaused = open;
+        this.touchProvider?.setSuppressed(open);
+        if (open) {
+          this.acc = 0;
+          this.latchedRespawn = false;
+        } else if (this.sessionActive) {
+          // Avoid a large catch-up step after the modal held the clock.
+          this.lastT = performance.now();
+        }
+      },
+    };
+  }
+
   private teardownSession(): void {
     this.sessionActive = false;
     this.sessionMode = null;
+    this.drivePaused = false;
     this.input?.dispose();
     this.input = null;
     this.touchProvider = null;
@@ -334,15 +358,20 @@ export class GameApp {
         }
         const root = document.querySelector<HTMLElement>("#ui-root");
         if (root && this.level) {
-          this.hud = createHud(root, {
-            biomeId: this.level.biomeId,
-            seed: this.level.seed,
-            usedFallback: this.level.meta.usedFallback,
-          });
+          this.hud = createHud(
+            root,
+            {
+              biomeId: this.level.biomeId,
+              seed: this.level.seed,
+              usedFallback: this.level.meta.usedFallback,
+            },
+            this.makeHudHandlers(),
+          );
         }
         // clearUi() wiped TouchProvider DOM mounted during loadLevel — put it back.
         if (root) this.touchProvider?.reattach(root);
         this.sessionActive = true;
+        this.drivePaused = false;
         this.lastT = performance.now();
         this.acc = 0;
         break;
@@ -607,14 +636,18 @@ export class GameApp {
     const root = document.querySelector<HTMLElement>("#ui-root");
     if (root) {
       // Reuse play HUD chrome so RANGE badge is visible in flat test too.
-      this.hud = createHud(root, {
-        biomeId: "flat-test",
-        seed: 0,
-        driveLabel: "4H",
-      });
+      this.hud = createHud(
+        root,
+        {
+          biomeId: "flat-test",
+          seed: 0,
+          driveLabel: "4H",
+        },
+        this.makeHudHandlers(),
+      );
       this.hud.infoEl.textContent =
-        "Flat test · Shift 4H/4L · drag look · C camera · reload for menu";
-      // Hide level-only widgets in sandbox.
+        "Flat test · Shift 4H/4L · drag look · C camera · Menu to exit";
+      // Hide level-only widgets in sandbox (keep menu button).
       this.hud.root.querySelector(".hud-goal")?.setAttribute("hidden", "");
       this.hud.minimapCanvas.style.display = "none";
       this.uiUnmount = () => {
@@ -644,86 +677,93 @@ export class GameApp {
     ) {
       const dt = Math.min(0.05, (t - this.lastT) / 1000);
       this.lastT = t;
-      this.acc += dt;
 
-      // Sample once per render frame so look is never stuck waiting on fixed steps.
-      // (Previously sample+applyLook lived only inside the while — skip a step and
-      // drag deltas sat uncleared / unapplied until the next physics tick.)
-      const actions = this.input.sample();
-      this.touchProvider?.setDriveRange(actions.driveRange);
-      if (actions.respawn) this.latchedRespawn = true;
-      if (actions.cameraToggle && this.cameraRig) {
-        this.cameraRig.toggle();
-        // FP cabin view: hide windshield / side / rear glass
-        if (this.jeepMesh) {
-          setJeepGlassVisible(
-            this.jeepMesh,
-            this.cameraRig.mode !== "first",
-          );
-        }
-      }
-      if (this.cameraRig) {
-        this.cameraRig.applyLookDelta(
-          actions.lookDeltaX,
-          actions.lookDeltaY,
-        );
-      }
+      if (this.drivePaused) {
+        // Drain input buffers so look/respawn do not pile up under the modal.
+        this.input.sample();
+        this.acc = 0;
+      } else {
+        this.acc += dt;
 
-      while (this.acc >= FIXED_DT) {
-        const poseBefore = this.vehicle.getPose();
-        // Deliver latched respawn only on a real physics step (then clear).
-        const stepActions: InputActions = {
-          ...actions,
-          respawn: this.latchedRespawn,
-        };
-        this.latchedRespawn = false;
-
-        if (this.sessionMode === "level" && this.checkpointSystem) {
-          this.checkpointSystem.update(poseBefore.position);
-        }
-        if (this.sessionMode === "level" && this.respawnSystem) {
-          this.respawnSystem.update(
-            FIXED_DT,
-            poseBefore.position,
-            stepActions,
-          );
-        }
-
-        const drive: InputActions =
-          this.respawnSystem?.inputLocked()
-            ? {
-                ...stepActions,
-                ...ZERO_DRIVE,
-              }
-            : stepActions;
-
-        this.lastDriveActions = {
-          throttle: drive.throttle,
-          brake: drive.brake,
-        };
-
-        this.vehicle.update(FIXED_DT, drive, this.physics.getWorld());
-        this.physics.step();
-        // Advance render double-buffer after each fixed tick (Fix Your Timestep).
-        this.vehicle.commitRenderSnapshot();
-        if (
-          this.sessionMode === "level" &&
-          this.finishSystem &&
-          this.state.name === "playing"
-        ) {
-          const pose = this.vehicle.getPose();
-          if (this.finishSystem.isFinished(pose.position)) {
-            this.dispatch({ type: "WIN" });
-            this.acc = 0;
-            break;
+        // Sample once per render frame so look is never stuck waiting on fixed steps.
+        // (Previously sample+applyLook lived only inside the while — skip a step and
+        // drag deltas sat uncleared / unapplied until the next physics tick.)
+        const actions = this.input.sample();
+        this.touchProvider?.setDriveRange(actions.driveRange);
+        if (actions.respawn) this.latchedRespawn = true;
+        if (actions.cameraToggle && this.cameraRig) {
+          this.cameraRig.toggle();
+          // FP cabin view: hide windshield / side / rear glass
+          if (this.jeepMesh) {
+            setJeepGlassVisible(
+              this.jeepMesh,
+              this.cameraRig.mode !== "first",
+            );
           }
         }
-        this.acc -= FIXED_DT;
+        if (this.cameraRig) {
+          this.cameraRig.applyLookDelta(
+            actions.lookDeltaX,
+            actions.lookDeltaY,
+          );
+        }
+
+        while (this.acc >= FIXED_DT) {
+          const poseBefore = this.vehicle.getPose();
+          // Deliver latched respawn only on a real physics step (then clear).
+          const stepActions: InputActions = {
+            ...actions,
+            respawn: this.latchedRespawn,
+          };
+          this.latchedRespawn = false;
+
+          if (this.sessionMode === "level" && this.checkpointSystem) {
+            this.checkpointSystem.update(poseBefore.position);
+          }
+          if (this.sessionMode === "level" && this.respawnSystem) {
+            this.respawnSystem.update(
+              FIXED_DT,
+              poseBefore.position,
+              stepActions,
+            );
+          }
+
+          const drive: InputActions =
+            this.respawnSystem?.inputLocked()
+              ? {
+                  ...stepActions,
+                  ...ZERO_DRIVE,
+                }
+              : stepActions;
+
+          this.lastDriveActions = {
+            throttle: drive.throttle,
+            brake: drive.brake,
+          };
+
+          this.vehicle.update(FIXED_DT, drive, this.physics.getWorld());
+          this.physics.step();
+          // Advance render double-buffer after each fixed tick (Fix Your Timestep).
+          this.vehicle.commitRenderSnapshot();
+          if (
+            this.sessionMode === "level" &&
+            this.finishSystem &&
+            this.state.name === "playing"
+          ) {
+            const pose = this.vehicle.getPose();
+            if (this.finishSystem.isFinished(pose.position)) {
+              this.dispatch({ type: "WIN" });
+              this.acc = 0;
+              break;
+            }
+          }
+          this.acc -= FIXED_DT;
+        }
       }
 
       // Render between prev/curr physics states so 60Hz physics stays smooth
       // on high-refresh displays (and when rAF dt jitters around 1/60).
-      const renderAlpha = this.acc / FIXED_DT;
+      const renderAlpha = this.drivePaused ? 1 : this.acc / FIXED_DT;
       const pose = this.vehicle.getRenderPose(renderAlpha);
       const wheelVisuals = this.vehicle.getRenderWheelVisuals(renderAlpha);
       syncJeepMesh(this.jeepMesh, pose, wheelVisuals);

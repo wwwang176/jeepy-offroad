@@ -724,16 +724,86 @@ button.lang-toggle:active:not(:disabled) {
   letter-spacing: 0.08em;
   opacity: 0.85;
 }
+/*
+ * Desktop: minimap bottom-right (unchanged); menu alone at top-right.
+ * Mobile (≤900): minimap top-right; menu sits to the LEFT of the map.
+ */
 .hud-minimap {
   position: absolute;
   right: 12px;
   bottom: 12px;
+  display: block;
   width: 180px;
   height: 180px;
   border: 2px solid rgba(255, 255, 255, 0.35);
   border-radius: 4px;
   background: #3a3a3a;
   image-rendering: pixelated;
+  pointer-events: none;
+  z-index: 5;
+}
+.hud-menu-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  pointer-events: auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #f2efe8;
+  background: rgba(18, 16, 14, 0.88);
+  border: 1px solid rgba(201, 160, 74, 0.5);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+.hud-menu-btn:hover:not(:disabled),
+.hud-menu-btn:active:not(:disabled) {
+  background: rgba(36, 30, 18, 0.95);
+  border-color: #c9a04a;
+  color: #f2efe8;
+  transform: none;
+}
+
+/* Quit-confirm modal (abandon run → main menu) */
+.hud-quit-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(8, 10, 12, 0.72);
+  pointer-events: auto;
+}
+.hud-quit-modal.is-open,
+.hud-quit-modal:not([hidden]) {
+  display: flex;
+}
+.hud-quit-modal[hidden] {
+  display: none !important;
+}
+.hud-quit-panel {
+  width: min(340px, 100%);
+  padding: 20px 22px;
+  pointer-events: auto;
+}
+.hud-quit-copy {
+  font-size: 13px;
+  opacity: 0.85;
+  margin: 0 0 16px;
+  line-height: 1.4;
+  color: #f2efe8;
+}
+.hud-quit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* —— Mobile RWD (≤900px): free bottom corners for virtual stick / pedals —— */
@@ -761,6 +831,15 @@ button.lang-toggle:active:not(:disabled) {
     right: calc(8px + env(safe-area-inset-right, 0px));
     bottom: auto;
     top: calc(8px + env(safe-area-inset-top, 0px));
+  }
+  /* Left of 112px map + 8px gap */
+  .hud-menu-btn {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    right: calc(8px + 112px + 8px + env(safe-area-inset-right, 0px));
+    min-width: 40px;
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 11px;
   }
   .hud-goal {
     top: calc(8px + env(safe-area-inset-top, 0px));
