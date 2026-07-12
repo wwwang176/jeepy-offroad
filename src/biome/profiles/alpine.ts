@@ -60,4 +60,12 @@ export const alpineBiome: BiomeProfile = {
     opacity: 1,
   },
   weather: { kind: "snow", density: 1 },
+  /** Cold key + sky so white snow doesn't go cream under warm default sun. */
+  lighting: {
+    hemiSky: "#e8f0fa",
+    hemiGround: "#3a4450",
+    hemiIntensity: 0.78,
+    sunColor: "#eef4ff",
+    sunIntensity: 1.05,
+  },
 };

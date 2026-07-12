@@ -46,6 +46,7 @@ describe("biome registry", () => {
     expect(a.snowCover!.peakThicknessM).toBeGreaterThan(0);
     expect(a.snowCover!.thickCount).toBeGreaterThan(0);
     expect(a.weather?.kind).toBe("snow");
+    expect(a.lighting?.sunColor.toLowerCase()).toMatch(/eef4ff|#eef4ff/i);
     expect(a.streamDensity).toBeLessThanOrEqual(0.15);
     expect(a.traction?.frictionSlipScale ?? 1).toBeLessThan(0.6);
     expect(

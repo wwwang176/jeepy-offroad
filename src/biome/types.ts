@@ -86,4 +86,15 @@ export interface BiomeProfile {
    * `density` scales particle counts (~1 = default for that kind).
    */
   weather?: { kind: "rain" | "snow"; density?: number };
+  /**
+   * Optional scene lights (hemi + key sun). Omit = GameScene defaults
+   * (warm follow-sun for sand via arid path; neutral/green hemi otherwise).
+   */
+  lighting?: {
+    hemiSky: string;
+    hemiGround: string;
+    hemiIntensity?: number;
+    sunColor: string;
+    sunIntensity?: number;
+  };
 }

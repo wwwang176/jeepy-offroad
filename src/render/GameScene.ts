@@ -1015,19 +1015,25 @@ export function createGameScene(
   );
 
   // Soft fill light (no shadows) + camera-following sun with local shadow map.
-  // Sand: mild arid key boost (~half of first pass; keep fog palette).
-  const aridSun = biome.id === "sand";
+  // Prefer biome.lighting when set (alpine cold); else sand arid; else neutral.
+  const aridSun = biome.id === "sand" && !biome.lighting;
+  const L = biome.lighting;
   const hemi = new THREE.HemisphereLight(
-    aridSun ? 0xfff8f0 : 0xffffff,
-    aridSun ? 0x554c40 : 0x445544,
-    aridSun ? 0.85 : 0.75,
+    L ? hexToNumber(L.hemiSky) : aridSun ? 0xfff8f0 : 0xffffff,
+    L ? hexToNumber(L.hemiGround) : aridSun ? 0x554c40 : 0x445544,
+    L?.hemiIntensity ?? (aridSun ? 0.85 : 0.75),
   );
   scene.add(hemi);
   const shadows: FollowShadowHandles = createFollowShadows(scene, renderer, {
     radius: 52,
     mapSize: 1024,
-    intensity: aridSun ? 1.22 : 1.0,
-    color: aridSun ? 0xffefcc : undefined,
+    intensity: L?.sunIntensity ?? (aridSun ? 1.22 : 1.0),
+    // Default followShadows is warm 0xfff0dd — alpine must pass cool white
+    color: L
+      ? hexToNumber(L.sunColor)
+      : aridSun
+        ? 0xffefcc
+        : 0xf0f4fa,
     direction: aridSun
       ? new THREE.Vector3(0.4, 1.08, 0.22)
       : undefined,
