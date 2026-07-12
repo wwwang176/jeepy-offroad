@@ -12,12 +12,12 @@ export const alpineBiome: BiomeProfile = {
   skyColor: "#8fa8c0",
   fogColor: "#d0dbe6",
   fogDensity: 0.018,
-  /** Rock only — snow is separate soft mounds (snowCover). */
+  /** Rock only — snow is separate soft mounds (snowCover). Lighter greys for linear mesh. */
   groundPalette: {
-    high: "#4a525c",
-    mid: "#323a44",
-    low: "#1a1f26",
-    path: "#3a424c",
+    high: "#6e7682",
+    mid: "#525a66",
+    low: "#3a424c",
+    path: "#606870",
   },
   waterColor: "#2a4a5c",
   /** Below pond band (≤0.15 → 0 ponds). */
