@@ -1,3 +1,5 @@
+import { embedBiomeInSeed } from "@/biome/registry";
+import type { BiomeId } from "@/shared/types";
 import { normalizeSeed, parseSeedInput } from "@/shared/seed";
 import { biomeDisplayName, t } from "@/i18n";
 
@@ -36,8 +38,9 @@ export function mountResult(
     handlers.onRetrySame();
 
   root.querySelector<HTMLButtonElement>("#result-retry-new")!.onclick = () => {
-    // Empty field = random uint32 per seed contract.
-    const seed = normalizeSeed(parseSeedInput(""));
+    // New layout seed, same biome packed into the number.
+    const raw = normalizeSeed(parseSeedInput(""));
+    const seed = embedBiomeInSeed(raw, opts.biomeId as BiomeId);
     handlers.onRetryNew(seed);
   };
 

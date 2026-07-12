@@ -1,6 +1,6 @@
 import {
   RANDOM_BIOME_ID,
-  resolveBiomeId,
+  resolveStart,
   type BiomeSelectId,
 } from "@/biome/registry";
 import { normalizeSeed, parseSeedInput } from "@/shared/seed";
@@ -162,8 +162,12 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
   const startWith = (selection: BiomeSelectId, seedRaw: string): void => {
     clearError();
     try {
-      const seed = normalizeSeed(parseSeedInput(seedRaw));
-      const biomeId = resolveBiomeId(selection, seed);
+      const seedWasEmpty = seedRaw.trim() === "";
+      const rawSeed = normalizeSeed(parseSeedInput(seedRaw));
+      // Pack biome into seed (% BIOME_SLOTS) so SEED replay keeps terrain.
+      const { biomeId, seed } = resolveStart(selection, rawSeed, {
+        seedWasEmpty,
+      });
       handlers.onStart({ biomeId, seed });
     } catch (e) {
       if (e instanceof Error && e.message.startsWith("Invalid seed:")) {

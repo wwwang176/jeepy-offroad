@@ -1,15 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
+  BIOME_SLOTS,
+  biomeFromSeed,
+  biomeSeedIndex,
+  embedBiomeInSeed,
   getBiome,
   listBiomes,
+  listBiomeSeedOrder,
   RANDOM_BIOME_ID,
   resolveBiomeId,
+  resolveStart,
 } from "@/biome/registry";
 
 describe("biome registry", () => {
   it("lists sand, rainforest, and alpine", () => {
     const ids = listBiomes().map((b) => b.id).sort();
     expect(ids).toEqual(["alpine", "rainforest", "sand"]);
+  });
+
+  it("seed order is stable and slots are fixed", () => {
+    expect(BIOME_SLOTS).toBe(16);
+    expect([...listBiomeSeedOrder()]).toEqual([
+      "sand",
+      "rainforest",
+      "alpine",
+    ]);
+    expect(biomeSeedIndex("sand")).toBe(0);
+    expect(biomeSeedIndex("rainforest")).toBe(1);
+    expect(biomeSeedIndex("alpine")).toBe(2);
   });
 
   it("sand is Sand with arid palette", () => {
@@ -63,18 +81,57 @@ describe("biome registry", () => {
     expect(getBiome("sand").weather).toBeUndefined();
   });
 
-  it("resolveBiomeId random is deterministic and covers all biomes", () => {
+  it("embed/decode round-trips biome in seed residue", () => {
+    for (const id of listBiomeSeedOrder()) {
+      const packed = embedBiomeInSeed(123456789, id);
+      expect(packed % BIOME_SLOTS).toBe(biomeSeedIndex(id));
+      expect(biomeFromSeed(packed)).toBe(id);
+      // High bits preserved
+      expect(Math.floor(packed / BIOME_SLOTS)).toBe(
+        Math.floor(123456789 / BIOME_SLOTS),
+      );
+    }
+  });
+
+  it("reserved slots fall back to sand until claimed", () => {
+    // residue 5 is unassigned (only 0..2 claimed)
+    expect(5 % BIOME_SLOTS).toBe(5);
+    expect(biomeFromSeed(5)).toBe("sand");
+  });
+
+  it("resolveStart packs explicit biome into seed", () => {
+    const { biomeId, seed } = resolveStart("alpine", 100);
+    expect(biomeId).toBe("alpine");
+    expect(biomeFromSeed(seed)).toBe("alpine");
+    expect(seed % BIOME_SLOTS).toBe(2);
+  });
+
+  it("resolveStart random + empty picks fairly and embeds", () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 30; i++) {
+      const { biomeId, seed } = resolveStart(RANDOM_BIOME_ID, i * 17 + 3, {
+        seedWasEmpty: true,
+      });
+      seen.add(biomeId);
+      expect(biomeFromSeed(seed)).toBe(biomeId);
+    }
+    expect(seen.size).toBe(listBiomeSeedOrder().length);
+  });
+
+  it("resolveStart random + typed seed decodes biome from number", () => {
+    const alpineSeed = embedBiomeInSeed(999, "alpine");
+    const { biomeId, seed } = resolveStart(RANDOM_BIOME_ID, alpineSeed, {
+      seedWasEmpty: false,
+    });
+    expect(biomeId).toBe("alpine");
+    expect(biomeFromSeed(seed)).toBe("alpine");
+  });
+
+  it("resolveBiomeId random is deterministic via BIOME_SLOTS", () => {
     const a = resolveBiomeId(RANDOM_BIOME_ID, 42);
     const b = resolveBiomeId(RANDOM_BIOME_ID, 42);
     expect(a).toBe(b);
-    const ids = listBiomes().map((b) => b.id);
-    expect(ids).toContain(a);
-    // seed % n covers every registered id
-    const set = new Set(
-      ids.map((_, i) => resolveBiomeId(RANDOM_BIOME_ID, i)),
-    );
-    expect(set.size).toBe(ids.length);
-    for (const id of ids) expect(set.has(id)).toBe(true);
+    expect(a).toBe(biomeFromSeed(42));
   });
 
   it("resolveBiomeId keeps explicit selection", () => {
