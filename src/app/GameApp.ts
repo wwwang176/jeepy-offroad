@@ -40,6 +40,7 @@ import {
   type HudHandles,
 } from "@/ui/hud";
 import { requestGameFullscreen } from "@/ui/fullscreen";
+import { mountLoading, type LoadingHandles } from "@/ui/loading";
 import type { BiomeId } from "@/shared/types";
 import type { InputActions } from "@/input/types";
 import { biomeDisplayName, t } from "@/i18n";
@@ -50,12 +51,49 @@ import {
 import { TireTrackSystem } from "@/render/TireTrackSystem";
 
 const FIXED_DT = 1 / 60;
+/** Fixed steps of zero-input physics so spawn suspension settles under loading. */
+const SPAWN_SETTLE_STEPS = 48;
+/** Extra GPU frames under loading so first playing frame is not a shader hitch. */
+const LOAD_WARM_RENDER_FRAMES = 2;
+/** How often settle loop yields so the progress bar can paint. */
+const SETTLE_PROGRESS_EVERY = 6;
 
 const ZERO_DRIVE: Pick<InputActions, "throttle" | "steer" | "brake"> = {
   throttle: 0,
   steer: 0,
   brake: 0,
   // driveRange intentionally not cleared — transfer case stays in last range
+};
+
+const IDLE_INPUT: InputActions = {
+  throttle: 0,
+  steer: 0,
+  brake: 0,
+  driveRange: "H",
+  cameraToggle: false,
+  respawn: false,
+  lookDeltaX: 0,
+  lookDeltaY: 0,
+};
+
+/** Double-rAF so the browser can layout + paint loading UI before heavy work. */
+function waitForPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
+/** Single rAF — enough for progress bar width to paint between load phases. */
+function yieldFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
+type LoadProgress = {
+  set: (ratio: number, statusKey?: Parameters<typeof t>[0]) => Promise<void>;
 };
 
 export class GameApp {
@@ -245,20 +283,38 @@ export class GameApp {
       }
       case "loading": {
         const root = document.querySelector<HTMLElement>("#ui-root");
+        let loading: LoadingHandles | null = null;
         if (root) {
-          const panel = document.createElement("div");
-          panel.className = "loading-overlay";
-          const biomeLabel = biomeDisplayName(state.biomeId);
-          panel.innerHTML = `
-            <div class="panel loading-panel modal-panel">
-              ${t("loading", { biome: biomeLabel, seed: state.seed })}
-            </div>
-          `;
-          root.appendChild(panel);
-          this.uiUnmount = () => panel.remove();
+          loading = mountLoading(root, {
+            biomeLabel: biomeDisplayName(state.biomeId),
+            seed: state.seed,
+          });
+          this.uiUnmount = () => {
+            loading?.dispose();
+            loading = null;
+          };
         }
+        const progress: LoadProgress = {
+          set: async (ratio, statusKey) => {
+            if (!loading) return;
+            loading.setProgress(ratio);
+            if (statusKey) loading.setStatus(t(statusKey));
+            await yieldFrame();
+          },
+        };
         try {
-          await this.loadLevel(state.biomeId, state.seed);
+          // Let the loading overlay + empty bar paint before heavy work.
+          await waitForPaint();
+          await this.loadLevel(state.biomeId, state.seed, progress);
+          // Zero-input settle so suspension is planted before playing starts.
+          await this.quietSettleVehicle(progress);
+          // Compile shaders / fill GPU pipelines under the overlay.
+          await progress.set(0.96, "loading.status.gpu");
+          this.warmLevelRender();
+          await progress.set(1, "loading.status.ready");
+          await waitForPaint();
+          // Brief hold at 100% so the full bar is readable before dismiss.
+          await new Promise<void>((r) => setTimeout(r, 300));
           this.dispatch({ type: "LOADED" });
         } catch (e) {
           this.teardownSession();
@@ -330,19 +386,33 @@ export class GameApp {
     }
   }
 
-  private async loadLevel(biomeId: string, seed: number): Promise<void> {
+  private async loadLevel(
+    biomeId: string,
+    seed: number,
+    progress?: LoadProgress,
+  ): Promise<void> {
     this.teardownSession();
     const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas");
     if (!canvas) throw new Error("Missing canvas");
 
+    const report =
+      progress?.set.bind(progress) ??
+      (async () => {
+        /* no-op when loading without UI */
+      });
+
+    await report(0.04, "loading.status.init");
+
     const biome = getBiome(biomeId as BiomeId);
     const normalized = normalizeSeed(seed);
+    await report(0.08, "loading.status.terrain");
     const level = generateLevel({
       seed: normalized,
       biome,
       vehicle: VEHICLE_CAPABILITIES,
     });
     this.level = level;
+    await report(0.38, "loading.status.physics");
 
     this.physics = await PhysicsWorld.create();
     createTerrainCollider(this.physics.getWorld(), level);
@@ -377,6 +447,7 @@ export class GameApp {
       this.vehicle,
     );
     this.input = this.createInputRouter(canvas);
+    await report(0.5, "loading.status.scene");
     this.gameScene = createGameScene(canvas, level, biome);
     // Fixed rock colliders share terrain groups (chassis + suspension rays).
     createPropColliders(
@@ -396,6 +467,7 @@ export class GameApp {
     }
     // Snap third-person follow to spawn so first frame is not lerping from origin.
     this.cameraRig.update(1, spawnPose);
+    await report(0.78, "loading.status.fx");
     const terrainFx = {
       heightmap: level.heightmap,
       resolution: level.resolution,
@@ -420,6 +492,60 @@ export class GameApp {
       terrain: terrainFx,
     });
     this.sessionMode = "level";
+    await report(0.84, "loading.status.settle");
+  }
+
+  /**
+   * Run fixed zero-input physics so raycast suspension finds equilibrium under
+   * the loading overlay. Call after vehicle + terrain (+ props) exist.
+   */
+  private async quietSettleVehicle(progress?: LoadProgress): Promise<void> {
+    if (!this.physics || !this.vehicle) return;
+    const world = this.physics.getWorld();
+    const settleLo = 0.84;
+    const settleHi = 0.95;
+    for (let i = 0; i < SPAWN_SETTLE_STEPS; i++) {
+      this.vehicle.update(FIXED_DT, IDLE_INPUT, world);
+      this.physics.step();
+      if (
+        progress &&
+        (i % SETTLE_PROGRESS_EVERY === 0 || i === SPAWN_SETTLE_STEPS - 1)
+      ) {
+        const t01 = (i + 1) / SPAWN_SETTLE_STEPS;
+        await progress.set(settleLo + (settleHi - settleLo) * t01);
+      }
+    }
+    // Kill residual bounce so the first playing frame is still.
+    const body = this.vehicle.getChassisBody();
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.vehicle.snapRenderState();
+
+    const pose = this.vehicle.getPose();
+    if (this.jeepMesh) {
+      syncJeepMesh(this.jeepMesh, pose, this.vehicle.getWheelVisuals());
+    }
+    if (this.cameraRig) {
+      this.cameraRig.update(1, pose, { snap: true });
+    }
+  }
+
+  /** Draw a few frames while loading is still up (shader compile / first-draw hitch). */
+  private warmLevelRender(): void {
+    if (!this.gameScene || !this.jeepMesh || !this.vehicle) return;
+    const pose = this.vehicle.getPose();
+    const wheels = this.vehicle.getWheelVisuals();
+    syncJeepMesh(this.jeepMesh, pose, wheels);
+    if (this.cameraRig) {
+      this.cameraRig.update(0, pose, { snap: true });
+    }
+    for (let i = 0; i < LOAD_WARM_RENDER_FRAMES; i++) {
+      this.gameScene.updateShadows(this.gameScene.camera.position);
+      this.gameScene.renderer.render(
+        this.gameScene.scene,
+        this.gameScene.camera,
+      );
+    }
   }
 
   private async startFlatSandbox(): Promise<void> {

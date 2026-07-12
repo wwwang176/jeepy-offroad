@@ -25,6 +25,14 @@ export type MessageKey =
   | "biome.alpine.name"
   | "biome.alpine.desc"
   | "loading"
+  | "loading.status.init"
+  | "loading.status.terrain"
+  | "loading.status.physics"
+  | "loading.status.scene"
+  | "loading.status.fx"
+  | "loading.status.settle"
+  | "loading.status.gpu"
+  | "loading.status.ready"
   | "result.title"
   | "result.meta"
   | "result.copy"
@@ -68,6 +76,14 @@ export const messages: Record<Locale, MessageTable> = {
     "biome.alpine.name": "Alpine",
     "biome.alpine.desc": "Residual snow, bare rock, long descents",
     loading: "Loading {biome} · seed {seed}…",
+    "loading.status.init": "Preparing…",
+    "loading.status.terrain": "Generating terrain…",
+    "loading.status.physics": "Building physics…",
+    "loading.status.scene": "Building scene…",
+    "loading.status.fx": "Effects…",
+    "loading.status.settle": "Settling vehicle…",
+    "loading.status.gpu": "Warming graphics…",
+    "loading.status.ready": "Ready",
     "result.title": "Finish!",
     "result.meta": "{biome} · seed {seed}",
     "result.copy":
@@ -109,6 +125,14 @@ export const messages: Record<Locale, MessageTable> = {
     "biome.alpine.name": "雪山",
     "biome.alpine.desc": "殘雪、裸岩與長下坡",
     loading: "載入 {biome} · 種子 {seed}…",
+    "loading.status.init": "準備中…",
+    "loading.status.terrain": "生成地形…",
+    "loading.status.physics": "建立物理…",
+    "loading.status.scene": "建立場景…",
+    "loading.status.fx": "特效…",
+    "loading.status.settle": "穩定車輛…",
+    "loading.status.gpu": "預熱畫面…",
+    "loading.status.ready": "完成",
     "result.title": "抵達終點！",
     "result.meta": "{biome} · 種子 {seed}",
     "result.copy": "你已抵達終點。再玩一次，或換一張新地圖。",

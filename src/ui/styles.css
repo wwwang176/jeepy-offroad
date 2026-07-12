@@ -89,6 +89,8 @@ button.btn-ghost:active:not(:disabled),
   align-items: center;
   justify-content: center;
   background: rgba(8, 10, 12, 0.72);
+  z-index: 20;
+  pointer-events: auto;
 }
 .menu-overlay > .panel,
 .result-overlay > .panel,
@@ -517,14 +519,41 @@ button.lang-toggle:active:not(:disabled) {
 }
 
 .loading-panel {
-  width: min(320px, 100%);
-  padding: 18px 20px;
+  width: min(360px, 100%);
+  padding: 20px 22px;
   font-size: 14px;
   color: #f2efe8;
 }
 .loading-panel strong {
   color: #e8c878;
   font-weight: 600;
+}
+.loading-title {
+  margin-bottom: 14px;
+  line-height: 1.4;
+  color: #f2efe8;
+}
+.loading-bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.loading-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #c9a24a 0%, #e8c878 55%, #f0dca0 100%);
+  box-shadow: 0 0 10px rgba(232, 200, 120, 0.35);
+  transition: width 0.12s ease-out;
+}
+.loading-status {
+  margin-top: 10px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: rgba(242, 239, 232, 0.72);
 }
 
 /* Play HUD */
