@@ -4,6 +4,8 @@
 
 Browser off-road game: a low-poly jeep, procedural trails, and three biomes. Race to the finish — or just enjoy the scramble.
 
+Built with **Grok 4.5** vibe coding.
+
 ## Screenshots
 
 ### Sand
