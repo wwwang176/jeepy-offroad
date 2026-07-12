@@ -7,15 +7,16 @@ import * as THREE from "three";
  */
 
 const FALL_COUNT = 350;
-const FALL_AREA = 52;
-const FALL_HEIGHT = 32;
+/** World XZ span of the wrap volume around the camera (larger = more spread). */
+const FALL_AREA = 110;
+const FALL_HEIGHT = 40;
 const FALL_SPEED_MIN = 4.4;
 const FALL_SPEED_MAX = 9.6;
 const FALL_WIND_X = 2.8;
 const FALL_WIND_Z = 5.2;
 
 const BLOW_COUNT = 550;
-const BLOW_AREA = 42;
+const BLOW_AREA = 90;
 const BLOW_HEIGHT_MIN = 0.08;
 const BLOW_HEIGHT_MAX = 0.55;
 const BLOW_SPEED_MIN = 18;
