@@ -117,7 +117,7 @@ describe("alpine descent corpus", () => {
     expect(a.finish).toEqual(b.finish);
   });
 
-  it("seed 375247295: last 40m approach is driveable (corridor only, not full path)", () => {
+  it("seed 375247295: last ~30m approach is driveable (matches PAD_APPROACH_M)", () => {
     const level = generateLevel({
       seed: 375247295,
       biome: alpineBiome,
@@ -125,10 +125,12 @@ describe("alpine descent corpus", () => {
     });
     const path = level.pathPolyline;
     const budget = pathGradeBudget();
-    let maxGLast40 = 0;
-    let last40Climb = 0;
+    // Align with PAD_APPROACH_M (30); leave a little margin inside the corridor
+    const corridorM = 28;
+    let maxG = 0;
+    let climb = 0;
     let dist = 0;
-    for (let i = path.length - 1; i > 0 && dist < 40; i--) {
+    for (let i = path.length - 1; i > 0 && dist < corridorM; i--) {
       const a = path[i - 1]!;
       const b = path[i]!;
       const ya = sampleBilinear(
@@ -147,11 +149,10 @@ describe("alpine descent corpus", () => {
       );
       const horiz = Math.hypot(b.x - a.x, b.z - a.z) || 1e-6;
       dist += horiz;
-      maxGLast40 = Math.max(maxGLast40, Math.abs((yb - ya) / horiz));
-      if (yb > ya) last40Climb += yb - ya;
+      maxG = Math.max(maxG, Math.abs((yb - ya) / horiz));
+      if (yb > ya) climb += yb - ya;
     }
-    // Corridor fix: approach within grade budget; mid-path may stay steeper
-    expect(maxGLast40).toBeLessThanOrEqual(budget + 0.1);
-    expect(last40Climb).toBeLessThan(12);
+    expect(maxG).toBeLessThanOrEqual(budget + 0.1);
+    expect(climb).toBeLessThan(12);
   });
 });
