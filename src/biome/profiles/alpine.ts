@@ -25,8 +25,8 @@ export const alpineBiome: BiomeProfile = {
   /** Strong off-path relief for steep valley sides. */
   offPathRoughness: 0.9,
   propDensity: 0.55,
-  /** Rocks denser for alpine scree feel (was 8). */
-  propCountScale: 40,
+  /** Rocks denser for alpine scree feel (baseline was 8). */
+  propCountScale: 15,
   /** Ice-grit slip; brakeScale also scales 4L 檔煞 (accepted coupling). */
   traction: {
     frictionSlipScale: 0.52,
