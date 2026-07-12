@@ -30,8 +30,9 @@ export type MenuHandlers = {
  * Cinematic main menu:
  * - Full-bleed 3D jeep backdrop (front close-up, always driving)
  * - Stage home: title + Start game
- * - Stage select: terrain cards Random / Sand / Rainforest / SEED / ROAD
- * - SEED card opens a centered modal (blank = random, Go / Cancel)
+ * - Stage select: terrain list (Random / Sand / Rainforest / Alpine / SEED / ROAD)
+ *   with difficulty stars (1–5) on playable rows
+ * - SEED row opens a centered modal (blank = random, Go / Cancel)
  * - EN|中 toggle (menu only; not during play)
  */
 export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => void {
@@ -54,7 +55,7 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
 
           <div class="menu-stage menu-stage-select" data-stage="select">
             <p class="menu-select-label" id="menu-select-label"></p>
-            <div class="menu-cards" role="list"></div>
+            <div class="menu-list" role="list"></div>
 
             <button type="button" class="menu-back" id="menu-back"></button>
           </div>
@@ -97,7 +98,7 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
 
   const homeStage = root.querySelector<HTMLElement>(".menu-stage-home")!;
   const selectStage = root.querySelector<HTMLElement>(".menu-stage-select")!;
-  const cardsEl = root.querySelector<HTMLElement>(".menu-cards")!;
+  const listEl = root.querySelector<HTMLElement>(".menu-list")!;
   const seedModal = root.querySelector<HTMLElement>("#menu-seed-modal")!;
   const seedInput = root.querySelector<HTMLInputElement>("#menu-seed-input")!;
   const errorEl = root.querySelector<HTMLElement>("#menu-seed-error")!;
@@ -125,9 +126,19 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
     seedModal.hidden = true;
     seedInput.value = "";
     clearError();
-    for (const el of cardsEl.querySelectorAll(".menu-card")) {
+    for (const el of listEl.querySelectorAll(".menu-row")) {
       el.classList.remove("is-selected");
     }
+  };
+
+  /** Five-star meter; filled count = difficulty 1–5. */
+  const starsHtml = (filled: number): string => {
+    const n = Math.max(1, Math.min(5, Math.round(filled)));
+    let html = "";
+    for (let i = 1; i <= 5; i++) {
+      html += `<span class="menu-row-star${i <= n ? " is-on" : ""}" aria-hidden="true">★</span>`;
+    }
+    return html;
   };
 
   const openSeedModal = (): void => {
@@ -163,7 +174,7 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
     }
   };
 
-  type CardDef = {
+  type RowDef = {
     id: string;
     icon: string;
     kind: "biome" | "seed" | "road";
@@ -172,9 +183,14 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
     descKey?: "menu.card.random.desc" | "menu.card.seed.desc" | "menu.card.road.desc";
     /** biome id for name/desc via i18n */
     localeBiome?: BiomeId;
+    /**
+     * Difficulty stars 1–5 (omit for Random / SEED / ROAD).
+     * Sand 2 · Rainforest 3 · Alpine 5.
+     */
+    difficulty?: 1 | 2 | 3 | 4 | 5;
   };
 
-  const cards: CardDef[] = [
+  const rows: RowDef[] = [
     {
       id: "random",
       icon: "🎲",
@@ -189,6 +205,7 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
       kind: "biome",
       biomeId: "sand",
       localeBiome: "sand",
+      difficulty: 2,
     },
     {
       id: "rainforest",
@@ -196,6 +213,7 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
       kind: "biome",
       biomeId: "rainforest",
       localeBiome: "rainforest",
+      difficulty: 3,
     },
     {
       id: "alpine",
@@ -203,6 +221,7 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
       kind: "biome",
       biomeId: "alpine",
       localeBiome: "alpine",
+      difficulty: 5,
     },
     {
       id: "seed",
@@ -220,23 +239,33 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
     },
   ];
 
-  for (const entry of cards) {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "menu-card";
-    card.setAttribute("role", "listitem");
-    card.dataset.cardId = entry.id;
-    card.innerHTML = `
-      <span class="menu-card-icon" aria-hidden="true">${entry.icon}</span>
-      <span class="menu-card-name"></span>
-      <span class="menu-card-desc"></span>
+  for (const entry of rows) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "menu-row";
+    row.setAttribute("role", "listitem");
+    row.dataset.rowId = entry.id;
+    const diffBlock =
+      entry.difficulty != null
+        ? `<span class="menu-row-diff" data-difficulty="${entry.difficulty}">
+            <span class="menu-row-diff-label"></span>
+            <span class="menu-row-stars">${starsHtml(entry.difficulty)}</span>
+          </span>`
+        : `<span class="menu-row-diff menu-row-diff-empty" aria-hidden="true"></span>`;
+    row.innerHTML = `
+      <span class="menu-row-icon" aria-hidden="true">${entry.icon}</span>
+      <span class="menu-row-body">
+        <span class="menu-row-name"></span>
+        <span class="menu-row-desc"></span>
+      </span>
+      ${diffBlock}
     `;
-    card.onclick = () => {
+    row.onclick = () => {
       clearError();
-      for (const el of cardsEl.querySelectorAll(".menu-card")) {
+      for (const el of listEl.querySelectorAll(".menu-row")) {
         el.classList.remove("is-selected");
       }
-      card.classList.add("is-selected");
+      row.classList.add("is-selected");
 
       if (entry.kind === "biome" && entry.biomeId) {
         closeSeedModal();
@@ -255,7 +284,7 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
         }
       }
     };
-    cardsEl.appendChild(card);
+    listEl.appendChild(row);
   }
 
   const applyLocale = (): void => {
@@ -270,13 +299,13 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
     seedCancel.textContent = t("seed.cancel");
     syncLangToggle(langToggle);
 
-    for (const entry of cards) {
-      const card = cardsEl.querySelector<HTMLElement>(
-        `[data-card-id="${entry.id}"]`,
+    for (const entry of rows) {
+      const row = listEl.querySelector<HTMLElement>(
+        `[data-row-id="${entry.id}"]`,
       );
-      if (!card) continue;
-      const nameEl = card.querySelector(".menu-card-name");
-      const descEl = card.querySelector(".menu-card-desc");
+      if (!row) continue;
+      const nameEl = row.querySelector(".menu-row-name");
+      const descEl = row.querySelector(".menu-row-desc");
       if (!nameEl || !descEl) continue;
       if (entry.localeBiome) {
         nameEl.textContent = biomeDisplayName(entry.localeBiome);
@@ -284,6 +313,13 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
       } else if (entry.nameKey && entry.descKey) {
         nameEl.textContent = t(entry.nameKey);
         descEl.textContent = t(entry.descKey);
+      }
+      const diffEl = row.querySelector<HTMLElement>(".menu-row-diff");
+      const diffLabel = row.querySelector(".menu-row-diff-label");
+      if (diffEl && entry.difficulty != null) {
+        const label = t("menu.difficulty", { n: entry.difficulty });
+        diffEl.setAttribute("aria-label", label);
+        if (diffLabel) diffLabel.textContent = label;
       }
     }
   };

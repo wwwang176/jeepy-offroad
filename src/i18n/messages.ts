@@ -6,6 +6,7 @@ export type MessageKey =
   | "menu.selectTerrain"
   | "menu.back"
   | "menu.hints"
+  | "menu.difficulty"
   | "menu.card.random.name"
   | "menu.card.random.desc"
   | "menu.card.seed.name"
@@ -57,6 +58,7 @@ export const messages: Record<Locale, MessageTable> = {
     "menu.back": "Back",
     "menu.hints":
       "WASD drive · release to coast · reverse W/S brake · Shift 4H/4L · drag look · C camera · R respawn",
+    "menu.difficulty": "{n}/5",
     "menu.card.random.name": "Random",
     "menu.card.random.desc": "Sand / Rainforest / Alpine",
     "menu.card.seed.name": "SEED",
@@ -106,6 +108,7 @@ export const messages: Record<Locale, MessageTable> = {
     "menu.back": "返回",
     "menu.hints":
       "WASD 駕駛 · 鬆鍵滑行 · 反向 W/S 剎車 · Shift 4H/4L · 拖曳視角 · C 鏡頭 · R 重生",
+    "menu.difficulty": "{n}/5",
     "menu.card.random.name": "隨機",
     "menu.card.random.desc": "沙地 / 雨林 / 雪山",
     "menu.card.seed.name": "SEED",

@@ -264,20 +264,22 @@ button.btn-ghost:active:not(:disabled),
   opacity: 0.7;
   margin: 0;
 }
-.menu-cards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  width: 100%;
-}
-.menu-card {
+/* Terrain select: vertical list with difficulty stars */
+.menu-list {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: calc(50% - 5px);
-  min-height: 88px;
-  padding: 12px 12px 10px;
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
+}
+.menu-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 14px;
   text-align: left;
   font-weight: 500;
   color: #f2efe8;
@@ -287,35 +289,44 @@ button.btn-ghost:active:not(:disabled),
   box-shadow: none;
   transition: border-color 0.1s ease, background 0.1s ease;
 }
-.menu-card:hover:not(:disabled),
-.menu-card:active:not(:disabled) {
+.menu-row:hover:not(:disabled),
+.menu-row:active:not(:disabled) {
   background: rgba(28, 24, 18, 0.92);
   border-color: rgba(201, 160, 74, 0.55);
   color: #f2efe8;
   transform: none;
   box-shadow: none;
 }
-.menu-card.is-selected,
-.menu-card.is-selected:hover:not(:disabled),
-.menu-card.is-selected:active:not(:disabled) {
+.menu-row.is-selected,
+.menu-row.is-selected:hover:not(:disabled),
+.menu-row.is-selected:active:not(:disabled) {
   border-color: #c9a04a;
   background: rgba(36, 30, 18, 0.95);
   color: #f2efe8;
   box-shadow: none;
 }
-.menu-card-icon {
-  font-size: 18px;
+.menu-row-icon {
+  flex: 0 0 auto;
+  width: 28px;
+  font-size: 20px;
   line-height: 1;
-  margin-bottom: 4px;
+  text-align: center;
   opacity: 0.95;
 }
-.menu-card-name {
+.menu-row-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-row-name {
   font-weight: 700;
   font-size: 15px;
   letter-spacing: 0.04em;
   color: #f2efe8;
 }
-.menu-card-desc {
+.menu-row-desc {
   font-size: 11px;
   opacity: 0.65;
   line-height: 1.3;
@@ -323,6 +334,36 @@ button.btn-ghost:active:not(:disabled),
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.menu-row-diff {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 72px;
+}
+.menu-row-diff-empty {
+  min-width: 72px;
+}
+.menu-row-diff-label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+.menu-row-stars {
+  display: flex;
+  gap: 1px;
+  line-height: 1;
+}
+.menu-row-star {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.18);
+}
+.menu-row-star.is-on {
+  color: #e8c878;
+  text-shadow: 0 0 6px rgba(232, 200, 120, 0.35);
 }
 /* Language toggle — single button, menu chrome only (not during play) */
 .lang-toggle.menu-lang-toggle,
@@ -464,9 +505,12 @@ button.lang-toggle:active:not(:disabled) {
     padding-top: 8px;
     padding-bottom: 16px;
   }
-  .menu-card {
-    width: 100%;
-    min-height: 72px;
+  .menu-list {
+    max-width: 100%;
+  }
+  .menu-row {
+    min-height: 60px;
+    padding: 10px 12px;
   }
 }
 
