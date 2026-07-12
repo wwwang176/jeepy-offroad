@@ -113,19 +113,23 @@ export class RainVFX {
   private readonly splashVz: Float32Array;
   private splashNextIndex = 0;
   private splashAccum = 0;
+  /** False until first update with real camera — avoid world-origin rain burst. */
+  private seededAroundCamera = false;
+  /** Delay splash intro slightly so first frames aren't a splash wave. */
+  private splashIntroDelay = 0.35;
 
   constructor(scene: THREE.Scene, opts: RainVFXOptions) {
     this.scene = scene;
     this.getHeightAt = opts.getHeightAt;
 
-    // --- Rain ---
+    // --- Rain (park dead until first camera seed) ---
     const rainPos = new Float32Array(RAIN_COUNT * 3);
     const rainOpacity = new Float32Array(RAIN_COUNT);
     for (let i = 0; i < RAIN_COUNT; i++) {
       const i3 = i * 3;
-      rainPos[i3] = (Math.random() - 0.5) * RAIN_AREA;
-      rainPos[i3 + 1] = Math.random() * RAIN_HEIGHT;
-      rainPos[i3 + 2] = (Math.random() - 0.5) * RAIN_AREA;
+      rainPos[i3] = 0;
+      rainPos[i3 + 1] = DEAD_Y;
+      rainPos[i3 + 2] = 0;
       rainOpacity[i] = 0.3 + Math.random() * 0.7;
     }
     const rainGeo = new THREE.BufferGeometry();
@@ -192,8 +196,40 @@ export class RainVFX {
     if (dt <= 0) return;
     // Cap step so tab-out doesn't teleport every drop
     const step = Math.min(dt, 0.05);
+    if (!this.seededAroundCamera) {
+      this.seedRainAroundCamera(camPos);
+      this.seededAroundCamera = true;
+    }
     this.updateRain(step, camPos);
     this.updateSplashes(step, camPos);
+  }
+
+  /**
+   * First live frame: place drops around the real camera with random heights
+   * (not world origin). Same idea as alpine SnowVFX fall seed.
+   */
+  private seedRainAroundCamera(camPos: {
+    x: number;
+    y: number;
+    z: number;
+  }): void {
+    const pos = this.rainPositions;
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      const i3 = i * 3;
+      const x = camPos.x + (Math.random() - 0.5) * RAIN_AREA;
+      const z = camPos.z + (Math.random() - 0.5) * RAIN_AREA;
+      const gY = this.getHeightAt(x, z);
+      // Full column: near ground up through sky above camera
+      const y =
+        gY +
+        0.5 +
+        Math.random() *
+          Math.max(RAIN_HEIGHT, camPos.y - gY + RAIN_HEIGHT * 0.5);
+      pos[i3] = x;
+      pos[i3 + 1] = y;
+      pos[i3 + 2] = z;
+    }
+    this.rainGeo.attributes.position!.needsUpdate = true;
   }
 
   private updateRain(
@@ -208,6 +244,9 @@ export class RainVFX {
 
     for (let i = 0; i < RAIN_COUNT; i++) {
       const i3 = i * 3;
+      // Still parked (should only happen before seed)
+      if (pos[i3 + 1]! <= DEAD_Y + 1) continue;
+
       pos[i3] += windDx;
       pos[i3 + 1] -= fallDist;
       pos[i3 + 2] += windDz;
@@ -222,8 +261,13 @@ export class RainVFX {
       const groundY = this.getHeightAt(pos[i3], pos[i3 + 2]);
       if (pos[i3 + 1] < groundY) {
         pos[i3] = camPos.x + (Math.random() - 0.5) * RAIN_AREA;
+        // Respawn across full height band (not a single sky sheet)
+        const gY = this.getHeightAt(pos[i3], pos[i3 + 2]);
         pos[i3 + 1] =
-          camPos.y + RAIN_HEIGHT * 0.5 + Math.random() * RAIN_HEIGHT * 0.5;
+          gY +
+          0.5 +
+          Math.random() *
+            Math.max(RAIN_HEIGHT, camPos.y - gY + RAIN_HEIGHT * 0.5);
         pos[i3 + 2] = camPos.z + (Math.random() - 0.5) * RAIN_AREA;
       }
     }
@@ -234,6 +278,11 @@ export class RainVFX {
     dt: number,
     camPos: { x: number; y: number; z: number },
   ): void {
+    // Don't full-burst splash on enter — wait a short beat, then rate-limit as usual
+    if (this.splashIntroDelay > 0) {
+      this.splashIntroDelay -= dt;
+      return;
+    }
     this.splashAccum += SPLASH_SPAWN_RATE * dt;
     while (this.splashAccum >= 1) {
       this.splashAccum -= 1;
