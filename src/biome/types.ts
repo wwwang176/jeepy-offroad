@@ -1,4 +1,5 @@
 import type { BiomeId } from "@/shared/types";
+import type { SnowCoverConfig } from "@/shared/snowCover";
 
 export interface PropSpawnRule {
   meshKey: string;
@@ -71,9 +72,13 @@ export interface BiomeProfile {
   /** Optional high→low macro ramp (alpine descent signature). */
   macroRelief?: BiomeMacroRelief;
   /**
-   * Vertex/dust ground coloring mode.
-   * - default: low→mid→high height lerp (sand/rainforest)
-   * - alpineSnow: grey schist base, thick snow on high ground, patch snow mid slopes
+   * Vertex/dust ground coloring mode (optional; default height blend).
+   * Prefer rock-only palette + {@link snowCover} mesh for alpine snow.
    */
   terrainColorMode?: "default" | "alpineSnow";
+  /**
+   * Decorative snow blanket draped on the heightfield (like ponds: no collider).
+   * Terrain mesh stays rock; snow is a separate lifted surface.
+   */
+  snowCover?: SnowCoverConfig;
 }

@@ -1,11 +1,8 @@
 import type { BiomeProfile } from "../types";
 
 /**
- * Cold alpine pass — thick snow on high ground, grey schist base, long descent.
- *
- * Drop is sized so the drive path rides near continuous grade budget (~19°) for
- * most of the run (vehicle maxSlope 28°). True 40° continuous path is not
- * drivable under shared VehicleCapabilities; off-path valley walls still read steep.
+ * Cold alpine pass — grey schist ground + draped snow blankets (no collision),
+ * long high→low descent.
  */
 export const alpineBiome: BiomeProfile = {
   id: "alpine",
@@ -15,15 +12,12 @@ export const alpineBiome: BiomeProfile = {
   skyColor: "#8fa8c0",
   fogColor: "#d0dbe6",
   fogDensity: 0.018,
+  /** Rock only — snow is a separate draped mesh (snowCover). */
   groundPalette: {
-    // Thick snow (peaks + patches via alpineSnow mode)
-    high: "#f4f8fc",
-    // Grey schist mid slopes
-    mid: "#6a727c",
-    // Dark schist valley floor / shadows
+    high: "#8a929c",
+    mid: "#5c646e",
     low: "#3a414a",
-    // Packed dirty snow on the track
-    path: "#c8d0d8",
+    path: "#6a727c",
   },
   waterColor: "#2a4a5c",
   /** Below pond band (≤0.15 → 0 ponds). */
@@ -43,9 +37,22 @@ export const alpineBiome: BiomeProfile = {
     { meshKey: "pillar_rock", weight: 0.75, collides: true },
   ],
   /**
-   * Large W→E dump. Chord ~224 m → macro average ~atan(160/224)≈35°;
-   * path grade-clamp keeps the ribbon drivable while net altitude loss stays huge.
+   * Large W→E dump. Path grade-clamp keeps the ribbon drivable while
+   * net altitude loss stays huge.
    */
   macroRelief: { startToFinishDropM: 160 },
-  terrainColorMode: "alpineSnow",
+  /**
+   * Thick snow on high rock + residual mid-slope patches.
+   * Mesh drapes heightmap + lift; no Rapier collider (same idea as ponds).
+   */
+  snowCover: {
+    color: "#f2f7fc",
+    liftM: 0.16,
+    thickLineT: 0.48,
+    patchMinT: 0.22,
+    patchNoiseThreshold: 0.52,
+    thickBlend: 0.12,
+    clearPath: true,
+    opacity: 0.96,
+  },
 };

@@ -7,6 +7,7 @@ import { idx, worldToGrid } from "@/shared/coords";
 import { clamp, lerp } from "@/shared/math";
 import { FINISH_COLUMN_HEIGHT_M } from "@/shared/finishMarker";
 import { createTerrainMesh } from "./TerrainMesh";
+import { createSnowCoverMesh } from "./SnowCoverMesh";
 import { createJeepMesh, syncJeepMesh } from "./JeepMesh";
 import {
   createFollowShadows,
@@ -1037,6 +1038,16 @@ export function createGameScene(
   setShadowFlags(terrainMesh, { cast: false, receive: true });
   scene.add(terrainMesh);
 
+  // Alpine (etc.): draped snow blanket — visual only, no collider (like ponds)
+  let snowMesh: THREE.Mesh | null = null;
+  if (biome.snowCover) {
+    snowMesh = createSnowCoverMesh(level, biome.snowCover, biome.pathWidth);
+    if (snowMesh) {
+      setShadowFlags(snowMesh, { cast: false, receive: true });
+      scene.add(snowMesh);
+    }
+  }
+
   const finishMesh = createFinishMarker(level.finish);
   // Translucent volume only — no shadow casting
   setShadowFlags(finishMesh, { cast: false, receive: false });
@@ -1113,6 +1124,11 @@ export function createGameScene(
       shadows.dispose();
       terrainMesh.geometry.dispose();
       (terrainMesh.material as THREE.Material).dispose();
+      if (snowMesh) {
+        snowMesh.geometry.dispose();
+        (snowMesh.material as THREE.Material).dispose();
+        snowMesh = null;
+      }
       disposeObject3D(finishMesh);
       disposeObject3D(streamGroup);
       disposeObject3D(propGroup);

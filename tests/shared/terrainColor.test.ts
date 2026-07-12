@@ -69,41 +69,6 @@ describe("terrainAlbedoAt", () => {
   });
 });
 
-describe("alpineSnow mode", () => {
-  const alpinePalette = {
-    high: "#f4f8fc",
-    mid: "#6a727c",
-    low: "#3a414a",
-    path: "#c8d0d8",
-  };
-  const hm = new Float32Array([0, 5, 10, 15, 20, 25, 30, 35, 40]);
-  const pathPolyline = [{ x: 1000, z: 1000 }]; // far from samples
-  const ctx = buildTerrainColorContext({
-    groundPalette: alpinePalette,
-    heightmap: hm,
-    pathPolyline,
-    terrainColorMode: "alpineSnow",
-  });
-  const snow = parseHexRgb(alpinePalette.high);
-  const rock = parseHexRgb(alpinePalette.low);
-
-  it("low ground is schist (dark), not washed white", () => {
-    const c = terrainAlbedoAt(0, 0, ctx.minH, ctx);
-    // Closer to dark rock than pure snow
-    const distSnow = Math.hypot(c.r - snow.r, c.g - snow.g, c.b - snow.b);
-    const distRock = Math.hypot(c.r - rock.r, c.g - rock.g, c.b - rock.b);
-    expect(distRock).toBeLessThan(distSnow);
-    expect(c.r).toBeLessThan(0.55);
-  });
-
-  it("high ground is thick snow", () => {
-    const c = terrainAlbedoAt(0, 0, ctx.maxH, ctx);
-    expect(c.r).toBeGreaterThan(0.85);
-    expect(c.g).toBeGreaterThan(0.85);
-    expect(c.b).toBeGreaterThan(0.85);
-  });
-});
-
 describe("dustColorFromTerrainAlbedo", () => {
   it("is darker than raw albedo (deeper dust read)", () => {
     const albedo = parseHexRgb("#a89880");

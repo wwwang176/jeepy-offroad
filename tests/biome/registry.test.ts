@@ -42,7 +42,8 @@ describe("biome registry", () => {
     const a = getBiome("alpine");
     expect(a.displayName).toBe("Alpine");
     expect(a.macroRelief?.startToFinishDropM).toBeGreaterThanOrEqual(100);
-    expect(a.terrainColorMode).toBe("alpineSnow");
+    expect(a.snowCover).toBeDefined();
+    expect(a.snowCover!.liftM).toBeGreaterThan(0);
     expect(a.streamDensity).toBeLessThanOrEqual(0.15);
     expect(a.traction?.frictionSlipScale ?? 1).toBeLessThan(0.6);
     expect(
