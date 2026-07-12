@@ -81,4 +81,9 @@ export interface BiomeProfile {
    * Terrain mesh stays rock; snow is a separate lifted surface.
    */
   snowCover?: SnowCoverConfig;
+  /**
+   * Optional precipitation. Omit = none.
+   * `density` scales particle counts (~1 = default for that kind).
+   */
+  weather?: { kind: "rain" | "snow"; density?: number };
 }

@@ -16,6 +16,7 @@ import {
 } from "./followShadows";
 import { rainImpactHeight } from "@/shared/offroadFxMath";
 import { RainVFX } from "./RainVFX";
+import { SnowVFX } from "./SnowVFX";
 import {
   isCollidableRockMesh,
   type RockPropPlacement,
@@ -1079,14 +1080,21 @@ export function createGameScene(
   setShadowFlags(jeepMesh, { cast: true, receive: true });
   scene.add(jeepMesh);
 
-  // Rainforest: light rain + ground/water splash (½ island-conquest storm density)
+  // Weather from profile (rainforest rain / alpine snow) — not hardcoded ids
   let rain: RainVFX | null = null;
-  if (biome.id === "rainforest") {
+  let snow: SnowVFX | null = null;
+  const weather = biome.weather;
+  if (weather?.kind === "rain") {
     const ponds = level.ponds ?? [];
     rain = new RainVFX(scene, {
       // Hit pond free surface when over water so drops don't fall under the lake mesh
       getHeightAt: (x, z) =>
         rainImpactHeight(x, z, sampleHeight(level, x, z), ponds),
+    });
+  } else if (weather?.kind === "snow") {
+    snow = new SnowVFX(scene, {
+      getHeightAt: (x, z) => sampleHeight(level, x, z),
+      density: weather.density,
     });
   }
 
@@ -1116,11 +1124,14 @@ export function createGameScene(
     },
     updateRain: (dt, camPos) => {
       rain?.update(dt, camPos);
+      snow?.update(dt, camPos);
     },
     dispose: () => {
       window.removeEventListener("resize", onResize);
       rain?.dispose();
       rain = null;
+      snow?.dispose();
+      snow = null;
       shadows.dispose();
       terrainMesh.geometry.dispose();
       (terrainMesh.material as THREE.Material).dispose();

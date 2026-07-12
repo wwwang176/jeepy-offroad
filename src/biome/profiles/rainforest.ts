@@ -30,4 +30,5 @@ export const rainforestBiome: BiomeProfile = {
     // Same rock mesh/colliders as sand (sparse weight).
     { meshKey: "rock_pile", weight: 0.35, collides: true },
   ],
+  weather: { kind: "rain" },
 };

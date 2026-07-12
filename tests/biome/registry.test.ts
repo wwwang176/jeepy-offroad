@@ -45,6 +45,7 @@ describe("biome registry", () => {
     expect(a.snowCover).toBeDefined();
     expect(a.snowCover!.peakThicknessM).toBeGreaterThan(0);
     expect(a.snowCover!.thickCount).toBeGreaterThan(0);
+    expect(a.weather?.kind).toBe("snow");
     expect(a.streamDensity).toBeLessThanOrEqual(0.15);
     expect(a.traction?.frictionSlipScale ?? 1).toBeLessThan(0.6);
     expect(
@@ -54,6 +55,11 @@ describe("biome registry", () => {
     ).toBe(true);
     expect(a.propTable.some((p) => p.meshKey === "cactus")).toBe(false);
     expect(a.propTable.some((p) => p.meshKey === "coconut_palm")).toBe(false);
+  });
+
+  it("rainforest weather is rain; sand has no weather", () => {
+    expect(getBiome("rainforest").weather?.kind).toBe("rain");
+    expect(getBiome("sand").weather).toBeUndefined();
   });
 
   it("resolveBiomeId random is deterministic and covers all biomes", () => {

@@ -59,4 +59,5 @@ export const alpineBiome: BiomeProfile = {
     pathSnowChance: 0.12,
     opacity: 0.98,
   },
+  weather: { kind: "snow", density: 1 },
 };
