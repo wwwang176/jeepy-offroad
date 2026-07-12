@@ -18,7 +18,8 @@ const FALL_WIND_X = 7.5;
 const FALL_WIND_Z = 11;
 
 const BLOW_COUNT = 550;
-const BLOW_AREA = 90;
+/** Larger wrap box so spindrift is visible farther from the player/camera. */
+const BLOW_AREA = 160;
 const BLOW_HEIGHT_MIN = 0.08;
 const BLOW_HEIGHT_MAX = 0.55;
 const BLOW_SPEED_MIN = 18;
