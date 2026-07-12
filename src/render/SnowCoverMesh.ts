@@ -122,14 +122,15 @@ export function createSnowCoverMesh(
   merged.computeVertexNormals();
 
   const color = new THREE.Color(cfg.color);
-  const opacity = cfg.opacity ?? 0.97;
+  const opacity = cfg.opacity ?? 1;
+  const opaque = opacity >= 0.999;
   const mat = new THREE.MeshLambertMaterial({
     color,
     // Smooth shading — soft snow, not low-poly rock facets
     flatShading: false,
-    transparent: opacity < 0.999,
-    opacity,
-    depthWrite: opacity >= 0.9,
+    transparent: !opaque,
+    opacity: opaque ? 1 : opacity,
+    depthWrite: true,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,

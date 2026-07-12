@@ -57,7 +57,7 @@ export const alpineBiome: BiomeProfile = {
     /** Prefer off-road; ~12% of on-path candidates still accepted. */
     clearPath: true,
     pathSnowChance: 0.12,
-    opacity: 0.98,
+    opacity: 1,
   },
   weather: { kind: "snow", density: 1 },
 };
