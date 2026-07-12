@@ -14,10 +14,10 @@ export const alpineBiome: BiomeProfile = {
   fogDensity: 0.018,
   /** Rock only — snow is separate soft mounds (snowCover). */
   groundPalette: {
-    high: "#5a626c",
-    mid: "#3e4650",
-    low: "#252b32",
-    path: "#4a525c",
+    high: "#4a525c",
+    mid: "#323a44",
+    low: "#1a1f26",
+    path: "#3a424c",
   },
   waterColor: "#2a4a5c",
   /** Below pond band (≤0.15 → 0 ponds). */
@@ -43,7 +43,7 @@ export const alpineBiome: BiomeProfile = {
    * Thick high-ground mounds + smaller mid-slope residual patches.
    */
   snowCover: {
-    color: "#fbfcfe",
+    color: "#ffffff",
     peakThicknessM: 0.85,
     patchThicknessM: 0.38,
     thickRadiusMinM: 9,
