@@ -19,6 +19,7 @@ import {
   type PondBody,
   type StreamReach,
 } from "./types";
+import { applyMacroRelief } from "./macroRelief";
 import { placePonds } from "./ponds";
 
 /** Start pad flat radius (m) — covers rect ring + vehicle footprint. */
@@ -112,6 +113,18 @@ export function carveAndDecorate(
       hm[idx(resolution, c, r)] =
         10 + bulk * amp + mid * amp * 0.3 + ridge * ridgeAmp;
     }
+  }
+
+  // Alpine (etc.): planar high→low along path chord before base snapshot
+  if (biome.macroRelief && !isFallback && pathXZ.length >= 2) {
+    applyMacroRelief(
+      hm,
+      resolution,
+      mapSize,
+      pathXZ[0]!,
+      pathXZ[pathXZ.length - 1]!,
+      biome.macroRelief,
+    );
   }
 
   // Immutable base — all path fitting / conditioning is vs this snapshot
