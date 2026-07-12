@@ -14,14 +14,15 @@ const FALL_SPEED_MAX = 4.8;
 const FALL_WIND_X = 1.4;
 const FALL_WIND_Z = 2.6;
 
-const BLOW_COUNT = 450;
-const BLOW_AREA = 40;
-const BLOW_HEIGHT_MIN = 0.12;
-const BLOW_HEIGHT_MAX = 0.85;
-const BLOW_SPEED_MIN = 4;
-const BLOW_SPEED_MAX = 9;
-const BLOW_WIND_X = 5.5;
-const BLOW_WIND_Z = 2.2;
+// Dense fine streamers — read as wind/airflow, not big puffs
+const BLOW_COUNT = 1100;
+const BLOW_AREA = 42;
+const BLOW_HEIGHT_MIN = 0.08;
+const BLOW_HEIGHT_MAX = 0.55;
+const BLOW_SPEED_MIN = 9;
+const BLOW_SPEED_MAX = 18;
+const BLOW_WIND_X = 9.5;
+const BLOW_WIND_Z = 3.8;
 
 const DEAD_Y = -9999;
 
@@ -136,7 +137,7 @@ export class SnowVFX {
       this.blowSpeed[i] =
         BLOW_SPEED_MIN + Math.random() * (BLOW_SPEED_MAX - BLOW_SPEED_MIN);
       this.blowPhase[i] = Math.random() * Math.PI * 2;
-      this.blowSize[i] = 6 + Math.random() * 10;
+      this.blowSize[i] = 2.2 + Math.random() * 3.2;
     }
     this.blowGeo = new THREE.BufferGeometry();
     this.blowGeo.setAttribute(
@@ -151,13 +152,13 @@ export class SnowVFX {
       uniforms: {
         uTex: { value: this.sharedTex },
         uColor: { value: new THREE.Color(0.9, 0.93, 0.98) },
-        uOpacity: { value: 0.38 },
+        uOpacity: { value: 0.28 },
       },
       vertexShader: /* glsl */ `
         attribute float aSize;
         void main() {
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = max(2.0, aSize * (160.0 / -mv.z));
+          gl_PointSize = max(1.0, aSize * (140.0 / -mv.z));
           gl_Position = projectionMatrix * mv;
         }
       `,
@@ -168,7 +169,7 @@ export class SnowVFX {
         void main() {
           vec4 t = texture2D(uTex, gl_PointCoord);
           float a = t.a * uOpacity;
-          if (a < 0.015) discard;
+          if (a < 0.012) discard;
           gl_FragColor = vec4(uColor, a);
         }
       `,
@@ -250,7 +251,7 @@ export class SnowVFX {
       }
       const spd = this.blowSpeed[i]!;
       const phase = this.blowPhase[i]!;
-      const lift = Math.sin(t * 3.2 + phase) * 0.12;
+      const lift = Math.sin(t * 5.5 + phase) * 0.06;
       pos[i3]! += wx * spd * dt;
       pos[i3 + 2]! += wz * spd * dt;
       // Keep hugging terrain
