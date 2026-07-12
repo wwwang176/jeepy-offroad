@@ -67,6 +67,47 @@ export type ConditionFromBaseOpts = {
   smoothIters?: number;
 };
 
+export type StampPathRibbonOpts = {
+  coreR?: number;
+  outerR?: number;
+};
+
+/**
+ * Blend heightmap toward path polyline Y (no lifetime cap vs base).
+ * Use after grade-limited path fit / pad flatten so the drive ribbon is
+ * actually driveable — not only the abstract path polyline.
+ */
+export function stampPathRibbon(
+  heightmap: Float32Array,
+  resolution: number,
+  worldSize: number,
+  path: Vec3[],
+  opts?: StampPathRibbonOpts,
+): void {
+  if (!path || path.length < 2) return;
+  const coreR = opts?.coreR ?? PATH_CORE_R_M;
+  const outerR = opts?.outerR ?? PATH_OUTER_R_M;
+  if (outerR <= 1e-6) return;
+  const span = Math.max(1e-6, outerR - coreR);
+  const res = resolution;
+
+  for (let r = 0; r < res; r++) {
+    for (let c = 0; c < res; c++) {
+      const { x, z } = gridToWorld(c, r, worldSize, res);
+      const d = distToPathXZ(x, z, path);
+      if (d >= outerR) continue;
+      let fall = 1;
+      if (d > coreR) {
+        fall = smoothstep01(1 - (d - coreR) / span);
+      }
+      if (fall <= 1e-6) continue;
+      const pathY = closestPathY(x, z, path);
+      const i = idx(res, c, r);
+      heightmap[i] = heightmap[i]! * (1 - fall) + pathY * fall;
+    }
+  }
+}
+
 /**
  * Absolute path-band conditioning against immutable base terrain.
  *

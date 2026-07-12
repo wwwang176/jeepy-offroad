@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { alpineBiome } from "@/biome/profiles/alpine";
 import { sandBiome } from "@/biome/profiles/sand";
 import { generateLevel } from "@/levelgen/generateLevel";
+import { sampleBilinear } from "@/levelgen/heightmap";
 import { PATH_SAFETY_FACTOR } from "@/levelgen/types";
 import { VEHICLE_CAPABILITIES } from "@/shared/vehicleCapabilities";
 
@@ -117,5 +118,62 @@ describe("alpine descent corpus", () => {
     expect(a.pathPolyline).toEqual(b.pathPolyline);
     expect(a.start).toEqual(b.start);
     expect(a.finish).toEqual(b.finish);
+  });
+
+  it("seed 375247295: finish approach is driveable on terrain (no pad cliff)", () => {
+    const level = generateLevel({
+      seed: 375247295,
+      biome: alpineBiome,
+      vehicle: VEHICLE_CAPABILITIES,
+    });
+    const path = level.pathPolyline;
+    const budget = pathGradeBudget();
+    let maxG = 0;
+    let last40Climb = 0;
+    let dist = 0;
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1]!;
+      const b = path[i]!;
+      const ya = sampleBilinear(
+        level.heightmap,
+        level.resolution,
+        level.worldSize,
+        a.x,
+        a.z,
+      );
+      const yb = sampleBilinear(
+        level.heightmap,
+        level.resolution,
+        level.worldSize,
+        b.x,
+        b.z,
+      );
+      const horiz = Math.hypot(b.x - a.x, b.z - a.z) || 1e-6;
+      maxG = Math.max(maxG, Math.abs((yb - ya) / horiz));
+    }
+    for (let i = path.length - 1; i > 0 && dist < 40; i--) {
+      const a = path[i - 1]!;
+      const b = path[i]!;
+      const ya = sampleBilinear(
+        level.heightmap,
+        level.resolution,
+        level.worldSize,
+        a.x,
+        a.z,
+      );
+      const yb = sampleBilinear(
+        level.heightmap,
+        level.resolution,
+        level.worldSize,
+        b.x,
+        b.z,
+      );
+      const horiz = Math.hypot(b.x - a.x, b.z - a.z) || 1e-6;
+      dist += horiz;
+      if (yb > ya) last40Climb += yb - ya;
+    }
+    // Was ~66° / 15 m wall before ribbon stamp + pad re-grade
+    expect(maxG).toBeLessThanOrEqual(budget + 0.08);
+    expect(last40Climb).toBeLessThan(12);
   });
 });

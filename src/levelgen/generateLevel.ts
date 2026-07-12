@@ -8,12 +8,14 @@ import {
   fitPathToHeightmap,
   generatePathPolyline,
 } from "./path";
-import { conditionTerrainFromBase } from "./repair";
+import { conditionTerrainFromBase, stampPathRibbon } from "./repair";
 import { mulberry32 } from "./rng";
 import {
   CHECKPOINT_SPACING_M,
   DEFAULT_MAP_SIZE,
   DEFAULT_RESOLUTION,
+  PATH_CUT_CAP_M,
+  PATH_FILL_CAP_M,
   type GenerateLevelInput,
   type LevelData,
   type PondBody,
@@ -21,6 +23,7 @@ import {
 } from "./types";
 import { applyMacroRelief } from "./macroRelief";
 import { placePonds } from "./ponds";
+import { assignPathHeights } from "./path";
 
 /** Start pad flat radius (m) — covers rect ring + vehicle footprint. */
 const START_FLAT_RADIUS_M = 6;
@@ -28,6 +31,11 @@ const START_FLAT_RADIUS_M = 6;
 const FINISH_FLAT_RADIUS_M = 5.5;
 /** Smooth blend from pad to surrounding terrain (m). */
 const PAD_FALLOFF_M = 2.5;
+/**
+ * Extra fill/cut vs base per meter of biome macro drop so alpine ribbons can
+ * follow the grade-limited path instead of leaving undrivable cliffs.
+ */
+const MACRO_PATH_CAP_SCALE = 0.45;
 
 function ribbonWidth(biome: BiomeProfile, vehicle: VehicleCapabilities): number {
   return biome.pathWidth ?? vehicle.trackWidth + 2 * vehicle.pathClearance;
@@ -138,6 +146,10 @@ export function carveAndDecorate(
     mapSize,
     vehicle,
   );
+  // Scale caps with macro drop so high→low biomes keep a driveable ribbon.
+  const macroDrop = biome.macroRelief?.startToFinishDropM ?? 0;
+  const fillCap = PATH_FILL_CAP_M + macroDrop * MACRO_PATH_CAP_SCALE;
+  const cutCap = PATH_CUT_CAP_M + macroDrop * MACRO_PATH_CAP_SCALE;
   // Single absolute condition: hm = base + clamp(pathY - base, ±caps) × falloff
   conditionTerrainFromBase(
     hm,
@@ -145,6 +157,7 @@ export function carveAndDecorate(
     resolution,
     mapSize,
     pathDesign,
+    { fillCap, cutCap },
   );
 
   // Pond-only hydrology (no rivers): rim surfaceY → carve → wet shore polygon
@@ -172,6 +185,8 @@ export function carveAndDecorate(
     mapSize,
     vehicle,
   );
+  // Force ribbon to the grade-limited path Y (ponds may have dug holes).
+  stampPathRibbon(hm, resolution, mapSize, path);
 
   hydrologyCache.set(hm, hydro);
   rng();
@@ -283,7 +298,40 @@ export function buildLevelData(
     finishPos.x,
     finishPos.z,
   );
-  // Keep path polyline Y consistent on the pads (minimap / debug).
+
+  // Pads can leave mesa cliffs when the approach ribbon diverged (esp. alpine
+  // macro drop). Re-sample path Y, pin ends to pad heights, grade-limit, then
+  // stamp the ribbon. Final authority is the grade-limited ribbon — do not
+  // hard-flatten pads again (that recreated undrivable walls).
+  const padStartY = startPos.y;
+  const padFinishY = finishPos.y;
+  for (const p of points) {
+    p.y = sampleBilinear(heightmap, resolution, mapSize, p.x, p.z);
+  }
+  points[0]!.y = padStartY;
+  points[points.length - 1]!.y = padFinishY;
+  const graded = assignPathHeights(points, input.vehicle);
+  for (let i = 0; i < points.length; i++) {
+    points[i]!.y = graded[i]!.y;
+  }
+  stampPathRibbon(heightmap, resolution, mapSize, points);
+  startPos.y = sampleBilinear(
+    heightmap,
+    resolution,
+    mapSize,
+    startPos.x,
+    startPos.z,
+  );
+  finishPos.y = sampleBilinear(
+    heightmap,
+    resolution,
+    mapSize,
+    finishPos.x,
+    finishPos.z,
+  );
+  // Keep polyline ends in sync with stamped pad terrain
+  points[0]!.y = startPos.y;
+  points[points.length - 1]!.y = finishPos.y;
   for (const p of points) {
     const ds = Math.hypot(p.x - startPos.x, p.z - startPos.z);
     if (ds <= START_FLAT_RADIUS_M) p.y = startPos.y;
