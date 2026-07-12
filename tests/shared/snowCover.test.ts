@@ -5,6 +5,7 @@ import {
   snowDomeFalloff,
   snowDustColor,
   snowRimRadiusScale,
+  snowThicknessAt,
   type SnowCoverConfig,
 } from "@/shared/snowCover";
 import { buildSnowMoundGeometry } from "@/render/SnowCoverMesh";
@@ -34,6 +35,14 @@ describe("snowCoverageAt / snowDustColor", () => {
     ];
     expect(snowCoverageAt(0, 0, mounds)).toBeGreaterThan(0.9);
     expect(snowCoverageAt(20, 0, mounds)).toBe(0);
+  });
+
+  it("thickness peaks at center and is 0 outside", () => {
+    const mounds = [
+      { x: 0, z: 0, radius: 8, peakThickness: 0.8, phase: 0 },
+    ];
+    expect(snowThicknessAt(0, 0, mounds)).toBeCloseTo(0.8, 2);
+    expect(snowThicknessAt(20, 0, mounds)).toBe(0);
   });
 
   it("snow dust is bright near-white", () => {

@@ -1,17 +1,19 @@
 import { clamp, lerp } from "./math";
 import type { Rgb } from "./offroadFxMath";
 
-export type TrackSurface = "path" | "mud" | "wet";
+export type TrackSurface = "path" | "mud" | "wet" | "snow";
 
 /**
  * Surface under a tire for track look:
- * wet ≫ path ≫ off-path mud (darker, stickier marks).
+ * wet ≫ snow ≫ path ≫ off-path mud.
  */
 export function classifyTrackSurface(
   pathProximity: number,
   wetness: number,
+  snowCoverage = 0,
 ): TrackSurface {
   if (wetness > 0.4) return "wet";
+  if (snowCoverage >= 0.22) return "snow";
   if (pathProximity > 0.35) return "path";
   return "mud";
 }
@@ -45,8 +47,9 @@ export function trackDepositStrength(opts: {
   const slip = clamp((lat - 0.9) / 5, 0, 1) * 1.0;
 
   let s = clamp(roll + drive + brakeMark + slip, 0, 1);
-  // Packed path: lighter tread; soft mud: stronger imprint
+  // Packed path: lighter tread; soft mud: stronger imprint; snow: clear groove
   if (opts.surface === "path") s *= 0.55;
+  else if (opts.surface === "snow") s *= 1.05;
   else s *= 1.15; // mud
 
   return clamp(s, 0, 1);
@@ -61,12 +64,20 @@ export function trackHalfWidth(opts: {
 }): number {
   const base = opts.baseTireHalfW ?? 0.14;
   const lat = clamp(Math.abs(opts.lateralAbsMps) / 6, 0, 1);
-  const mudBoost = opts.surface === "mud" ? 1.25 : opts.surface === "path" ? 0.9 : 0.5;
+  const mudBoost =
+    opts.surface === "mud"
+      ? 1.25
+      : opts.surface === "path"
+        ? 0.9
+        : opts.surface === "snow"
+          ? 1.05
+          : 0.5;
   return base * mudBoost * (0.75 + opts.strength * 0.55 + lat * 0.35);
 }
 
 /**
- * Mark color: dark coffee scrape of local ground; mud darker, path greyer.
+ * Mark color: dark coffee scrape of local ground; mud darker, path greyer;
+ * snow = packed blue-white groove (center cooler, strength darkens edges feel).
  * strength deepens alpha contribution (caller multiplies into vertex a).
  */
 export function trackMarkColor(
@@ -74,6 +85,18 @@ export function trackMarkColor(
   groundAlbedo: Rgb,
   strength: number,
 ): Rgb {
+  if (surface === "snow") {
+    // Packed snow groove: cool blue-grey, darker with strength (fake depth)
+    const packed = { r: 0.72, g: 0.78, b: 0.86 };
+    const groove = { r: 0.48, g: 0.54, b: 0.64 };
+    const t = 0.35 + strength * 0.55;
+    return {
+      r: clamp(lerp(packed.r, groove.r, t), 0, 1),
+      g: clamp(lerp(packed.g, groove.g, t), 0, 1),
+      b: clamp(lerp(packed.b, groove.b, t), 0, 1),
+    };
+  }
+
   // Mid depth: between original near-black and the too-pale pass
   const dark = { r: 0.18, g: 0.14, b: 0.11 };
   const pathGrey = { r: 0.3, g: 0.26, b: 0.21 };
@@ -115,14 +138,39 @@ export function trackSpawnAlpha(
   surface: TrackSurface,
 ): number {
   // Between original (~0.72/0.48) and the too-faint half
-  const base = surface === "mud" ? 0.55 : 0.38;
+  const base =
+    surface === "mud" ? 0.55 : surface === "snow" ? 0.5 : 0.38;
   return clamp(base * (0.35 + strength * 0.75), 0.1, 0.65);
 }
 
 /** Life seconds for a segment. Mud lasts longer. */
 export function trackSegmentLife(surface: TrackSurface, strength: number): number {
-  const base = surface === "mud" ? 14 : 9;
+  const base =
+    surface === "mud" ? 14 : surface === "snow" ? 12 : 9;
   return base * (0.75 + strength * 0.4);
+}
+
+/**
+ * Snow groove ribbon colors (4 verts: L0 R0 L1 R1).
+ * Left/right edges slightly darker than a notional packed mid — reads as a
+ * shallow trench without deforming the snow mound mesh.
+ */
+export function snowTrackVertexColors(
+  strength: number,
+): readonly [Rgb, Rgb, Rgb, Rgb] {
+  const packed = trackMarkColor("snow", { r: 1, g: 1, b: 1 }, strength * 0.55);
+  const edge = trackMarkColor(
+    "snow",
+    { r: 1, g: 1, b: 1 },
+    Math.min(1, strength + 0.3),
+  );
+  // Slight asymmetry so the trench doesn't look flat-shaded uniform
+  const edgeR = {
+    r: clamp(edge.r * 0.94, 0, 1),
+    g: clamp(edge.g * 0.94, 0, 1),
+    b: clamp(edge.b * 0.96, 0, 1),
+  };
+  return [edge, edgeR, edge, edgeR];
 }
 
 /** Min travel (m) before laying another ribbon sample. */

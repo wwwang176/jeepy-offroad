@@ -15,6 +15,12 @@ describe("classifyTrackSurface", () => {
     expect(classifyTrackSurface(0.8, 0)).toBe("path");
     expect(classifyTrackSurface(0, 0)).toBe("mud");
   });
+
+  it("classifies snow when coverage is high", () => {
+    expect(classifyTrackSurface(0, 0, 0.5)).toBe("snow");
+    expect(classifyTrackSurface(0.9, 0, 0.5)).toBe("snow");
+    expect(classifyTrackSurface(0.9, 0.5, 0.9)).toBe("wet");
+  });
 });
 
 describe("trackDepositStrength", () => {
@@ -118,6 +124,13 @@ describe("trackHalfWidth / color / life", () => {
     expect(c.r).toBeLessThan(0.5);
     expect(c.r).toBeLessThan(ground.r);
     expect(c.g).toBeLessThan(c.r + 0.08);
+  });
+
+  it("snow marks are cool blue-grey, not coffee mud", () => {
+    const c = trackMarkColor("snow", { r: 0.5, g: 0.5, b: 0.5 }, 0.7);
+    expect(c.b).toBeGreaterThan(c.r);
+    expect(c.r).toBeGreaterThan(0.4);
+    expect(c.r).toBeLessThan(0.85);
   });
 
   it("mud lasts longer than path", () => {

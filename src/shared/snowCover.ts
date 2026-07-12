@@ -111,6 +111,34 @@ export function snowCoverageAt(
   return best;
 }
 
+/**
+ * Visual snow thickness above rock (m) — matches mound mesh height formula
+ * (peakThickness × falloff). 0 when not under a mound.
+ */
+export function snowThicknessAt(
+  x: number,
+  z: number,
+  mounds: readonly SnowMound[],
+): number {
+  let best = 0;
+  for (let i = 0; i < mounds.length; i++) {
+    const m = mounds[i]!;
+    const dx = x - m.x;
+    const dz = z - m.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > m.radius * SNOW_RIM_SCALE_MAX) continue;
+    const ang = Math.atan2(dz, dx);
+    const rEff = m.radius * snowRimRadiusScale(ang, m.phase);
+    if (dist >= rEff || rEff < 1e-4) continue;
+    const t = m.peakThickness * snowDomeFalloff(dist / rEff);
+    if (t > best) best = t;
+  }
+  return best;
+}
+
+/** How far tire marks sit below the snow surface for a fake groove (m). */
+export const SNOW_TRACK_GROOVE_DEPTH_M = 0.045;
+
 /** Bright dust for unlit particles on snow (not darkened rock dust). */
 export function snowDustColor(snowHex?: string): { r: number; g: number; b: number } {
   // Near-white puffs; mild cool bias so they read as snow not grey rock

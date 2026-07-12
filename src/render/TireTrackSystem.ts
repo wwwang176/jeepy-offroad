@@ -17,6 +17,7 @@ import {
 } from "@/shared/terrainColor";
 import {
   classifyTrackSurface,
+  snowTrackVertexColors,
   trackDepositStrength,
   trackHalfWidth,
   trackMarkColor,
@@ -24,6 +25,16 @@ import {
   trackSegmentLife,
   trackSpawnAlpha,
 } from "@/shared/tireTrackMath";
+import {
+  placeSnowMounds,
+  snowCoverageAt,
+  snowThicknessAt,
+  SNOW_MOUND_SEED_XOR,
+  SNOW_TRACK_GROOVE_DEPTH_M,
+  type SnowCoverConfig,
+  type SnowMound,
+} from "@/shared/snowCover";
+import { mulberry32 } from "@/levelgen/rng";
 
 export type TireTrackWheelSample = {
   contact: boolean;
@@ -52,6 +63,8 @@ export type TireTrackOptions = {
     groundPalette: GroundPalette;
     pathWidth?: number;
     terrainColorMode?: TerrainColorMode;
+    seed?: number;
+    snowCover?: SnowCoverConfig;
   };
   /** Flat sandbox ground Y */
   flatGroundY?: number;
@@ -103,6 +116,7 @@ export class TireTrackSystem {
   private heightmap: Float32Array | null = null;
   private resolution = 0;
   private worldSize = 0;
+  private snowMounds: readonly SnowMound[] = [];
   private flatGroundY: number | null = null;
   private customSampleGroundY: ((x: number, z: number) => number) | null =
     null;
@@ -186,6 +200,8 @@ export class TireTrackSystem {
       `,
       transparent: true,
       depthWrite: false,
+      // Off so shallow snow grooves (Y slightly under snow surface) stay visible
+      depthTest: false,
       side: THREE.DoubleSide,
       polygonOffset: true,
       polygonOffsetFactor: -2,
@@ -195,7 +211,8 @@ export class TireTrackSystem {
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.name = "tire-track-mesh";
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 1;
+    // Above snow cover mesh so shallow grooves remain readable
+    this.mesh.renderOrder = 3;
     this.group.add(this.mesh);
     scene.add(this.group);
 
@@ -214,6 +231,28 @@ export class TireTrackSystem {
         pathWidth: opts.terrain.pathWidth,
         terrainColorMode: opts.terrain.terrainColorMode,
       });
+      this.snowMounds = [];
+      if (opts.terrain.snowCover && opts.terrain.seed != null) {
+        const pathHalf = (opts.terrain.pathWidth ?? 4) * 0.75;
+        const sampleY = (wx: number, wz: number) =>
+          sampleBilinear(
+            opts.terrain!.heightmap,
+            opts.terrain!.resolution,
+            opts.terrain!.worldSize,
+            wx,
+            wz,
+          );
+        this.snowMounds = placeSnowMounds({
+          heightmap: opts.terrain.heightmap,
+          resolution: opts.terrain.resolution,
+          worldSize: opts.terrain.worldSize,
+          pathPolyline: opts.terrain.pathPolyline,
+          pathHalfWidth: pathHalf,
+          cfg: opts.terrain.snowCover,
+          rng: mulberry32((opts.terrain.seed ^ SNOW_MOUND_SEED_XOR) >>> 0),
+          sampleY,
+        });
+      }
     }
   }
 
@@ -259,7 +298,19 @@ export class TireTrackSystem {
 
       const contact = this.wheelContactWorld(i, w.suspensionLength, radius, sample);
       const groundY = this.sampleGroundY(contact.x, contact.z);
-      const y = groundY + Y_BIAS;
+      const snowCover =
+        this.snowMounds.length > 0
+          ? snowCoverageAt(contact.x, contact.z, this.snowMounds)
+          : 0;
+      const snowLift =
+        snowCover >= 0.2
+          ? snowThicknessAt(contact.x, contact.z, this.snowMounds)
+          : 0;
+      // On snow: sit just under the visual snow surface (fake groove, no mesh crush)
+      const y =
+        snowLift > 0.04
+          ? groundY + snowLift - SNOW_TRACK_GROOVE_DEPTH_M
+          : groundY + Y_BIAS;
       const pathW = this.terrainCtx
         ? pathProximity(
             contact.x,
@@ -275,7 +326,7 @@ export class TireTrackSystem {
         this.ponds,
         contact.y,
       );
-      const surface = classifyTrackSurface(pathW, wet);
+      const surface = classifyTrackSurface(pathW, wet, snowCover);
       const strength = trackDepositStrength({
         grounded: true,
         speedMps: speed,
@@ -340,6 +391,8 @@ export class TireTrackSystem {
       const rgb = trackMarkColor(surface, albedo, strength);
       const alpha = trackSpawnAlpha(strength, surface);
       const life = trackSegmentLife(surface, strength);
+      const vertCols =
+        surface === "snow" ? snowTrackVertexColors(strength) : null;
 
       // Smooth lateral: average last/current travel for less zigzag
       const lx0 = trail.lastX + px * halfW;
@@ -375,6 +428,7 @@ export class TireTrackSystem {
         rgb.b,
         alpha,
         life,
+        vertCols,
       );
       posDirty = true;
       colDirty = true;
@@ -439,6 +493,7 @@ export class TireTrackSystem {
     b: number,
     alpha: number,
     life: number,
+    vertCols?: readonly { r: number; g: number; b: number }[] | null,
   ): void {
     const m = this.metas[i];
     m.alive = true;
@@ -456,12 +511,13 @@ export class TireTrackSystem {
     ];
     for (let v = 0; v < 4; v++) {
       const p = base + v;
-      this.positions[p * 3] = verts[v][0];
-      this.positions[p * 3 + 1] = verts[v][1];
-      this.positions[p * 3 + 2] = verts[v][2];
-      this.colors[p * 4] = r;
-      this.colors[p * 4 + 1] = g;
-      this.colors[p * 4 + 2] = b;
+      this.positions[p * 3] = verts[v]![0]!;
+      this.positions[p * 3 + 1] = verts[v]![1]!;
+      this.positions[p * 3 + 2] = verts[v]![2]!;
+      const col = vertCols?.[v];
+      this.colors[p * 4] = col?.r ?? r;
+      this.colors[p * 4 + 1] = col?.g ?? g;
+      this.colors[p * 4 + 2] = col?.b ?? b;
       this.colors[p * 4 + 3] = alpha;
     }
   }
