@@ -3,7 +3,8 @@
 **Date:** 2026-07-12  
 **Branch:** `feat/snow-alpine-biome`  
 **Spec:** `docs/superpowers/specs/2026-07-12-snow-alpine-biome.md`  
-**Goal:** Third biome — cold alpine pass, bare rock, **descent-signature** path via macro relief; playable from menu with EN/zh.
+**Goal:** Third biome — cold alpine pass, bare rock, **descent-signature** path via macro relief; playable from menu with EN/zh.  
+**Review:** Claude plan review incorporated (P0/P1) 2026-07-12 — metrics split, no fallback-rate gate, max-grade assert, brakeScale accepted as coupling, no weather type in T1.
 
 ---
 
@@ -56,7 +57,7 @@ Suggested commits (atomic):
 
 - [x] Spec: `docs/superpowers/specs/2026-07-12-snow-alpine-biome.md`
 - [x] Plan: this file
-- [ ] User skim / approve open decisions (id `alpine`, ponds off, drop ~32 m)
+- [x] Decisions locked: id `alpine`, zh 雪山, ponds off 0.12, drop 32 m, brakeScale 0.75 couples 4L
 
 **Done when:** branch has docs; no code required.
 
@@ -69,9 +70,9 @@ Suggested commits (atomic):
 | Action | Path |
 |--------|------|
 | Create | `src/biome/profiles/alpine.ts` |
-| Edit | `src/biome/types.ts` — optional `macroRelief`, optional `weather` |
+| Edit | `src/biome/types.ts` — optional `macroRelief` only (no weather type in T1) |
 | Edit | `src/biome/registry.ts` — register alpine |
-| Edit | `tests/biome/registry.test.ts` — list includes alpine; random can resolve |
+| Edit | `tests/biome/registry.test.ts` — list includes alpine; random covers all ids |
 
 ### Profile v1 draft values
 
@@ -117,14 +118,14 @@ export interface BiomeMacroRelief {
 
 // on BiomeProfile:
 macroRelief?: BiomeMacroRelief;
-weather?: { kind: "rain" | "snow"; density?: number };
+// no weather field until GameScene consumer (T4 optional)
 ```
 
 ### Tests
 
 - `listBiomes()` length ≥ 3; ids include `alpine`
 - `getBiome("alpine")` returns profile with `macroRelief`
-- `resolveBiomeId("random", seed)` over many seeds eventually hits alpine (or modulo coverage)
+- `resolveBiomeId("random", seed)` for seeds `0..n-1` covers **all** registered ids (`seed % n`)
 
 **Done when:** unit tests green; no menu yet still OK if only registry.
 
@@ -208,16 +209,19 @@ if (biome.macroRelief && !isFallback) {
 }
 ```
 
-### Unit tests
+### Unit tests (CI floors — not product goals; see spec §5.3)
 
 1. **Ramp polarity:** sample near start higher than near finish by ≈ `dropM` (± cell error).  
 2. **Idempotent / no NaN.**  
-3. **Omitted macro:** helper no-op or generateLevel sand seed heightmap matches pre-change fixture (repro test if exists).  
-4. **Corpus:** for alpine, seeds e.g. `[1,2,3,7,11,42,99,100,256,777,1024,2026,5000,9999,12345,44444,88888,100000,314159,929210958]`:  
+3. **Omitted macro:** sand/rainforest unchanged when `macroRelief` absent (repro hash or helper no-op).  
+4. **Corpus alpine** (20 fixed seeds):  
    - `netDrop = path[0].y - path[n-1].y`  
-   - assert **mean netDrop ≥ 12** and **≥70% seeds with netDrop ≥ 10** (thresholds soft until tuned; tighten after first playtest).  
-5. Sand same seeds: mean netDrop **not** required high (document baseline).  
-6. Alpine still `validateLevel` ok or accepted fallback rate not worse than sand by large margin.
+   - **mean netDrop ≥ 12** and **≥70% seeds with netDrop ≥ 10** (product goal ≥18@70% is post-playtest tighten).  
+5. **Max segment grade** ≤ `tan(maxSlopeRad) * PATH_SAFETY_FACTOR` (or same budget `assignPathHeights` uses) on **every** alpine corpus seed.  
+6. Optional: `validateLevel` on corpus — no production fallback rate (always 0).  
+7. Sand same seeds: mean netDrop not required high (baseline observation only).
+
+**Do not** assert fallback rate or raw descendFraction/heightRange gates.
 
 **Done when:** tests green; one manual seed shows obvious long descent on HUD altimeter / eye.
 
@@ -246,7 +250,8 @@ if (biome.macroRelief && !isFallback) {
 | Path too ramp-smooth | ↑ `offPathRoughness` slightly |
 | Too skate / same as sand | tweak traction scales; colder path color |
 | Too empty | ↑ `propCountScale` / pillar weight |
-| Too many solvability fallbacks | ↓ drop or roughness |
+| Path grade / validate noise | ↓ drop or roughness |
+| 4L weak on descent (after brakeScale 0.75) | playtest A6; prefer dropM/traction before drivetrain split |
 | White void | ↑ fogDensity slightly; darken `low` palette |
 
 ### Optional weather hook (same phase if touching GameScene)
@@ -280,10 +285,12 @@ Snow particles: **out of scope** unless leftover time; fog is enough for v1.
 |--------|-----|
 | New mesh keys in v1 | Bare rock reuse is enough |
 | Canyon walls / kill volumes | Different feature |
-| Biome-specific engine brake gain | Prefer global 4L; tune traction first |
+| Biome-specific engine brake gain | Prefer global 4L; accept brakeScale coupling (spec §4.2) |
 | Raise `maxSlopeRad` for alpine | Breaks shared solvability contract |
 | Difficulty label on card | Theme only |
-| Stream/river revive for alpine | Pond-only world; rare melt optional |
+| Stream/river revive for alpine | Ponds off v1 |
+| Near-path prop bias | Same uniform spawn as sand |
+| MenuBackdrop per-biome | Non-goal |
 
 ---
 

@@ -1,7 +1,7 @@
 # Snow Alpine Biome — Design Spec
 
 **Date:** 2026-07-12  
-**Status:** Draft (planning; awaiting playtest tuning)  
+**Status:** Ready for implement (Claude plan review incorporated 2026-07-12)  
 **Branch:** `feat/snow-alpine-biome`  
 **Project:** `grok-jeep-game`  
 **Constraint:** Third scene theme; must feel **not** like recolored sand or rainforest. Hero beat = **long downhill** on **cold palette + bare rock**.
@@ -38,21 +38,23 @@ Biome remains a **scene theme**, not a difficulty tier. Solvability still uses g
 - New tree LODs or external art pipeline
 - Relaxing `maxSlopeRad` / solvability for “steeper than the jeep allows”
 - Making alpine “harder” via longer path or tighter turns as a difficulty mode
+- Path-biased prop density (“rocks denser near path”) — current spawn is uniform + path exclusion
+- Menu backdrop theme per biome (menu 3D backdrop stays sand-toned; not a bug)
 
 ### 1.3 Success criteria
 
 | ID | Criterion |
 |----|-----------|
 | A1 | Menu lists alpine; start run with random or explicit seed. |
-| A2 | Same `(alpine, seed)` reproduces layout (heightmap + POIs). |
+| A2 | Same `(alpine, seed)` reproduces layout (heightmap + POIs). **Note:** adding a third id remaps `random` via `seed % n` — intentional break for old random seeds. |
 | A3 | Cold identity without rain: sky/fog/palette/water ≠ sand/rainforest. |
 | A4 | Props: bare rock dominant; no cactus/palm vocabulary. |
-| A5 | **Descent signature:** for a fixed seed corpus, path net drop (startY − finishY or max−min with descending majority) meets §5 targets more often than sand/rainforest baselines. |
-| A6 | Full throttle in 4H on the long descent feels **unsafe**; 4L engine brake is clearly useful (playtest, not unit-only). |
+| A5 | **Descent signature:** fixed seed corpus — **netDrop** (`path[0].y − path[n-1].y`) product goals in §5.3; CI uses conservative floors in the plan. |
+| A6 | Full throttle in 4H on the long descent feels **unsafe**; 4L engine brake is clearly useful (playtest). **See §4.2:** biome `brakeScale` also scales 4L force today. |
 | A7 | Traction: slippery enough to read “snow/ice grit,” distinct from rainforest baseline; may be near sand but colder framing. |
-| A8 | GeometricSolvability + existing validators still pass (or fallback path) — no special alpine cheat. |
+| A8 | Path continuous grade stays within vehicle budget (assert max segment grade ≤ solvability grade). Production `generateLevel` has **no** repair/fallback loop — do not require `usedFallback`. Optional: call `validateLevel` in corpus for extra gates. |
 | A9 | i18n EN + zh name/description. |
-| A10 | Random biome selection includes alpine. |
+| A10 | Random biome selection includes alpine (deterministic cover of all registered ids). |
 
 ---
 
@@ -93,7 +95,7 @@ Dust / tire tracks inherit terrain palette (existing behavior) → automatically
 
 **Do not use:** `cactus`, `coconut_palm`, `jungle_bush` (wrong biome vocabulary).
 
-v1 density: rock-forward, sparse vs rainforest; denser pillars near path than open sand dunes.
+v1 density: rock-forward, sparse vs rainforest. **Same placement as sand** (uniform random + exclude near path/start/finish); weights only. No near-path bias.
 
 `groundCoverCountScale`: 0 / omit (no tropical grass carpet).
 
@@ -101,10 +103,10 @@ v1 density: rock-forward, sparse vs rainforest; denser pillars near path than op
 
 | v1 | Later |
 |----|-------|
-| No rain (`biome.id === "rainforest"` must not fire) | Optional light snow particles |
+| No rain (rainforest id hardcode must not fire for alpine) | Optional light snow particles |
 | Fog carries cold mood | Wind streak / whiteout |
 
-**Debt note:** Rain is hardcoded to rainforest id today. Alpine must not accidentally inherit rain. Prefer adding `weather?: { kind: "none" \| "rain" \| "snow"; … }` when implementing alpine **or** leave weather undefined and only enable rain for rainforest — do not special-case alpine with another id if.
+**Debt note:** Rain is hardcoded to `biome.id === "rainforest"`. Alpine omits weather → no rain. Optional later: `weather?: { kind: "rain" | "snow"; density?: number }` (omit = none). **Do not add weather type in T1** unless GameScene is touched.
 
 ### 3.4 Menu
 
@@ -125,7 +127,7 @@ Start from sand-like slip, then tune:
 |-------|----------------|--------|
 | `frictionSlipScale` | ~0.50–0.55 | Slippery packed snow; not mud |
 | `sideFrictionScale` | ~0.42–0.48 | Sideways slide on camber |
-| `brakeScale` | ~0.70–0.80 | Service brake less heroic on ice grit |
+| `brakeScale` | **0.75** (same as sand) | Scales `rapierBrakeScale` for **both** service brake and 4L 檔煞 (see §4.2) |
 
 Rainforest keeps baseline (1). Alpine should **not** feel like sticky mud.
 
@@ -136,7 +138,9 @@ Existing 4L overspeed engine brake (`V_term` from flat solve) is a **feature, no
 - Long descent + gravity → speed builds without throttle.
 - Playtest checklist: 4H overshoots / scary; 4L holds near a usable crawl/mid band.
 
-No alpine-specific drivetrain code in v1 unless playtest proves need for a gain tweak **global or by range only** (avoid biome-coupled engine code if possible).
+**Decision (review P0-3):** Biome `brakeScale` multiplies the shared `rapierBrakeScale` used by service brake **and** engine brake. Alpine **accepts** this coupling (no drivetrain split in v1). A6 playtest judges 4L usefulness **after** the 0.75 scale — same as sand ice-grit. Revisit only if playtest fails A6; prefer raising `engineBrakeGain` globally or dropM / traction before special-casing drivetrain.
+
+No alpine-specific drivetrain code in v1.
 
 ### 4.3 What “big downhill” means (physics-honest)
 
@@ -174,8 +178,8 @@ Add a **biome-optional macro height field** applied when building base terrain (
 **Option A — Domain slope (recommended v1)**  
 `macroY(x,z) = alpineBias * (0.5 - t)` where `t` is normalized progress along the **start→finish chord** (or simply `-x` if start is west / finish east as today).
 
-- West (start side) higher, east (finish) lower → path E→W tends to **dump altitude**.
-- Amplitude example: **25–45 m** end-to-end macro drop before fBm detail (tune).
+- West (start) higher, east (finish) lower → path travels **W→E** and tends to **dump altitude** (start at `x = -half+m`, finish at `+half-m`).
+- Amplitude example: **25–45 m** end-to-end macro drop before fBm detail (tune; ship start **32 m**).
 - fBm / ridges still add local interest; path clamp keeps drivability.
 
 **Option B — Radial peak**  
@@ -188,28 +192,32 @@ Force monotone-ish design Y along polyline. Fights “path follows landforms” 
 
 ### 5.3 Quantitative targets (tune with corpus)
 
-Define metrics on finished `level.path` (after conditioning):
+**Source of truth split (review P0-2):**
 
-| Metric | Alpine target | Sand/rainforest note |
-|--------|---------------|----------------------|
-| `netDrop = path[0].y - path[n-1].y` | **≥ 18 m** on ≥70% of seed corpus | Often near 0 ± small |
-| `heightRange = maxY - minY` on path | **≥ 22 m** typical | Can be high without net drop |
-| `descendFraction` (segments with dy/ds < −0.02) | **≥ 0.55** of path length | ~0.5 noise |
-| Max single-segment grade | Still ≤ solvability budget | Unchanged |
+| Layer | Role |
+|-------|------|
+| **Spec (this table)** | Product / playtest goals — tighten after P3 |
+| **Plan CI** | Conservative floors so first green is honest |
 
-Corpus: e.g. 20 seeds (fixed list in tests). Soft assert alpine mean netDrop ≫ sand mean netDrop.
+Metrics on finished path polyline Y (after conditioning):
 
-Fallback path may ignore alpine macro (keep simple strip) — rare; log as today.
+| Metric | Product goal (spec) | CI floor (plan; may lag) |
+|--------|---------------------|---------------------------|
+| `netDrop = path[0].y − path[n−1].y` | **≥ 18 m** on ≥70% seeds; mean clearly ≫ sand | mean ≥ **12 m**; ≥70% seeds ≥ **10 m** |
+| Max single-segment grade | ≤ solvability budget always | **Assert every corpus seed** |
+| Longest continuous descent (m) | Playtest observation | Optional log only in v1 |
+| `heightRange` / raw `descendFraction` | **Not** ship gates (noisy under meander+fBm; sand heightRange already high) | Do not CI-fail |
+
+Corpus: fixed 20 seeds (plan list).  
+`forceFallbackLevel` / `isFallback` carve: **skip macro** (helper only; production never falls back).
 
 ### 5.4 Ponds / water
 
-| Field | Alpine v1 |
-|-------|-----------|
-| `streamDensity` | **≤ 0.15** → pond band **0** (see `generateLevel` bands: `>0.5→200`, `>0.15→25`, else 0) **or** slightly above 0.15 for rare melt pools (25) |
+| Field | Alpine v1 **decided** |
+|-------|------------------------|
+| `streamDensity` | **0.12** → pond band **0** (no melt pools in v1) |
 
-**Recommendation:** `streamDensity: 0.12` → **no ponds** first for pure rock/snow read; or `0.2` for sparse cold pools if shore read is good with `waterColor`.
-
-Avoid rainforest-scale flooding.
+Avoid rainforest-scale flooding. Cold `waterColor` kept for future.
 
 ### 5.5 Roughness / path width
 
@@ -255,13 +263,11 @@ interface BiomeProfile {
   // …existing fields…
   /** Optional macro relief for descent-signature biomes (alpine). */
   macroRelief?: BiomeMacroRelief;
-  /**
-   * Optional weather. If omitted: no rain/snow VFX.
-   * Rainforest should migrate to { kind: "rain" } when convenient.
-   */
-  weather?: { kind: "rain" | "snow"; density?: number };
+  // weather?: { kind: "rain" | "snow"; density?: number }  — add only when GameScene migrates rain (T4 optional)
 }
 ```
+
+T1 adds **`macroRelief` only**. Do not ship unused `weather` field until a consumer exists.
 
 ### 6.2 Levelgen touch
 
@@ -317,7 +323,7 @@ If playtest says “still sand,” priority fix order: (1) macro drop, (2) palet
 | Risk | Mitigation |
 |------|------------|
 | Macro drop + grade clamp flattens path into boring ramp | Keep fBm amp; clamp only continuous grade; meander laterally |
-| Solvability failures spike | Macro drop within path length × maxGrade budget; corpus test |
+| Grade budget exceeded on path | Assert max segment grade in corpus; lower `startToFinishDropM` if needed |
 | Alpine = “white sand” | Ban warm props; cold water; no rain; rocks not cacti |
 | Players miss downhill if start/finish reverse relative height | Define drop as start→finish along path direction; metric netDrop |
 | 4H too easy still | Rely on gravity + slip; optional later slight engineBrakeGain tweak |
@@ -340,13 +346,16 @@ If playtest says “still sand,” priority fix order: (1) macro drop, (2) palet
 
 ---
 
-## 10. Open decisions (resolve in P1/P2)
+## 10. Decisions (locked for implement)
 
-1. **Biome id string:** `alpine` vs `snow` vs `snow_pass` — recommend **`alpine`**.  
-2. **Display:** “Alpine” / 「雪山」 vs 「垭口」— recommend EN Alpine, zh 雪山.  
-3. **Ponds on/off** for v1 — recommend off (`streamDensity ≤ 0.15`).  
-4. **Weather migration** for rainforest in same PR or follow-up — recommend follow-up unless touching GameScene anyway.  
-5. **Exact `startToFinishDropM`** — start **32 m**, corpus-tune.
+| # | Decision |
+|---|----------|
+| 1 | Biome id: **`alpine`** |
+| 2 | EN **Alpine** / zh **雪山** |
+| 3 | Ponds: **off** (`streamDensity: 0.12`) |
+| 4 | Weather migration: **follow-up** (not T1) |
+| 5 | `startToFinishDropM`: start **32**, tune in playtest |
+| 6 | `brakeScale` **0.75** couples service + 4L; accept for v1 (§4.2) |
 
 ---
 
