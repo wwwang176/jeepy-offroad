@@ -33,10 +33,10 @@ const FINISH_FLAT_RADIUS_M = 5.5;
 const PAD_FALLOFF_M = 2.5;
 /**
  * Extra fill/cut vs base per meter of biome macro drop (alpine only).
- * Keep modest so mid-path still has roughness; pad approaches are fixed
- * separately with a short corridor stamp.
+ * 0 ≈ original ±3 m ribbon (wild mid-path); pad approaches are fixed
+ * separately with a short corridor stamp so finish stays reachable.
  */
-const MACRO_PATH_CAP_SCALE = 0.2;
+const MACRO_PATH_CAP_SCALE = 0;
 /** Arc length (m) of grade-enforced corridor at start / finish for macro biomes. */
 const PAD_APPROACH_M = 56;
 
