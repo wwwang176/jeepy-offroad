@@ -14,7 +14,7 @@ const FALL_SPEED_MAX = 4.8;
 const FALL_WIND_X = 1.4;
 const FALL_WIND_Z = 2.6;
 
-// Dense fine streamers — read as wind/airflow, not big puffs
+// Dense fine streamers — rain-like streaks along wind (airflow)
 const BLOW_COUNT = 1100;
 const BLOW_AREA = 42;
 const BLOW_HEIGHT_MIN = 0.08;
@@ -25,6 +25,52 @@ const BLOW_WIND_X = 9.5;
 const BLOW_WIND_Z = 3.8;
 
 const DEAD_Y = -9999;
+
+const _blowDir = new THREE.Vector3(BLOW_WIND_X, 0.02, BLOW_WIND_Z).normalize();
+
+/** Horizontal wind streaks (same projection trick as RainVFX). */
+const blowVertexShader = /* glsl */ `
+uniform vec3 uWindDir;
+attribute float aOpacity;
+varying float vOpacity;
+varying vec2 vStreakDir;
+void main() {
+  vOpacity = aOpacity;
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  vec3 vp = mvPosition.xyz;
+  vec3 vd = mat3(modelViewMatrix) * uWindDir;
+  float negZ = -vp.z;
+  vec2 sv = vec2(
+    vd.x * negZ + vp.x * vd.z,
+    vd.y * negZ + vp.y * vd.z
+  );
+  float len = length(sv);
+  vStreakDir = len > 0.001 ? sv / len : vec2(1.0, 0.0);
+  float cosAim = abs(dot(normalize(vd), normalize(vp)));
+  float streakScale = 1.0 - cosAim * 0.85;
+  // Longer, thinner marks than rain (airflow ribbons)
+  gl_PointSize = max(3.0, 14.0 * streakScale * (220.0 / negZ));
+  gl_Position = projectionMatrix * mvPosition;
+}
+`;
+
+const blowFragmentShader = /* glsl */ `
+varying float vOpacity;
+varying vec2 vStreakDir;
+void main() {
+  vec2 uv = gl_PointCoord - vec2(0.5);
+  vec2 dir = vec2(vStreakDir.x, -vStreakDir.y);
+  float along = dot(uv, dir);
+  vec2 perp = uv - along * dir;
+  float across = length(perp);
+  // Thin streak core
+  float maskAcross = smoothstep(0.07, 0.0, across);
+  float maskAlong = smoothstep(0.5, 0.02, abs(along));
+  float mask = maskAcross * maskAlong;
+  if (mask < 0.02) discard;
+  gl_FragColor = vec4(0.9, 0.94, 0.99, vOpacity * mask * 0.42);
+}
+`;
 
 export type SnowVFXOptions = {
   getHeightAt: (x: number, z: number) => number;
@@ -49,7 +95,7 @@ export class SnowVFX {
   private readonly blowPos: Float32Array;
   private readonly blowSpeed: Float32Array;
   private readonly blowPhase: Float32Array;
-  private readonly blowSize: Float32Array;
+  private readonly blowOpacity: Float32Array;
   private readonly blowGeo: THREE.BufferGeometry;
   private readonly blowMesh: THREE.Points;
 
@@ -125,11 +171,11 @@ export class SnowVFX {
     this.fallMesh.renderOrder = 4;
     scene.add(this.fallMesh);
 
-    // --- Ground blowing snow ---
+    // --- Ground blowing snow (thin rain-like streaks along wind) ---
     this.blowPos = new Float32Array(this.blowCount * 3);
     this.blowSpeed = new Float32Array(this.blowCount);
     this.blowPhase = new Float32Array(this.blowCount);
-    this.blowSize = new Float32Array(this.blowCount);
+    this.blowOpacity = new Float32Array(this.blowCount);
     for (let i = 0; i < this.blowCount; i++) {
       this.blowPos[i * 3] = (Math.random() - 0.5) * BLOW_AREA;
       this.blowPos[i * 3 + 1] = DEAD_Y;
@@ -137,7 +183,7 @@ export class SnowVFX {
       this.blowSpeed[i] =
         BLOW_SPEED_MIN + Math.random() * (BLOW_SPEED_MAX - BLOW_SPEED_MIN);
       this.blowPhase[i] = Math.random() * Math.PI * 2;
-      this.blowSize[i] = 2.2 + Math.random() * 3.2;
+      this.blowOpacity[i] = 0.35 + Math.random() * 0.55;
     }
     this.blowGeo = new THREE.BufferGeometry();
     this.blowGeo.setAttribute(
@@ -145,34 +191,13 @@ export class SnowVFX {
       new THREE.BufferAttribute(this.blowPos, 3),
     );
     this.blowGeo.setAttribute(
-      "aSize",
-      new THREE.BufferAttribute(this.blowSize, 1),
+      "aOpacity",
+      new THREE.BufferAttribute(this.blowOpacity, 1),
     );
     const blowMat = new THREE.ShaderMaterial({
-      uniforms: {
-        uTex: { value: this.sharedTex },
-        uColor: { value: new THREE.Color(0.9, 0.93, 0.98) },
-        uOpacity: { value: 0.28 },
-      },
-      vertexShader: /* glsl */ `
-        attribute float aSize;
-        void main() {
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = max(1.0, aSize * (140.0 / -mv.z));
-          gl_Position = projectionMatrix * mv;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        uniform sampler2D uTex;
-        uniform vec3 uColor;
-        uniform float uOpacity;
-        void main() {
-          vec4 t = texture2D(uTex, gl_PointCoord);
-          float a = t.a * uOpacity;
-          if (a < 0.012) discard;
-          gl_FragColor = vec4(uColor, a);
-        }
-      `,
+      uniforms: { uWindDir: { value: _blowDir } },
+      vertexShader: blowVertexShader,
+      fragmentShader: blowFragmentShader,
       transparent: true,
       depthWrite: false,
       blending: THREE.NormalBlending,
