@@ -440,8 +440,8 @@ export class VehicleController {
     this.lastAvailableEngine = drive.availableEngineForce;
     this.lastServiceBraking = drive.serviceBraking;
 
-    // Steering still eases off with speed (road feel in 4H; 4L stays agile).
-    const steerRefSpeed = range === "L" ? 12 : 25;
+    // Steering eases off with speed — same falloff curve in 4H and 4L.
+    const steerRefSpeed = 25;
     const steerFactor = clamp(1 - Math.abs(speed) / steerRefSpeed, 0.25, 1);
     // Input: +steer = right (D). Rapier vehicle steering is opposite of our
     // keyboard convention, so negate for correct left/right.
