@@ -84,11 +84,13 @@ export function t(
 export function biomeDisplayName(biomeId: string): string {
   if (biomeId === "sand") return t("biome.sand.name");
   if (biomeId === "rainforest") return t("biome.rainforest.name");
+  if (biomeId === "alpine") return t("biome.alpine.name");
   return biomeId;
 }
 
 export function biomeDescription(biomeId: string): string {
   if (biomeId === "sand") return t("biome.sand.desc");
   if (biomeId === "rainforest") return t("biome.rainforest.desc");
+  if (biomeId === "alpine") return t("biome.alpine.desc");
   return "";
 }

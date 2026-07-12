@@ -49,9 +49,11 @@ describe("i18n", () => {
     setLocale("zh");
     expect(t("menu.start")).toBe("開始遊戲");
     expect(biomeDisplayName("rainforest")).toBe("雨林");
+    expect(biomeDisplayName("alpine")).toBe("雪山");
     expect(t("seed.placeholder")).toBe("空白 = 隨機");
     setLocale("en");
     expect(t("menu.start")).toBe("Start game");
+    expect(biomeDisplayName("alpine")).toBe("Alpine");
   });
 
   it("interpolates placeholders", () => {

@@ -1,11 +1,13 @@
 import type { BiomeId } from "@/shared/types";
 import type { BiomeProfile } from "./types";
+import { alpineBiome } from "./profiles/alpine";
 import { sandBiome } from "./profiles/sand";
 import { rainforestBiome } from "./profiles/rainforest";
 
 const REGISTRY: Record<string, BiomeProfile> = {
   [sandBiome.id]: sandBiome,
   [rainforestBiome.id]: rainforestBiome,
+  [alpineBiome.id]: alpineBiome,
 };
 
 /** Sentinel for menu "random biome" selection. */

@@ -22,6 +22,8 @@ export type MessageKey =
   | "biome.sand.desc"
   | "biome.rainforest.name"
   | "biome.rainforest.desc"
+  | "biome.alpine.name"
+  | "biome.alpine.desc"
   | "loading"
   | "result.title"
   | "result.meta"
@@ -48,7 +50,7 @@ export const messages: Record<Locale, MessageTable> = {
     "menu.hints":
       "WASD drive · release to coast · reverse W/S brake · Shift 4H/4L · drag look · C camera · R respawn",
     "menu.card.random.name": "Random",
-    "menu.card.random.desc": "Sand / Rainforest",
+    "menu.card.random.desc": "Sand / Rainforest / Alpine",
     "menu.card.seed.name": "SEED",
     "menu.card.seed.desc": "Custom seed",
     "menu.card.road.name": "ROAD",
@@ -63,6 +65,8 @@ export const messages: Record<Locale, MessageTable> = {
     "biome.sand.desc": "Dry ridges, cacti, and sandy tracks",
     "biome.rainforest.name": "Rainforest",
     "biome.rainforest.desc": "Wet mud, light rain, and coconut palms",
+    "biome.alpine.name": "Alpine",
+    "biome.alpine.desc": "Residual snow, bare rock, long descents",
     loading: "Loading {biome} · seed {seed}…",
     "result.title": "Finish!",
     "result.meta": "{biome} · seed {seed}",
@@ -87,7 +91,7 @@ export const messages: Record<Locale, MessageTable> = {
     "menu.hints":
       "WASD 駕駛 · 鬆鍵滑行 · 反向 W/S 剎車 · Shift 4H/4L · 拖曳視角 · C 鏡頭 · R 重生",
     "menu.card.random.name": "隨機",
-    "menu.card.random.desc": "沙地 / 雨林",
+    "menu.card.random.desc": "沙地 / 雨林 / 雪山",
     "menu.card.seed.name": "SEED",
     "menu.card.seed.desc": "自訂種子",
     "menu.card.road.name": "ROAD",
@@ -102,6 +106,8 @@ export const messages: Record<Locale, MessageTable> = {
     "biome.sand.desc": "乾燥岩脊、仙人掌與沙褐土徑",
     "biome.rainforest.name": "雨林",
     "biome.rainforest.desc": "潮濕綠泥、小雨與成片椰子樹",
+    "biome.alpine.name": "雪山",
+    "biome.alpine.desc": "殘雪、裸岩與長下坡",
     loading: "載入 {biome} · 種子 {seed}…",
     "result.title": "抵達終點！",
     "result.meta": "{biome} · 種子 {seed}",

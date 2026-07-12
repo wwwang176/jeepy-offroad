@@ -7,9 +7,9 @@ import {
 } from "@/biome/registry";
 
 describe("biome registry", () => {
-  it("lists sand and rainforest", () => {
+  it("lists sand, rainforest, and alpine", () => {
     const ids = listBiomes().map((b) => b.id).sort();
-    expect(ids).toEqual(["rainforest", "sand"]);
+    expect(ids).toEqual(["alpine", "rainforest", "sand"]);
   });
 
   it("sand is Sand with arid palette", () => {
@@ -38,20 +38,38 @@ describe("biome registry", () => {
     expect(rf.groundPalette.mid).not.toBe(getBiome("sand").groundPalette.mid);
   });
 
-  it("resolveBiomeId random is deterministic from seed", () => {
+  it("alpine is cold rock with macro descent and no warm vegetation", () => {
+    const a = getBiome("alpine");
+    expect(a.displayName).toBe("Alpine");
+    expect(a.macroRelief?.startToFinishDropM).toBeGreaterThan(0);
+    expect(a.streamDensity).toBeLessThanOrEqual(0.15);
+    expect(a.traction?.frictionSlipScale ?? 1).toBeLessThan(0.6);
+    expect(
+      a.propTable.every(
+        (p) => p.meshKey === "rock_pile" || p.meshKey === "pillar_rock",
+      ),
+    ).toBe(true);
+    expect(a.propTable.some((p) => p.meshKey === "cactus")).toBe(false);
+    expect(a.propTable.some((p) => p.meshKey === "coconut_palm")).toBe(false);
+  });
+
+  it("resolveBiomeId random is deterministic and covers all biomes", () => {
     const a = resolveBiomeId(RANDOM_BIOME_ID, 42);
     const b = resolveBiomeId(RANDOM_BIOME_ID, 42);
     expect(a).toBe(b);
-    expect(["sand", "rainforest"]).toContain(a);
-    // Different seeds can map to different biomes across the set
+    const ids = listBiomes().map((b) => b.id);
+    expect(ids).toContain(a);
+    // seed % n covers every registered id
     const set = new Set(
-      [0, 1, 2, 3, 4, 5].map((s) => resolveBiomeId(RANDOM_BIOME_ID, s)),
+      ids.map((_, i) => resolveBiomeId(RANDOM_BIOME_ID, i)),
     );
-    expect(set.size).toBeGreaterThanOrEqual(1);
+    expect(set.size).toBe(ids.length);
+    for (const id of ids) expect(set.has(id)).toBe(true);
   });
 
   it("resolveBiomeId keeps explicit selection", () => {
     expect(resolveBiomeId("rainforest", 999)).toBe("rainforest");
     expect(resolveBiomeId("sand", 0)).toBe("sand");
+    expect(resolveBiomeId("alpine", 1)).toBe("alpine");
   });
 });

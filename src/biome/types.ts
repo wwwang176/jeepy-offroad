@@ -24,6 +24,18 @@ export interface BiomeTraction {
   brakeScale?: number;
 }
 
+/**
+ * Macro height bias along the path chord (start high → finish low).
+ * Applied to base terrain before path fit; omit for flat-biased biomes.
+ */
+export interface BiomeMacroRelief {
+  /**
+   * End-to-end height difference along start→finish chord (m).
+   * Positive = start side higher than finish side (descent bias).
+   */
+  startToFinishDropM: number;
+}
+
 export interface BiomeProfile {
   id: BiomeId;
   displayName: string;
@@ -56,4 +68,6 @@ export interface BiomeProfile {
   groundCoverCountScale?: number;
   pathWidth?: number;
   mapSize?: number;
+  /** Optional high→low macro ramp (alpine descent signature). */
+  macroRelief?: BiomeMacroRelief;
 }

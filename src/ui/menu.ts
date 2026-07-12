@@ -198,6 +198,13 @@ export function mountMenu(parent: HTMLElement, handlers: MenuHandlers): () => vo
       localeBiome: "rainforest",
     },
     {
+      id: "alpine",
+      icon: "❄",
+      kind: "biome",
+      biomeId: "alpine",
+      localeBiome: "alpine",
+    },
+    {
       id: "seed",
       icon: "#",
       kind: "seed",
