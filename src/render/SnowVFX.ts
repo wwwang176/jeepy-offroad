@@ -123,7 +123,7 @@ export class SnowVFX {
       this.fallSpeed[i] =
         FALL_SPEED_MIN + Math.random() * (FALL_SPEED_MAX - FALL_SPEED_MIN);
       this.fallPhase[i] = Math.random() * Math.PI * 2;
-      this.fallSize[i] = 1.75 + Math.random() * 2.75;
+      this.fallSize[i] = 0.9 + Math.random() * 1.35;
     }
     this.fallGeo = new THREE.BufferGeometry();
     this.fallGeo.setAttribute(
