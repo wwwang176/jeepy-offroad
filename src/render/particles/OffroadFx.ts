@@ -26,6 +26,7 @@ import {
   terrainAlbedoAt,
   type GroundPalette,
   type TerrainColorContext,
+  type TerrainColorMode,
 } from "@/shared/terrainColor";
 import { ParticlePool } from "./ParticlePool";
 import { createSoftDiscTexture } from "./softDiscTexture";
@@ -118,6 +119,7 @@ export type OffroadFxOptions = {
     pathPolyline: readonly { x: number; z: number }[];
     groundPalette: GroundPalette;
     pathWidth?: number;
+    terrainColorMode?: TerrainColorMode;
   };
   /** Sandbox / no heightmap */
   fallbackDustColor?: Rgb;
@@ -217,6 +219,7 @@ export class OffroadFx {
       heightmap: terrain.heightmap,
       pathPolyline: terrain.pathPolyline,
       pathWidth: terrain.pathWidth,
+      terrainColorMode: terrain.terrainColorMode,
     });
   }
 

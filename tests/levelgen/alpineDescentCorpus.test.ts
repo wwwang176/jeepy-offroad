@@ -50,7 +50,7 @@ function maxMidPathGrade(
 }
 
 describe("alpine descent corpus", () => {
-  it("CI floors: mean netDrop ≥ 12, ≥70% seeds ≥ 10, mid-path grade within budget", () => {
+  it("CI floors: large netDrop, mid-path near grade budget", () => {
     const budget = pathGradeBudget();
     const drops: number[] = [];
     for (const seed of ALPINE_CORPUS) {
@@ -69,12 +69,13 @@ describe("alpine descent corpus", () => {
       expect(path.length).toBeGreaterThan(10);
     }
     const mean = drops.reduce((a, b) => a + b, 0) / drops.length;
-    const ge10 = drops.filter((d) => d >= 10).length;
+    // Product: huge high→low dump (160 m macro). CI floors after grade clamp.
+    const ge40 = drops.filter((d) => d >= 40).length;
     expect(
       mean,
       `mean netDrop=${mean.toFixed(2)} drops=${drops.map((d) => d.toFixed(1)).join(",")}`,
-    ).toBeGreaterThanOrEqual(12);
-    expect(ge10 / drops.length).toBeGreaterThanOrEqual(0.7);
+    ).toBeGreaterThanOrEqual(45);
+    expect(ge40 / drops.length).toBeGreaterThanOrEqual(0.7);
   });
 
   it("sand mean netDrop is not alpine-class (baseline observation)", () => {

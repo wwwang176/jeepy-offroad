@@ -41,7 +41,8 @@ describe("biome registry", () => {
   it("alpine is cold rock with macro descent and no warm vegetation", () => {
     const a = getBiome("alpine");
     expect(a.displayName).toBe("Alpine");
-    expect(a.macroRelief?.startToFinishDropM).toBeGreaterThan(0);
+    expect(a.macroRelief?.startToFinishDropM).toBeGreaterThanOrEqual(100);
+    expect(a.terrainColorMode).toBe("alpineSnow");
     expect(a.streamDensity).toBeLessThanOrEqual(0.15);
     expect(a.traction?.frictionSlipScale ?? 1).toBeLessThan(0.6);
     expect(

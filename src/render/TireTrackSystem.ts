@@ -13,6 +13,7 @@ import {
   terrainAlbedoAt,
   type GroundPalette,
   type TerrainColorContext,
+  type TerrainColorMode,
 } from "@/shared/terrainColor";
 import {
   classifyTrackSurface,
@@ -50,6 +51,7 @@ export type TireTrackOptions = {
     pathPolyline: readonly { x: number; z: number }[];
     groundPalette: GroundPalette;
     pathWidth?: number;
+    terrainColorMode?: TerrainColorMode;
   };
   /** Flat sandbox ground Y */
   flatGroundY?: number;
@@ -210,6 +212,7 @@ export class TireTrackSystem {
         heightmap: opts.terrain.heightmap,
         pathPolyline: opts.terrain.pathPolyline,
         pathWidth: opts.terrain.pathWidth,
+        terrainColorMode: opts.terrain.terrainColorMode,
       });
     }
   }

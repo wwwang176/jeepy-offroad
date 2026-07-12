@@ -8,6 +8,8 @@ export type GroundPalette = {
   path: string;
 };
 
+export type TerrainColorMode = "default" | "alpineSnow";
+
 export type TerrainColorContext = {
   palette: {
     high: Rgb;
@@ -20,6 +22,7 @@ export type TerrainColorContext = {
   /** Same half-width scale as TerrainMesh: (pathWidth ?? 4) * 0.75 */
   pathHalfWidth: number;
   pathPolyline: readonly { x: number; z: number }[];
+  mode: TerrainColorMode;
 };
 
 /** Match TerrainMesh path ribbon falloff (point samples along polyline). */
@@ -40,9 +43,87 @@ export function pathProximity(
   return 1 - minD / halfWidth;
 }
 
+/** Deterministic 0..1 value noise for snow patches (no RNG stream). */
+function snowPatchNoise(x: number, z: number): number {
+  // Two-frequency hash — stable patches, not high-frequency salt.
+  const n1 = hash2(x * 0.07, z * 0.07);
+  const n2 = hash2(x * 0.19 + 17.1, z * 0.19 - 9.3);
+  return n1 * 0.65 + n2 * 0.35;
+}
+
+function hash2(x: number, z: number): number {
+  const xi = Math.floor(x);
+  const zi = Math.floor(z);
+  const fx = x - xi;
+  const fz = z - zi;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sz = fz * fz * (3 - 2 * fz);
+  const a = hash1(xi, zi);
+  const b = hash1(xi + 1, zi);
+  const c = hash1(xi, zi + 1);
+  const d = hash1(xi + 1, zi + 1);
+  return lerp(lerp(a, b, sx), lerp(c, d, sx), sz);
+}
+
+function hash1(ix: number, iz: number): number {
+  let n = Math.imul(ix * 374761393 + iz * 668265263, 0x27d4eb2d);
+  n = Math.imul(n ^ (n >>> 15), 2246822519);
+  n = Math.imul(n ^ (n >>> 13), 3266489917);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp((x - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function lerpRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  return {
+    r: lerp(a.r, b.r, t),
+    g: lerp(a.g, b.g, t),
+    b: lerp(a.b, b.b, t),
+  };
+}
+
+/** Default: low→mid→high by height (sand / rainforest). */
+function albedoHeightBlend(t: number, palette: TerrainColorContext["palette"]): Rgb {
+  const { low, mid, high } = palette;
+  if (t < 0.45) {
+    const u = t / 0.45;
+    return lerpRgb(low, mid, u);
+  }
+  const u = (t - 0.45) / 0.55;
+  return lerpRgb(mid, high, u);
+}
+
 /**
- * Ground albedo at a point — same blend as TerrainMesh vertex colors:
- * height-based low→mid→high, then path ribbon lerp to path color.
+ * Alpine: grey schist base (low/mid), thick snow on high ground,
+ * patchy residual snow on mid slopes. high = snow, mid/low = rock.
+ */
+function albedoAlpineSnow(
+  x: number,
+  z: number,
+  t: number,
+  palette: TerrainColorContext["palette"],
+): Rgb {
+  const { low, mid, high } = palette;
+  // Rock only: dark schist → mid schist (no white in the rock mix)
+  const rockT = clamp(t / 0.72, 0, 1);
+  const rock = lerpRgb(low, mid, rockT);
+
+  // Thick snow cap on valley shoulders / peaks
+  const thick = smoothstep(0.58, 0.78, t);
+  // Residual patches mid-slope (and a few low flecks)
+  const n = snowPatchNoise(x, z);
+  const patchGate = smoothstep(0.22, 0.55, t); // rare low, common mid
+  const patch = patchGate * smoothstep(0.52, 0.72, n) * (1 - thick * 0.85);
+
+  const snowAmt = clamp(thick + patch * 0.9, 0, 1);
+  return lerpRgb(rock, high, snowAmt);
+}
+
+/**
+ * Ground albedo at a point — same blend as TerrainMesh vertex colors.
  */
 export function terrainAlbedoAt(
   x: number,
@@ -52,32 +133,19 @@ export function terrainAlbedoAt(
 ): Rgb {
   const hRange = Math.max(1e-3, ctx.maxH - ctx.minH);
   const t = clamp((height - ctx.minH) / hRange, 0, 1);
-  const { low, mid, high, path } = ctx.palette;
 
-  let r: number;
-  let g: number;
-  let b: number;
-  if (t < 0.45) {
-    const u = t / 0.45;
-    r = lerp(low.r, mid.r, u);
-    g = lerp(low.g, mid.g, u);
-    b = lerp(low.b, mid.b, u);
-  } else {
-    const u = (t - 0.45) / 0.55;
-    r = lerp(mid.r, high.r, u);
-    g = lerp(mid.g, high.g, u);
-    b = lerp(mid.b, high.b, u);
-  }
+  let ground =
+    ctx.mode === "alpineSnow"
+      ? albedoAlpineSnow(x, z, t, ctx.palette)
+      : albedoHeightBlend(t, ctx.palette);
 
   const pathW = pathProximity(x, z, ctx.pathPolyline, ctx.pathHalfWidth);
   if (pathW > 0) {
     const w = Math.min(1, pathW * 1.2);
-    r = lerp(r, path.r, w);
-    g = lerp(g, path.g, w);
-    b = lerp(b, path.b, w);
+    ground = lerpRgb(ground, ctx.palette.path, w);
   }
 
-  return { r, g, b };
+  return ground;
 }
 
 /**
@@ -110,6 +178,7 @@ export function buildTerrainColorContext(opts: {
   heightmap: Float32Array;
   pathPolyline: readonly { x: number; z: number }[];
   pathWidth?: number;
+  terrainColorMode?: TerrainColorMode;
 }): TerrainColorContext {
   let minH = Infinity;
   let maxH = -Infinity;
@@ -134,5 +203,6 @@ export function buildTerrainColorContext(opts: {
     maxH,
     pathHalfWidth: (opts.pathWidth ?? 4) * 0.75,
     pathPolyline: opts.pathPolyline,
+    mode: opts.terrainColorMode ?? "default",
   };
 }

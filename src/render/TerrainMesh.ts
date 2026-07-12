@@ -2,30 +2,14 @@ import * as THREE from "three";
 import type { LevelData } from "@/levelgen/types";
 import type { BiomeProfile } from "@/biome/types";
 import { gridToWorld, idx } from "@/shared/coords";
-
-function parseColor(hex: string): THREE.Color {
-  return new THREE.Color(hex);
-}
-
-function pathProximity(
-  x: number,
-  z: number,
-  path: LevelData["pathPolyline"],
-  halfWidth: number,
-): number {
-  let minD = Infinity;
-  for (let i = 0; i < path.length; i++) {
-    const p = path[i];
-    const d = Math.hypot(x - p.x, z - p.z);
-    if (d < minD) minD = d;
-  }
-  if (minD >= halfWidth) return 0;
-  return 1 - minD / halfWidth;
-}
+import {
+  buildTerrainColorContext,
+  terrainAlbedoAt,
+} from "@/shared/terrainColor";
 
 /**
  * Grid mesh matching heightfield collider: same samples, origin, and world size.
- * Vertex colors from biome palette + path ribbon.
+ * Vertex colors from biome palette + path ribbon (shared terrainColor helpers).
  *
  * Uses THREE.Color so hex is converted into the working (linear) color space —
  * raw 0–1 sRGB channel writes look washed-out / too bright under MeshLambert.
@@ -40,20 +24,13 @@ export function createTerrainMesh(
   const colors = new Float32Array(res * res * 3);
   const indices: number[] = [];
 
-  const colHigh = parseColor(biome.groundPalette.high);
-  const colMid = parseColor(biome.groundPalette.mid);
-  const colLow = parseColor(biome.groundPalette.low);
-  const colPath = parseColor(biome.groundPalette.path);
-
-  let minH = Infinity;
-  let maxH = -Infinity;
-  for (let i = 0; i < level.heightmap.length; i++) {
-    const h = level.heightmap[i];
-    if (h < minH) minH = h;
-    if (h > maxH) maxH = h;
-  }
-  const hRange = Math.max(1e-3, maxH - minH);
-  const pathHalf = (biome.pathWidth ?? 4) * 0.75;
+  const colorCtx = buildTerrainColorContext({
+    groundPalette: biome.groundPalette,
+    heightmap: level.heightmap,
+    pathPolyline: level.pathPolyline,
+    pathWidth: biome.pathWidth,
+    terrainColorMode: biome.terrainColorMode,
+  });
 
   for (let row = 0; row < res; row++) {
     for (let col = 0; col < res; col++) {
@@ -64,20 +41,12 @@ export function createTerrainMesh(
       positions[vi * 3 + 1] = y;
       positions[vi * 3 + 2] = z;
 
-      const t = (y - minH) / hRange;
-      const ground = new THREE.Color();
-      if (t < 0.45) {
-        ground.copy(colLow).lerp(colMid, t / 0.45);
-      } else {
-        ground.copy(colMid).lerp(colHigh, (t - 0.45) / 0.55);
-      }
-      const pathW = pathProximity(x, z, level.pathPolyline, pathHalf);
-      if (pathW > 0) {
-        ground.lerp(colPath, Math.min(1, pathW * 1.2));
-      }
-      colors[vi * 3] = ground.r;
-      colors[vi * 3 + 1] = ground.g;
-      colors[vi * 3 + 2] = ground.b;
+      const albedo = terrainAlbedoAt(x, z, y, colorCtx);
+      // Feed sRGB-ish 0–1 into THREE.Color so MeshLambert matches prior look.
+      const c = new THREE.Color(albedo.r, albedo.g, albedo.b);
+      colors[vi * 3] = c.r;
+      colors[vi * 3 + 1] = c.g;
+      colors[vi * 3 + 2] = c.b;
     }
   }
 

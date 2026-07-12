@@ -70,4 +70,10 @@ export interface BiomeProfile {
   mapSize?: number;
   /** Optional high→low macro ramp (alpine descent signature). */
   macroRelief?: BiomeMacroRelief;
+  /**
+   * Vertex/dust ground coloring mode.
+   * - default: low→mid→high height lerp (sand/rainforest)
+   * - alpineSnow: grey schist base, thick snow on high ground, patch snow mid slopes
+   */
+  terrainColorMode?: "default" | "alpineSnow";
 }
