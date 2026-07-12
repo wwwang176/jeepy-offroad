@@ -385,6 +385,15 @@ export class GameApp {
     );
     this.jeepMesh = this.gameScene.jeepMesh;
     this.cameraRig = new CameraRig(this.gameScene.camera);
+    // Biome-specific chase cam (alpine: higher pitch for downhill overview)
+    if (biome.camera) {
+      this.cameraRig.setThirdPersonDefaults({
+        pitch: biome.camera.thirdPitch,
+        dist: biome.camera.thirdDist,
+      });
+    } else {
+      this.cameraRig.setThirdPersonDefaults();
+    }
     // Snap third-person follow to spawn so first frame is not lerping from origin.
     this.cameraRig.update(1, spawnPose);
     const terrainFx = {

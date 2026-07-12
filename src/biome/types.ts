@@ -97,4 +97,12 @@ export interface BiomeProfile {
     sunColor: string;
     sunIntensity?: number;
   };
+  /**
+   * Optional third-person spring-arm defaults (alpine downhill overview).
+   * Radians for pitch (elevation from horizontal); meters for dist.
+   */
+  camera?: {
+    thirdPitch?: number;
+    thirdDist?: number;
+  };
 }

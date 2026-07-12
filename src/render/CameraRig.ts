@@ -204,6 +204,27 @@ export class CameraRig {
     return { yaw: this.orbitYaw, pitch: this.orbitPitch, dist: this.orbitDist };
   }
 
+  /**
+   * Apply biome third-person spring-arm defaults (e.g. higher alpine overview).
+   * Omit fields to keep global defaults. Resets mouse orbit yaw to 0.
+   */
+  setThirdPersonDefaults(opts?: {
+    pitch?: number;
+    dist?: number;
+  }): void {
+    const pitch = clamp(
+      opts?.pitch ?? TP_DEFAULT_PITCH,
+      TP_PITCH_MIN,
+      TP_PITCH_MAX,
+    );
+    const dist = Math.max(3, opts?.dist ?? TP_DIST_DEFAULT);
+    this.orbitPitch = pitch;
+    this.orbitPitchTarget = pitch;
+    this.orbitDist = dist;
+    this.orbitYaw = 0;
+    this.orbitYawTarget = 0;
+  }
+
   update(dt: number, pose: CameraPose, opts?: CameraUpdateOpts): void {
     if (this.mode === "third") {
       const snap = opts?.snap || dt <= 0 || !this.lookInitialized;

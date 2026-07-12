@@ -68,4 +68,12 @@ export const alpineBiome: BiomeProfile = {
     sunColor: "#eef4ff",
     sunIntensity: 1.05,
   },
+  /**
+   * Higher chase cam for downhill — default is atan2(3.5,8)≈0.41;
+   * alpine uses ~atan2(5.2,8) so more of the fall-line is visible.
+   */
+  camera: {
+    thirdPitch: Math.atan2(5.2, 8),
+    thirdDist: Math.hypot(8, 5.2),
+  },
 };
