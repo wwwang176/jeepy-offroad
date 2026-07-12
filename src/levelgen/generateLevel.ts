@@ -38,7 +38,7 @@ const PAD_FALLOFF_M = 2.5;
  */
 const MACRO_PATH_CAP_SCALE = 0;
 /** Arc length (m) of grade-enforced corridor at start / finish for macro biomes. */
-const PAD_APPROACH_M = 56;
+const PAD_APPROACH_M = 30;
 
 function ribbonWidth(biome: BiomeProfile, vehicle: VehicleCapabilities): number {
   return biome.pathWidth ?? vehicle.trackWidth + 2 * vehicle.pathClearance;
