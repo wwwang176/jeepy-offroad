@@ -81,6 +81,21 @@ export function dustEmitRate(opts: {
 }
 
 /**
+ * Normalized 0..1 strength for a single wheel air→ground landing.
+ * Shared by dust FX and first-person camera impact shake.
+ * vy negative = falling; soft landings below threshold return 0.
+ */
+export function wheelLandingImpact01(
+  wasGrounded: boolean,
+  isGrounded: boolean,
+  vy: number,
+): number {
+  if (wasGrounded || !isGrounded) return 0;
+  if (vy > -1.2) return 0;
+  return clamp((-vy - 1.2) / 8, 0, 1);
+}
+
+/**
  * Burst count when a wheel transitions air → ground with downward velocity.
  */
 export function landingBurstCount(
@@ -88,10 +103,8 @@ export function landingBurstCount(
   isGrounded: boolean,
   vy: number,
 ): number {
-  if (wasGrounded || !isGrounded) return 0;
-  // vy negative = falling
-  if (vy > -1.2) return 0;
-  const impact = clamp((-vy - 1.2) / 8, 0, 1);
+  const impact = wheelLandingImpact01(wasGrounded, isGrounded, vy);
+  if (impact <= 0) return 0;
   // ×2 particle count
   return Math.round((20 + impact * 56) * 2);
 }
@@ -117,6 +130,25 @@ export function bodyContactEmitRate(opts: {
     impact * 28 +
     clamp(scrape * scrape * 1.2, 0, 40);
   return clamp(per * Math.min(opts.contactCount, 8), 0, 200);
+}
+
+/**
+ * Normalized 0..1 strength when chassis/cabin first gains terrain contacts.
+ * Soft first touch returns a small non-zero value; hard slams scale with |vy|.
+ * Shared by dust FX burst sizing intent and first-person camera impact shake.
+ */
+export function bodySlamImpact01(
+  prevContacts: number,
+  contactCount: number,
+  vy: number,
+): number {
+  if (contactCount <= 0 || prevContacts > 0) return 0;
+  const impact = Math.max(0, -vy);
+  if (impact < 0.8 && Math.abs(vy) < 0.8) {
+    // Soft first touch — small kick for cam / mild dust path
+    return 0.12;
+  }
+  return clamp((impact - 0.8) / 8, 0, 1);
 }
 
 /**

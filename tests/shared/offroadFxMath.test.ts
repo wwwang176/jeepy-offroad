@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   bodyContactEmitRate,
   bodyImpactBurstCount,
+  bodySlamImpact01,
+  wheelLandingImpact01,
   distPointSegmentXZ,
   dustEmitRate,
   exhaustEmitRate,
@@ -389,5 +391,27 @@ describe("bodyImpactBurstCount", () => {
     expect(bodyImpactBurstCount(0, 3, -4)).toBeGreaterThan(0);
     expect(bodyImpactBurstCount(2, 3, -4)).toBe(0);
     expect(bodyImpactBurstCount(0, 0, -4)).toBe(0);
+  });
+});
+
+describe("wheelLandingImpact01", () => {
+  it("is zero unless air→ground with enough downward speed", () => {
+    expect(wheelLandingImpact01(false, true, -0.5)).toBe(0);
+    expect(wheelLandingImpact01(true, true, -5)).toBe(0);
+    expect(wheelLandingImpact01(false, false, -5)).toBe(0);
+    expect(wheelLandingImpact01(false, true, -5)).toBeGreaterThan(0.3);
+    expect(wheelLandingImpact01(false, true, -5)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("bodySlamImpact01", () => {
+  it("only fires on first body contact transition", () => {
+    expect(bodySlamImpact01(0, 3, -4)).toBeGreaterThan(0.3);
+    expect(bodySlamImpact01(2, 3, -4)).toBe(0);
+    expect(bodySlamImpact01(0, 0, -4)).toBe(0);
+  });
+
+  it("returns a small value on soft first touch", () => {
+    expect(bodySlamImpact01(0, 1, -0.2)).toBeCloseTo(0.12, 5);
   });
 });

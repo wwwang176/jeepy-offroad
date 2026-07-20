@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import type { Vec3 } from "@/shared/types";
 import { clamp, deltaAngle, lerp, wrapAngle } from "@/shared/math";
+import {
+  bodySlamImpact01,
+  wheelLandingImpact01,
+} from "@/shared/offroadFxMath";
 
 export type CameraMode = "third" | "first";
 
@@ -14,6 +18,12 @@ export type CameraUpdateOpts = {
   snap?: boolean;
   /** Ground-plane speed (m/s); scales third-person yaw lag (slower = more lag). */
   speedMps?: number;
+  /** Chassis linear velocity (m/s); used for FP impact shake (vy). */
+  linvel?: { x: number; y: number; z: number };
+  /** Per-wheel ground contact this frame; FP impact uses air→ground edges. */
+  wheelContacts?: boolean[];
+  /** Chassis/cabin terrain contact count; FP impact uses 0→N body slam. */
+  bodyContactCount?: number;
 };
 
 /** Match original spring-arm: back 8m, up 3.5m. */
@@ -62,6 +72,32 @@ const YAW_LAG_SPEED_REF = 10;
 /** Max shortest-arc lag (rad, ~69°) so spinouts don't drag forever. */
 const TP_YAW_LAG_MAX = 1.2;
 
+/**
+ * First-person head soft-follow (layer B): eye lags hard-mount target in world
+ * space, then offset is clamped in chassis local (m). Higher smooth = tighter.
+ */
+const HEAD_POS_SMOOTH = 11;
+const HEAD_MAX_UP = 0.06;
+const HEAD_MAX_DOWN = 0.08;
+const HEAD_MAX_FORE = 0.05;
+const HEAD_MAX_AFT = 0.05;
+const HEAD_MAX_LAT = 0.03;
+
+/**
+ * First-person impact shake (layer C): event impulse on wheel landing / body slam.
+ * Position kicks in chassis local (m); pitch nod in rad; exponential decay.
+ */
+const IMPACT_DECAY = 12;
+const IMPACT_KICK_Y = 0.045;
+const IMPACT_KICK_Z = 0.025;
+const IMPACT_KICK_PITCH = 0.035;
+const IMPACT_KICK_ROLL = 0.02;
+const IMPACT_BODY_SCALE = 1.25;
+const IMPACT_MAX_Y = 0.07;
+const IMPACT_MAX_Z = 0.04;
+const IMPACT_MAX_PITCH = 0.055;
+const IMPACT_MAX_ROLL = 0.04;
+
 export class CameraRig {
   mode: CameraMode = "third";
   private readonly desired = new THREE.Vector3();
@@ -69,10 +105,14 @@ export class CameraRig {
   private readonly look = new THREE.Vector3();
   private readonly current = new THREE.Vector3();
   private lookInitialized = false;
-  /** Cabin eye in chassis local space (+Z = vehicle forward). */
+  /** Cabin eye rest pose in chassis local space (+Z = vehicle forward). */
   private readonly eyeLocal = new THREE.Vector3(0, 1.15, 0.25);
   private readonly tmp = new THREE.Vector3();
+  private readonly desiredEye = new THREE.Vector3();
+  private readonly fpEyeWorld = new THREE.Vector3();
+  private readonly impactOffsetLocal = new THREE.Vector3();
   private readonly chassisQuat = new THREE.Quaternion();
+  private readonly chassisQuatInv = new THREE.Quaternion();
   private readonly lookExtra = new THREE.Quaternion();
   private readonly lookEuler = new THREE.Euler(0, 0, 0, "YXZ");
   /**
@@ -83,6 +123,15 @@ export class CameraRig {
     new THREE.Vector3(0, 1, 0),
     Math.PI,
   );
+  /** Soft-follow eye has been seeded (false after mode switch / reset / snap). */
+  private fpEyeInitialized = false;
+  /** Transient impact pitch (rad, + = look up; landings kick negative). */
+  private impactPitch = 0;
+  /** Transient impact roll (rad). */
+  private impactRoll = 0;
+  private prevWheelContacts: boolean[] = [];
+  private prevBodyContactCount = 0;
+  private impactContactsSeeded = false;
 
   /** Third-person orbit relative to vehicle yaw (rad, smoothed). */
   private orbitYaw = 0;
@@ -124,9 +173,10 @@ export class CameraRig {
       this.orbitYaw = this.orbitYawTarget;
       this.orbitPitch = this.orbitPitchTarget;
     } else {
-      // Entering FP: no lag from previous third-person session
+      // Entering FP: no lag from previous third-person session; reseed head.
       this.fpYaw = this.fpYawTarget;
       this.fpPitch = this.fpPitchTarget;
+      this.resetHeadState();
     }
   }
 
@@ -175,6 +225,32 @@ export class CameraRig {
     this.fpPitchTarget = 0;
     // Next third-person update snaps followYaw to pose (no residual turn lag).
     this.followYawInitialized = false;
+    this.resetHeadState();
+  }
+
+  /** Clear FP soft-follow + impact (next FP update hard-snaps eye). */
+  private resetHeadState(): void {
+    this.fpEyeInitialized = false;
+    this.impactOffsetLocal.set(0, 0, 0);
+    this.impactPitch = 0;
+    this.impactRoll = 0;
+    this.prevWheelContacts = [];
+    this.prevBodyContactCount = 0;
+    this.impactContactsSeeded = false;
+  }
+
+  /** World-space FP eye before impact kick (tests / debug). */
+  getFpEyeWorld(): { x: number; y: number; z: number } {
+    return {
+      x: this.fpEyeWorld.x,
+      y: this.fpEyeWorld.y,
+      z: this.fpEyeWorld.z,
+    };
+  }
+
+  /** Residual impact pitch rad (tests / debug). */
+  getImpactPitch(): number {
+    return this.impactPitch;
   }
 
   /** Lagged spring-arm vehicle yaw (for tests / debug). */
@@ -303,7 +379,8 @@ export class CameraRig {
       return;
     }
 
-    // First person: hard-mount to chassis so pitch/roll/yaw shake with the jeep.
+    // First person: chassis orientation hard-mount (pitch/roll/yaw with the jeep)
+    // + head soft-follow (B) + impact impulse (C).
     // Do NOT use lookAt(worldUp) — that strips roll and flattens body lean.
     if (pose.rotation) {
       this.chassisQuat.set(
@@ -318,16 +395,55 @@ export class CameraRig {
         pose.yaw,
       );
     }
+    this.chassisQuatInv.copy(this.chassisQuat).invert();
 
+    // Hard-mount rest eye in world space
     this.tmp.copy(this.eyeLocal).applyQuaternion(this.chassisQuat);
-    this.camera.position.set(
+    this.desiredEye.set(
       pose.position.x + this.tmp.x,
       pose.position.y + this.tmp.y,
       pose.position.z + this.tmp.z,
     );
 
+    const snap = opts?.snap || dt <= 0 || !this.fpEyeInitialized;
+    if (snap) {
+      this.fpEyeWorld.copy(this.desiredEye);
+      this.fpEyeInitialized = true;
+      this.impactOffsetLocal.set(0, 0, 0);
+      this.impactPitch = 0;
+      this.impactRoll = 0;
+      // Seed contact history without firing (spawn / settle / mode switch).
+      this.seedImpactContacts(opts);
+    } else {
+      // B: soft-follow hard-mount target, clamp lag in chassis local.
+      const headK = 1 - Math.exp(-HEAD_POS_SMOOTH * dt);
+      this.fpEyeWorld.x += (this.desiredEye.x - this.fpEyeWorld.x) * headK;
+      this.fpEyeWorld.y += (this.desiredEye.y - this.fpEyeWorld.y) * headK;
+      this.fpEyeWorld.z += (this.desiredEye.z - this.fpEyeWorld.z) * headK;
+
+      this.tmp.subVectors(this.fpEyeWorld, this.desiredEye);
+      this.tmp.applyQuaternion(this.chassisQuatInv);
+      this.tmp.x = clamp(this.tmp.x, -HEAD_MAX_LAT, HEAD_MAX_LAT);
+      this.tmp.y = clamp(this.tmp.y, -HEAD_MAX_DOWN, HEAD_MAX_UP);
+      this.tmp.z = clamp(this.tmp.z, -HEAD_MAX_AFT, HEAD_MAX_FORE);
+      this.tmp.applyQuaternion(this.chassisQuat);
+      this.fpEyeWorld.copy(this.desiredEye).add(this.tmp);
+
+      // C: detect landings / body slam, then decay residual kick.
+      this.applyImpactImpulses(opts);
+      const decay = Math.exp(-IMPACT_DECAY * dt);
+      this.impactOffsetLocal.multiplyScalar(decay);
+      this.impactPitch *= decay;
+      this.impactRoll *= decay;
+      this.rememberImpactContacts(opts);
+    }
+
+    // Final eye = soft head + chassis-local impact offset
+    this.tmp.copy(this.impactOffsetLocal).applyQuaternion(this.chassisQuat);
+    this.camera.position.copy(this.fpEyeWorld).add(this.tmp);
+
     // Ease free-look toward mouse targets (exponential, frame-rate independent)
-    if (opts?.snap || dt <= 0) {
+    if (snap) {
       this.fpYaw = this.fpYawTarget;
       this.fpPitch = this.fpPitchTarget;
     } else {
@@ -336,8 +452,13 @@ export class CameraRig {
       this.fpPitch += (this.fpPitchTarget - this.fpPitch) * k;
     }
 
-    // Chassis shake + facing fix (-Z = vehicle forward) + free look
-    this.lookEuler.set(this.fpPitch, this.fpYaw, 0, "YXZ");
+    // Chassis + facing fix (-Z = vehicle forward) + free look + impact nod/roll
+    this.lookEuler.set(
+      this.fpPitch + this.impactPitch,
+      this.fpYaw,
+      this.impactRoll,
+      "YXZ",
+    );
     this.lookExtra.setFromEuler(this.lookEuler);
     this.camera.quaternion
       .copy(this.chassisQuat)
@@ -345,5 +466,88 @@ export class CameraRig {
       .multiply(this.lookExtra);
     this.tmp.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
     this.camera.up.copy(this.tmp);
+  }
+
+  private seedImpactContacts(opts?: CameraUpdateOpts): void {
+    const wheels = opts?.wheelContacts;
+    this.prevWheelContacts = wheels ? wheels.slice() : [];
+    this.prevBodyContactCount = opts?.bodyContactCount ?? 0;
+    this.impactContactsSeeded = true;
+  }
+
+  private rememberImpactContacts(opts?: CameraUpdateOpts): void {
+    if (!this.impactContactsSeeded) {
+      this.seedImpactContacts(opts);
+      return;
+    }
+    const wheels = opts?.wheelContacts;
+    if (wheels) {
+      this.prevWheelContacts = wheels.slice();
+    }
+    if (opts?.bodyContactCount != null) {
+      this.prevBodyContactCount = opts.bodyContactCount;
+    }
+  }
+
+  /**
+   * One-shot kicks from wheel air→ground and body 0→N contacts.
+   * Strength curves match dust FX (`wheelLandingImpact01` / `bodySlamImpact01`).
+   */
+  private applyImpactImpulses(opts?: CameraUpdateOpts): void {
+    if (!this.impactContactsSeeded) {
+      this.seedImpactContacts(opts);
+      return;
+    }
+    const vy = opts?.linvel?.y ?? 0;
+    const wheels = opts?.wheelContacts;
+    let wheelS = 0;
+    if (wheels && wheels.length > 0) {
+      const n = Math.max(wheels.length, this.prevWheelContacts.length);
+      for (let i = 0; i < n; i++) {
+        const was = this.prevWheelContacts[i] ?? false;
+        const now = wheels[i] ?? false;
+        wheelS = Math.max(wheelS, wheelLandingImpact01(was, now, vy));
+      }
+    }
+    const bodyN = opts?.bodyContactCount ?? 0;
+    const bodyS = bodySlamImpact01(this.prevBodyContactCount, bodyN, vy);
+    // Body slam reads heavier than a single wheel landing.
+    const s = Math.max(wheelS, bodyS * IMPACT_BODY_SCALE);
+    if (s <= 0) return;
+
+    // Down + slightly aft in chassis local; nod pitch down (+pitch = look up).
+    this.impactOffsetLocal.y -= s * IMPACT_KICK_Y;
+    this.impactOffsetLocal.z -= s * IMPACT_KICK_Z;
+    this.impactPitch -= s * IMPACT_KICK_PITCH;
+    if (bodyS * IMPACT_BODY_SCALE >= wheelS && bodyS > 0) {
+      // Deterministic light roll on body slam (no RNG — stable tests).
+      this.impactRoll += s * IMPACT_KICK_ROLL * (bodyN % 2 === 0 ? 1 : -1);
+    }
+
+    this.impactOffsetLocal.y = clamp(
+      this.impactOffsetLocal.y,
+      -IMPACT_MAX_Y,
+      IMPACT_MAX_Y,
+    );
+    this.impactOffsetLocal.z = clamp(
+      this.impactOffsetLocal.z,
+      -IMPACT_MAX_Z,
+      IMPACT_MAX_Z,
+    );
+    this.impactOffsetLocal.x = clamp(
+      this.impactOffsetLocal.x,
+      -HEAD_MAX_LAT,
+      HEAD_MAX_LAT,
+    );
+    this.impactPitch = clamp(
+      this.impactPitch,
+      -IMPACT_MAX_PITCH,
+      IMPACT_MAX_PITCH,
+    );
+    this.impactRoll = clamp(
+      this.impactRoll,
+      -IMPACT_MAX_ROLL,
+      IMPACT_MAX_ROLL,
+    );
   }
 }

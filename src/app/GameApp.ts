@@ -791,6 +791,7 @@ export class GameApp {
         steering: wv.steering,
       }));
       const linvel = this.vehicle.getLinvel();
+      const bodyContacts = this.vehicle.getBodyContactPoints();
       if (this.offroadFx) {
         this.offroadFx.update(dt, {
           position: pose.position,
@@ -801,7 +802,7 @@ export class GameApp {
           brake: this.lastDriveActions.brake,
           driveRange: this.vehicle.getDriveRange(),
           wheels,
-          bodyContacts: this.vehicle.getBodyContactPoints(),
+          bodyContacts,
         });
       }
       if (this.tireTracks) {
@@ -819,9 +820,16 @@ export class GameApp {
         });
       }
 
+      const cameraOpts = {
+        speedMps,
+        linvel,
+        wheelContacts: contacts,
+        bodyContactCount: bodyContacts.length,
+      };
+
       if (this.sessionMode === "level" && this.gameScene) {
         if (this.cameraRig) {
-          this.cameraRig.update(dt, pose, { speedMps });
+          this.cameraRig.update(dt, pose, cameraOpts);
         }
         // Palm wind (island-conquest style vertex sway)
         this.gameScene.updatePalmSway(t * 0.001);
@@ -859,7 +867,7 @@ export class GameApp {
         );
       } else if (this.three) {
         if (this.cameraRig) {
-          this.cameraRig.update(dt, pose, { speedMps });
+          this.cameraRig.update(dt, pose, cameraOpts);
         } else {
           const yaw = pose.yaw;
           this.three.camera.position.set(
