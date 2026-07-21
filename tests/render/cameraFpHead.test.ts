@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { CameraRig } from "@/render/CameraRig";
 
+describe("CameraRig.softKneeGain", () => {
+  it("is 0 below lo, 1 above hi, and rises smoothly in between", () => {
+    expect(CameraRig.softKneeGain(1, 2, 8)).toBe(0);
+    expect(CameraRig.softKneeGain(2, 2, 8)).toBe(0);
+    expect(CameraRig.softKneeGain(8, 2, 8)).toBe(1);
+    expect(CameraRig.softKneeGain(20, 2, 8)).toBe(1);
+    const mid = CameraRig.softKneeGain(5, 2, 8);
+    expect(mid).toBeGreaterThan(0.2);
+    expect(mid).toBeLessThan(0.8);
+  });
+});
+
 /** Tests own the camera instance; CameraRig keeps it private. */
 function makeRig(): { rig: CameraRig; camera: THREE.PerspectiveCamera } {
   const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 1000);

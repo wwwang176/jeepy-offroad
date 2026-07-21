@@ -109,17 +109,20 @@ const HEAD_MAX_AFT = 0.028;
 const HEAD_MAX_LAT = 0.028;
 /** Low-pass linvel before Δv/dt. */
 const HEAD_VEL_SMOOTH = 12;
-/** Low-pass estimated a_local (1/s). */
+/** Low-pass estimated a_local (1/s). Same for all axes — no extra Y smear. */
 const HEAD_ACCEL_SMOOTH = 10;
-/**
- * Vertical a LPF (1/s). Higher = snappier / easier hop trigger.
- * Near X/Z (10) so small hops still get through.
- */
-const HEAD_ACCEL_SMOOTH_Y = 11;
 const HEAD_ACCEL_MAX = 16;
 const HEAD_ACCEL_DEADZONE = 2.8;
-/** Y deadzone (m/s²) — lower than X/Z so vertical is most sensitive. */
-const HEAD_ACCEL_DEADZONE_Y = 1.2;
+/**
+ * Vertical soft-knee on |ay| (m/s²) — NOT a low-pass.
+ * |ay| < LO → gain 0 (heightfield kinks / micro chatter).
+ * LO..HI → smoothstep gain 0→1 (real small–mid bumps still register).
+ * |ay| ≥ HI → full oscillator (big hops keep underdamped punch).
+ * LO/HI kept relatively low so vertical motion stays frequent; only the
+ * worst micro-spikes stay fully muted.
+ */
+const HEAD_Y_KNEE_LO = 1.4;
+const HEAD_Y_KNEE_HI = 5.0;
 /** Perp-to-velocity accel scale / cap (slide dir-change) for position. */
 const HEAD_TURN_ACCEL_SCALE = 0.15;
 const HEAD_TURN_PERP_CAP = 5;
@@ -593,6 +596,17 @@ export class CameraRig {
     return Math.abs(v) < dead ? 0 : v;
   }
 
+  /**
+   * Soft-knee gain in [0,1] from |signal|. Hermite smoothstep between lo and hi.
+   * Below lo → 0; above hi → 1. Not a temporal filter.
+   */
+  static softKneeGain(absVal: number, lo: number, hi: number): number {
+    if (absVal <= lo) return 0;
+    if (absVal >= hi || hi <= lo) return 1;
+    const t = (absVal - lo) / (hi - lo);
+    return t * t * (3 - 2 * t);
+  }
+
   /** World accel: along-track full, perp scaled/capped. Writes into `out`. */
   private static applyTurnSplit(
     ax: number,
@@ -699,10 +713,9 @@ export class CameraRig {
       );
 
       const aK = 1 - Math.exp(-HEAD_ACCEL_SMOOTH * dt);
-      const aKy = 1 - Math.exp(-HEAD_ACCEL_SMOOTH_Y * dt);
       const aKr = 1 - Math.exp(-HEAD_ROLL_ACCEL_SMOOTH * dt);
       this.smoothAccelLocal.x += (this.tmp.x - this.smoothAccelLocal.x) * aK;
-      this.smoothAccelLocal.y += (this.tmp.y - this.smoothAccelLocal.y) * aKy;
+      this.smoothAccelLocal.y += (this.tmp.y - this.smoothAccelLocal.y) * aK;
       this.smoothAccelLocal.z += (this.tmp.z - this.smoothAccelLocal.z) * aK;
       this.smoothAccelLatRoll +=
         (aLatRoll - this.smoothAccelLatRoll) * aKr;
@@ -712,10 +725,14 @@ export class CameraRig {
       this.smoothAccelLocal.x,
       HEAD_ACCEL_DEADZONE,
     );
-    const ay = CameraRig.deadzoneAxis(
-      this.smoothAccelLocal.y,
-      HEAD_ACCEL_DEADZONE_Y,
+    // Soft-knee vertical: kill micro kinks, keep big hops full strength.
+    const ayRaw = this.smoothAccelLocal.y;
+    const ayGain = CameraRig.softKneeGain(
+      Math.abs(ayRaw),
+      HEAD_Y_KNEE_LO,
+      HEAD_Y_KNEE_HI,
     );
+    const ay = ayRaw * ayGain;
     const az = CameraRig.deadzoneAxis(
       this.smoothAccelLocal.z,
       HEAD_ACCEL_DEADZONE,
