@@ -136,12 +136,19 @@ const HEAD_ROLL_ACCEL_SMOOTH = 9;
  * Driven by chassis-local az only (not ay) so hops don't thrash pitch.
  * Freelook pitch is separate; this is inertial nod about the seat.
  * Position Y stays hard-locked (no vertical soft offset).
+ *
+ * Drive soft-saturates so |θ_eq| asymptotes toward SOFT_MAX (same small-signal
+ * slope / ω as before — no slower turn rate) instead of hard-slamming MAX.
+ * HARD_MAX is only a safety rail for underdamped overshoot.
  */
 const HEAD_PITCH_OMEGA = 9;
 const HEAD_PITCH_ZETA = 0.34;
-/** rad per m/s²; a_lon≈5 → ~3.5° at equilibrium before clamp. */
+/** rad per m/s²; small a: θ_eq ≈ −S a (unchanged initial gain). */
 const HEAD_PITCH_S = 0.012;
-const HEAD_PITCH_MAX = 0.09; // ~5.2°
+/** Soft eq ceiling (rad, ~4.9°); tanh asymptote, rarely a true stop. */
+const HEAD_PITCH_SOFT_MAX = 0.085;
+/** Hard rail for overshoot only (rad, ~6.9°). */
+const HEAD_PITCH_MAX = 0.12;
 const HEAD_PITCH_VEL_MAX = 1.8;
 const HEAD_PITCH_DEADZONE = 1.8;
 
@@ -614,6 +621,20 @@ export class CameraRig {
     return Math.abs(v) < dead ? 0 : v;
   }
 
+  /**
+   * Soft-limit drive accel so |S·a_eff| → softMax asymptotically.
+   * d(a_eff)/da |_{0} = 1 → small-signal response / ω feel unchanged.
+   */
+  static softSaturateDrive(
+    a: number,
+    s: number,
+    softMax: number,
+  ): number {
+    if (!(s > 1e-9) || !(softMax > 0) || !Number.isFinite(a)) return a;
+    const aSoft = softMax / s;
+    return aSoft * Math.tanh(a / aSoft);
+  }
+
   /** World accel: along-track full, perp scaled/capped. Writes into `out`. */
   private static applyTurnSplit(
     ax: number,
@@ -741,10 +762,14 @@ export class CameraRig {
       this.smoothAccelLatRoll,
       HEAD_ROLL_DEADZONE,
     );
-    // Pitch uses the same filtered a_lon as Z soft-follow (deadzone applied).
-    const aPitch = CameraRig.deadzoneAxis(
-      this.smoothAccelLocal.z,
-      HEAD_PITCH_DEADZONE,
+    // Pitch: same filtered a_lon, then soft-sat so strong accel rarely hard-clamps.
+    const aPitch = CameraRig.softSaturateDrive(
+      CameraRig.deadzoneAxis(
+        this.smoothAccelLocal.z,
+        HEAD_PITCH_DEADZONE,
+      ),
+      HEAD_PITCH_S,
+      HEAD_PITCH_SOFT_MAX,
     );
 
     const hx = CameraRig.integrateHeadOscillator(

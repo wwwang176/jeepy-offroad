@@ -2,6 +2,23 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { CameraRig } from "@/render/CameraRig";
 
+describe("CameraRig.softSaturateDrive", () => {
+  it("preserves unit slope near zero and asymptotes soft max", () => {
+    const s = 0.012;
+    const soft = 0.085;
+    const aTiny = 0.5;
+    const effTiny = CameraRig.softSaturateDrive(aTiny, s, soft);
+    // Unit slope at 0 → nearly linear for small a (aSoft = soft/s ≈ 7.1)
+    expect(Math.abs(effTiny - aTiny) / aTiny).toBeLessThan(0.01);
+
+    const aHuge = 80;
+    const effHuge = CameraRig.softSaturateDrive(aHuge, s, soft);
+    // |S * a_eff| < soft, approaches soft
+    expect(Math.abs(s * effHuge)).toBeLessThan(soft);
+    expect(Math.abs(s * effHuge)).toBeGreaterThan(soft * 0.9);
+  });
+});
+
 /** Tests own the camera instance; CameraRig keeps it private. */
 function makeRig(): { rig: CameraRig; camera: THREE.PerspectiveCamera } {
   const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 1000);
@@ -358,6 +375,28 @@ describe("CameraRig first-person head pitch (longitudinal)", () => {
     expect(Math.abs(rig.getHeadPitch())).toBeGreaterThan(0.005);
     expect(rig.getHeadOffsetLocal().y).toBe(0);
     expect(camera.position.y).toBeCloseTo(1 + 1.15, 4);
+  });
+
+  it("avoids sitting on the hard pitch rail under extreme accel ramp", () => {
+    const { rig } = makeRig();
+    rig.setMode("first");
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 0 },
+    });
+    // Aggressive ramp — old hard-clamp at 0.09 would stick at the rail often
+    let framesAtHard = 0;
+    const hard = 0.12;
+    for (let i = 1; i <= 120; i++) {
+      rig.update(1 / 60, poseAt(1), {
+        linvel: { x: 0, y: 0, z: i * 1.2 },
+      });
+      if (Math.abs(rig.getHeadPitch()) >= hard - 1e-4) framesAtHard++;
+    }
+    expect(framesAtHard).toBe(0);
+    // Still reaches a clear nod (soft ceiling ~0.085, overshoot allowed)
+    expect(Math.abs(rig.getHeadPitch())).toBeGreaterThan(0.04);
+    expect(Math.abs(rig.getHeadPitch())).toBeLessThan(hard);
   });
 
   it("maps chassis pitch into camera roll when freelook yaws 90°", () => {
