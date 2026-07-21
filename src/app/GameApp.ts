@@ -469,7 +469,11 @@ export class GameApp {
     });
 
     this.finishSystem = new FinishSystem(level.finish);
-    this.checkpointSystem = new CheckpointSystem(spawnPose, level.checkpoints);
+    this.checkpointSystem = new CheckpointSystem(spawnPose, level.checkpoints, {
+      heightmap: level.heightmap,
+      resolution: level.resolution,
+      worldSize: level.worldSize,
+    });
     this.respawnSystem = new RespawnSystem(
       level.killY,
       this.checkpointSystem,
