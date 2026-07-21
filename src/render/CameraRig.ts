@@ -76,36 +76,74 @@ const YAW_LAG_SPEED_REF = 10;
 const TP_YAW_LAG_MAX = 1.2;
 
 /**
- * First-person head inertia (layer B): chassis-local eye offset driven by
- * linear acceleration (smoothed Δlinvel/dt). Constant velocity → a≈0 → rest.
- * Deadzone + LPF kill contact jitter when stuck on rocks / ledges.
- * Gains: metres of offset per (m/s²).
+ * First-person head inertia (layer B) — canonical underdamped oscillator:
  *
- * Smooth rates are exponential lerp rates (1/s): lower = softer / more lag.
- * Asymmetric offset ease: snap lean-in on accel, slow return when a dies.
+ *   x'' + 2 ζ ω x' + ω² x = −ω² S a_local
+ *   ⇔  x'' = −ω² (x + S a) − 2 ζ ω v
+ *   x_eq = −S a   (sustained accel holds lean; a→0 returns to seat)
+ *
+ * Input a is estimated from Δlinvel (filtered). Turn-perpendicular component
+ * is scaled down so slide direction-changes do not thrash the head.
+ * No target-LERP / spring-to-offset layers — those are dead code paths removed.
  */
-/** Lean-in (away from rest) — high so throttle/accel reads immediately. */
-const HEAD_OFFSET_SMOOTH_IN = 22;
-/** Return-to-rest is slower so the lean lingers after accel drops. */
-const HEAD_OFFSET_SMOOTH_OUT = 2.0;
-/** Gains / max offsets halved for subtler cabin motion. */
-const HEAD_GAIN_LON = 0.006;
-const HEAD_GAIN_LAT = 0.005;
-const HEAD_GAIN_VERT = 0.007;
-/** Low-pass linvel before differencing (higher = snappier, noisier). */
-const HEAD_VEL_SMOOTH = 18;
-/** Accel LPF: fast when |a| grows (throttle hit), slower when |a| falls. */
-const HEAD_ACCEL_SMOOTH_IN = 20;
-const HEAD_ACCEL_SMOOTH_OUT = 7;
-/** Clamp |a| per axis before gain (m/s²) to kill single-frame spikes. */
-const HEAD_ACCEL_MAX = 22;
-/** |a_local| below this (m/s²) treated as 0 — kills stuck micro-jitter. */
-const HEAD_ACCEL_DEADZONE = 3.5;
-const HEAD_MAX_UP = 0.03;
-const HEAD_MAX_DOWN = 0.04;
-const HEAD_MAX_FORE = 0.025;
-const HEAD_MAX_AFT = 0.025;
-const HEAD_MAX_LAT = 0.015;
+/** Natural frequency ω (rad/s) per axis [lat X, vert Y, lon Z]. */
+/** Y a bit livelier for hop ring; still below X/Z so micro-bumps stay soft. */
+const HEAD_OMEGA = { x: 10, y: 7, z: 11 } as const;
+/**
+ * Damping ratio ζ < 1 → overshoot + ring (lower = more bounce).
+ * Y more underdamped for bigger vertical overshoot; deadzone/LPF still gate noise.
+ */
+const HEAD_ZETA = { x: 0.35, y: 0.36, z: 0.35 } as const;
+/**
+ * Steady lean S (m per m/s²): x_eq = −S·a.
+ * Y gain a bit higher for clearer hop travel once a clears the deadzone.
+ */
+const HEAD_S = { x: 0.0045, y: 0.0065, z: 0.004 } as const;
+/** Cap |ẋ| (m/s local). */
+const HEAD_VEL_MAX = 0.55;
+/** Travel limits (m). */
+const HEAD_MAX_UP = 0.05;
+const HEAD_MAX_DOWN = 0.065;
+const HEAD_MAX_FORE = 0.028;
+const HEAD_MAX_AFT = 0.028;
+const HEAD_MAX_LAT = 0.028;
+/** Low-pass linvel before Δv/dt. */
+const HEAD_VEL_SMOOTH = 12;
+/** Low-pass estimated a_local (1/s). */
+const HEAD_ACCEL_SMOOTH = 10;
+/**
+ * Vertical a LPF (1/s). Higher = snappier / easier hop trigger.
+ * Near X/Z (10) so small hops still get through.
+ */
+const HEAD_ACCEL_SMOOTH_Y = 11;
+const HEAD_ACCEL_MAX = 16;
+const HEAD_ACCEL_DEADZONE = 2.8;
+/** Y deadzone (m/s²) — lower than X/Z so vertical is most sensitive. */
+const HEAD_ACCEL_DEADZONE_Y = 1.2;
+/** Perp-to-velocity accel scale / cap (slide dir-change) for position. */
+const HEAD_TURN_ACCEL_SCALE = 0.15;
+const HEAD_TURN_PERP_CAP = 5;
+const HEAD_TURN_SPLIT_SPEED = 1.2;
+/**
+ * Roll uses more of the turn-perpendicular a so direction changes read as lean
+ * (position stays calmer via HEAD_TURN_ACCEL_SCALE).
+ */
+const HEAD_TURN_ACCEL_SCALE_ROLL = 0.55;
+const HEAD_TURN_PERP_CAP_ROLL = 10;
+
+/**
+ * Head roll (rad) from lateral accel only — same oscillator as position:
+ * φ'' = −ω²(φ + S a_lat) − 2ζω φ̇, underdamped overshoot around φ_eq = −S a_lat.
+ * Not driven by vertical a (bumps stay pitch/offset, not extra roll thrash).
+ */
+const HEAD_ROLL_OMEGA = 9;
+const HEAD_ROLL_ZETA = 0.34;
+/** rad per m/s²; a_lat≈5 → ~3.5° at equilibrium before clamp. */
+const HEAD_ROLL_S = 0.012;
+const HEAD_ROLL_MAX = 0.09; // ~5.2°
+const HEAD_ROLL_VEL_MAX = 1.8;
+const HEAD_ROLL_DEADZONE = 1.8;
+const HEAD_ROLL_ACCEL_SMOOTH = 9;
 
 /**
  * First-person impact shake (layer C): event impulse on wheel landing / body slam.
@@ -139,15 +177,22 @@ export class CameraRig {
   private readonly tmp = new THREE.Vector3();
   private readonly desiredEye = new THREE.Vector3();
   private readonly fpEyeWorld = new THREE.Vector3();
-  /** Accel-driven head offset in chassis local (m); rest at 0. */
+  /** Head offset x in chassis local (m); spring anchors at 0. */
   private readonly headOffsetLocal = new THREE.Vector3();
-  private readonly headOffsetTarget = new THREE.Vector3();
+  /** Head offset velocity ẋ in chassis local (m/s). */
+  private readonly headVelLocal = new THREE.Vector3();
+  /** Inertial head roll (rad) and rate; driven by a_lat only. */
+  private headRoll = 0;
+  private headRollVel = 0;
+  private smoothAccelLatRoll = 0;
   private readonly impactOffsetLocal = new THREE.Vector3();
   /** Smoothed linvel used for Δv/dt (world). */
   private readonly smoothLinvel = new THREE.Vector3();
   private readonly prevSmoothLinvel = new THREE.Vector3();
-  /** Smoothed chassis-local accel after deadzone. */
+  /** Filtered chassis-local accel driving position oscillators. */
   private readonly smoothAccelLocal = new THREE.Vector3();
+  /** Scratch for world accel used by roll path (more turn-perp). */
+  private readonly tmpRollA = new THREE.Vector3();
   private readonly chassisQuat = new THREE.Quaternion();
   private readonly chassisQuatInv = new THREE.Quaternion();
   private readonly lookExtra = new THREE.Quaternion();
@@ -273,7 +318,10 @@ export class CameraRig {
     this.fpEyeInitialized = false;
     this.linvelSeeded = false;
     this.headOffsetLocal.set(0, 0, 0);
-    this.headOffsetTarget.set(0, 0, 0);
+    this.headVelLocal.set(0, 0, 0);
+    this.headRoll = 0;
+    this.headRollVel = 0;
+    this.smoothAccelLatRoll = 0;
     this.smoothLinvel.set(0, 0, 0);
     this.prevSmoothLinvel.set(0, 0, 0);
     this.smoothAccelLocal.set(0, 0, 0);
@@ -307,6 +355,11 @@ export class CameraRig {
   /** Residual impact pitch rad (tests / debug). */
   getImpactPitch(): number {
     return this.impactPitch;
+  }
+
+  /** Inertial head roll rad (tests / debug); excludes impact roll kick. */
+  getHeadRoll(): number {
+    return this.headRoll;
   }
 
   /** Lagged spring-arm vehicle yaw (for tests / debug). */
@@ -465,7 +518,10 @@ export class CameraRig {
     if (snap) {
       this.fpEyeInitialized = true;
       this.headOffsetLocal.set(0, 0, 0);
-      this.headOffsetTarget.set(0, 0, 0);
+      this.headVelLocal.set(0, 0, 0);
+      this.headRoll = 0;
+      this.headRollVel = 0;
+      this.smoothAccelLatRoll = 0;
       this.impactOffsetLocal.set(0, 0, 0);
       this.impactPitch = 0;
       this.impactRoll = 0;
@@ -473,7 +529,7 @@ export class CameraRig {
       // Seed contact history without firing (spawn / settle / mode switch).
       this.seedImpactContacts(opts);
     } else {
-      // B: accel → local offset target; ease toward it (const vel → home).
+      // B: a_local → underdamped pos + lateral roll oscillators
       this.updateHeadFromAccel(dt, opts);
       // C: detect landings / body slam, then decay residual kick.
       if (this.impactCooldown > 0) {
@@ -487,7 +543,7 @@ export class CameraRig {
       this.rememberImpactContacts(opts);
     }
 
-    // Eye = hard-mount + head inertia (+ impact on final camera only)
+    // Eye = hard-mount seat + head offset (+ impact on final camera only)
     this.tmp.copy(this.headOffsetLocal).applyQuaternion(this.chassisQuat);
     this.fpEyeWorld.copy(this.desiredEye).add(this.tmp);
     this.tmp.copy(this.impactOffsetLocal).applyQuaternion(this.chassisQuat);
@@ -503,11 +559,11 @@ export class CameraRig {
       this.fpPitch += (this.fpPitchTarget - this.fpPitch) * k;
     }
 
-    // Chassis + facing fix (-Z = vehicle forward) + free look + impact nod/roll
+    // Chassis + facing fix + free look + inertial roll + impact nod/roll
     this.lookEuler.set(
       this.fpPitch + this.impactPitch,
       this.fpYaw,
-      this.impactRoll,
+      this.headRoll + this.impactRoll,
       "YXZ",
     );
     this.lookExtra.setFromEuler(this.lookEuler);
@@ -529,149 +585,239 @@ export class CameraRig {
       this.prevSmoothLinvel.set(0, 0, 0);
     }
     this.smoothAccelLocal.set(0, 0, 0);
+    this.smoothAccelLatRoll = 0;
     this.linvelSeeded = true;
   }
 
-  /** Zero chassis-local accel components inside deadzone (m/s²). */
   private static deadzoneAxis(v: number, dead: number): number {
     return Math.abs(v) < dead ? 0 : v;
   }
 
+  /** World accel: along-track full, perp scaled/capped. Writes into `out`. */
+  private static applyTurnSplit(
+    ax: number,
+    ay: number,
+    az: number,
+    vx: number,
+    vy: number,
+    vz: number,
+    perpScale: number,
+    perpCap: number,
+    out: THREE.Vector3,
+  ): void {
+    const sp = Math.hypot(vx, vy, vz);
+    if (sp <= HEAD_TURN_SPLIT_SPEED) {
+      out.set(ax, ay, az);
+      return;
+    }
+    const invSp = 1 / sp;
+    const dx = vx * invSp;
+    const dy = vy * invSp;
+    const dz = vz * invSp;
+    const aPar = ax * dx + ay * dy + az * dz;
+    let px = ax - aPar * dx;
+    let py = ay - aPar * dy;
+    let pz = az - aPar * dz;
+    const pMag = Math.hypot(px, py, pz);
+    if (pMag > perpCap) {
+      const s = perpCap / pMag;
+      px *= s;
+      py *= s;
+      pz *= s;
+    }
+    out.set(
+      aPar * dx + px * perpScale,
+      aPar * dy + py * perpScale,
+      aPar * dz + pz * perpScale,
+    );
+  }
+
   /**
-   * Layer B: smooth linvel → Δv/dt → local accel LPF + deadzone → offset target.
-   * Stuck contact jitter stays below deadzone so the eye returns to rest.
+   * Estimate a_local from Δlinvel, then integrate position oscillators and
+   * lateral head roll (underdamped, φ_eq = −S a_lat).
    */
   private updateHeadFromAccel(dt: number, opts?: CameraUpdateOpts): void {
     const v = opts?.linvel;
     if (!v) {
-      this.headOffsetTarget.set(0, 0, 0);
       this.smoothAccelLocal.set(0, 0, 0);
+      this.smoothAccelLatRoll = 0;
     } else if (!this.linvelSeeded || dt <= 1e-6) {
       this.smoothLinvel.set(v.x, v.y, v.z);
       this.prevSmoothLinvel.set(v.x, v.y, v.z);
       this.smoothAccelLocal.set(0, 0, 0);
+      this.smoothAccelLatRoll = 0;
       this.linvelSeeded = true;
-      this.headOffsetTarget.set(0, 0, 0);
     } else {
-      // 1) Low-pass raw linvel (kills high-freq contact noise before Δ)
       const velK = 1 - Math.exp(-HEAD_VEL_SMOOTH * dt);
       this.smoothLinvel.x += (v.x - this.smoothLinvel.x) * velK;
       this.smoothLinvel.y += (v.y - this.smoothLinvel.y) * velK;
       this.smoothLinvel.z += (v.z - this.smoothLinvel.z) * velK;
 
       const invDt = 1 / dt;
-      this.tmp.set(
-        (this.smoothLinvel.x - this.prevSmoothLinvel.x) * invDt,
-        (this.smoothLinvel.y - this.prevSmoothLinvel.y) * invDt,
-        (this.smoothLinvel.z - this.prevSmoothLinvel.z) * invDt,
-      );
+      const rawAx =
+        (this.smoothLinvel.x - this.prevSmoothLinvel.x) * invDt;
+      const rawAy =
+        (this.smoothLinvel.y - this.prevSmoothLinvel.y) * invDt;
+      const rawAz =
+        (this.smoothLinvel.z - this.prevSmoothLinvel.z) * invDt;
       this.prevSmoothLinvel.copy(this.smoothLinvel);
 
-      // 2) World → chassis local, hard cap spikes
+      // Position path: heavy turn damp. Roll path: keep more lateral G.
+      CameraRig.applyTurnSplit(
+        rawAx,
+        rawAy,
+        rawAz,
+        this.smoothLinvel.x,
+        this.smoothLinvel.y,
+        this.smoothLinvel.z,
+        HEAD_TURN_ACCEL_SCALE,
+        HEAD_TURN_PERP_CAP,
+        this.tmp,
+      );
+      CameraRig.applyTurnSplit(
+        rawAx,
+        rawAy,
+        rawAz,
+        this.smoothLinvel.x,
+        this.smoothLinvel.y,
+        this.smoothLinvel.z,
+        HEAD_TURN_ACCEL_SCALE_ROLL,
+        HEAD_TURN_PERP_CAP_ROLL,
+        this.tmpRollA,
+      );
+
       this.tmp.applyQuaternion(this.chassisQuatInv);
       this.tmp.x = clamp(this.tmp.x, -HEAD_ACCEL_MAX, HEAD_ACCEL_MAX);
       this.tmp.y = clamp(this.tmp.y, -HEAD_ACCEL_MAX, HEAD_ACCEL_MAX);
       this.tmp.z = clamp(this.tmp.z, -HEAD_ACCEL_MAX, HEAD_ACCEL_MAX);
 
-      // 3) Asymmetric low-pass local accel (snap onset, softer decay)
-      this.smoothAccelLocal.x = CameraRig.easeHeadAxis(
-        this.smoothAccelLocal.x,
-        this.tmp.x,
-        dt,
-        HEAD_ACCEL_SMOOTH_IN,
-        HEAD_ACCEL_SMOOTH_OUT,
-      );
-      this.smoothAccelLocal.y = CameraRig.easeHeadAxis(
-        this.smoothAccelLocal.y,
-        this.tmp.y,
-        dt,
-        HEAD_ACCEL_SMOOTH_IN,
-        HEAD_ACCEL_SMOOTH_OUT,
-      );
-      this.smoothAccelLocal.z = CameraRig.easeHeadAxis(
-        this.smoothAccelLocal.z,
-        this.tmp.z,
-        dt,
-        HEAD_ACCEL_SMOOTH_IN,
-        HEAD_ACCEL_SMOOTH_OUT,
+      this.tmpRollA.applyQuaternion(this.chassisQuatInv);
+      const aLatRoll = clamp(
+        this.tmpRollA.x,
+        -HEAD_ACCEL_MAX,
+        HEAD_ACCEL_MAX,
       );
 
-      // 4) Deadzone — micro jitter from stuck contacts dies here
-      const ax = CameraRig.deadzoneAxis(
-        this.smoothAccelLocal.x,
-        HEAD_ACCEL_DEADZONE,
-      );
-      const ay = CameraRig.deadzoneAxis(
-        this.smoothAccelLocal.y,
-        HEAD_ACCEL_DEADZONE,
-      );
-      const az = CameraRig.deadzoneAxis(
-        this.smoothAccelLocal.z,
-        HEAD_ACCEL_DEADZONE,
-      );
-
-      // Inertia: head lags opposite chassis acceleration
-      this.headOffsetTarget.set(
-        -ax * HEAD_GAIN_LAT,
-        -ay * HEAD_GAIN_VERT,
-        -az * HEAD_GAIN_LON,
-      );
-      this.headOffsetTarget.x = clamp(
-        this.headOffsetTarget.x,
-        -HEAD_MAX_LAT,
-        HEAD_MAX_LAT,
-      );
-      this.headOffsetTarget.y = clamp(
-        this.headOffsetTarget.y,
-        -HEAD_MAX_DOWN,
-        HEAD_MAX_UP,
-      );
-      this.headOffsetTarget.z = clamp(
-        this.headOffsetTarget.z,
-        -HEAD_MAX_AFT,
-        HEAD_MAX_FORE,
-      );
+      const aK = 1 - Math.exp(-HEAD_ACCEL_SMOOTH * dt);
+      const aKy = 1 - Math.exp(-HEAD_ACCEL_SMOOTH_Y * dt);
+      const aKr = 1 - Math.exp(-HEAD_ROLL_ACCEL_SMOOTH * dt);
+      this.smoothAccelLocal.x += (this.tmp.x - this.smoothAccelLocal.x) * aK;
+      this.smoothAccelLocal.y += (this.tmp.y - this.smoothAccelLocal.y) * aKy;
+      this.smoothAccelLocal.z += (this.tmp.z - this.smoothAccelLocal.z) * aK;
+      this.smoothAccelLatRoll +=
+        (aLatRoll - this.smoothAccelLatRoll) * aKr;
     }
 
-    // Per-axis asymmetric ease: snappier lean-in, slower settle back to 0.
-    this.headOffsetLocal.x = CameraRig.easeHeadAxis(
+    const ax = CameraRig.deadzoneAxis(
+      this.smoothAccelLocal.x,
+      HEAD_ACCEL_DEADZONE,
+    );
+    const ay = CameraRig.deadzoneAxis(
+      this.smoothAccelLocal.y,
+      HEAD_ACCEL_DEADZONE_Y,
+    );
+    const az = CameraRig.deadzoneAxis(
+      this.smoothAccelLocal.z,
+      HEAD_ACCEL_DEADZONE,
+    );
+    const aRoll = CameraRig.deadzoneAxis(
+      this.smoothAccelLatRoll,
+      HEAD_ROLL_DEADZONE,
+    );
+
+    const hx = CameraRig.integrateHeadOscillator(
       this.headOffsetLocal.x,
-      this.headOffsetTarget.x,
+      this.headVelLocal.x,
+      ax,
       dt,
-      HEAD_OFFSET_SMOOTH_IN,
-      HEAD_OFFSET_SMOOTH_OUT,
+      HEAD_OMEGA.x,
+      HEAD_ZETA.x,
+      HEAD_S.x,
+      -HEAD_MAX_LAT,
+      HEAD_MAX_LAT,
+      HEAD_VEL_MAX,
     );
-    this.headOffsetLocal.y = CameraRig.easeHeadAxis(
+    const hy = CameraRig.integrateHeadOscillator(
       this.headOffsetLocal.y,
-      this.headOffsetTarget.y,
+      this.headVelLocal.y,
+      ay,
       dt,
-      HEAD_OFFSET_SMOOTH_IN,
-      HEAD_OFFSET_SMOOTH_OUT,
+      HEAD_OMEGA.y,
+      HEAD_ZETA.y,
+      HEAD_S.y,
+      -HEAD_MAX_DOWN,
+      HEAD_MAX_UP,
+      HEAD_VEL_MAX,
     );
-    this.headOffsetLocal.z = CameraRig.easeHeadAxis(
+    const hz = CameraRig.integrateHeadOscillator(
       this.headOffsetLocal.z,
-      this.headOffsetTarget.z,
+      this.headVelLocal.z,
+      az,
       dt,
-      HEAD_OFFSET_SMOOTH_IN,
-      HEAD_OFFSET_SMOOTH_OUT,
+      HEAD_OMEGA.z,
+      HEAD_ZETA.z,
+      HEAD_S.z,
+      -HEAD_MAX_AFT,
+      HEAD_MAX_FORE,
+      HEAD_VEL_MAX,
     );
+    this.headOffsetLocal.set(hx.x, hy.x, hz.x);
+    this.headVelLocal.set(hx.v, hy.v, hz.v);
+
+    const hr = CameraRig.integrateHeadOscillator(
+      this.headRoll,
+      this.headRollVel,
+      aRoll,
+      dt,
+      HEAD_ROLL_OMEGA,
+      HEAD_ROLL_ZETA,
+      HEAD_ROLL_S,
+      -HEAD_ROLL_MAX,
+      HEAD_ROLL_MAX,
+      HEAD_ROLL_VEL_MAX,
+    );
+    this.headRoll = hr.x;
+    this.headRollVel = hr.v;
   }
 
   /**
-   * Exponential lerp toward target. If |target| < |current| (heading home),
-   * use slower `rateOut` so onset is snappy and return lingers.
+   * Semi-implicit Euler for x'' = −ω²(x + S a) − 2ζω ẋ.
+   * Positive chassis accel (forward / up / right) displaces head negative
+   * (and rolls opposite for a_lat).
    */
-  private static easeHeadAxis(
-    current: number,
-    target: number,
+  private static integrateHeadOscillator(
+    x: number,
+    v: number,
+    aLocal: number,
     dt: number,
-    rateIn: number,
-    rateOut: number,
-  ): number {
-    const returning = Math.abs(target) < Math.abs(current) - 1e-6;
-    const rate = returning ? rateOut : rateIn;
-    const k = 1 - Math.exp(-rate * dt);
-    return current + (target - current) * k;
+    omega: number,
+    zeta: number,
+    s: number,
+    xMin: number,
+    xMax: number,
+    vMax: number,
+  ): { x: number; v: number } {
+    const w = omega;
+    const acc = -w * w * (x + s * aLocal) - 2 * zeta * w * v;
+    let nv = v + acc * dt;
+    nv = clamp(nv, -vMax, vMax);
+    let nx = x + nv * dt;
+    if (nx < xMin) {
+      nx = xMin;
+      if (nv < 0) nv = 0;
+    } else if (nx > xMax) {
+      nx = xMax;
+      if (nv > 0) nv = 0;
+    }
+    // Park tiny residual when a≈0 and nearly still
+    if (
+      Math.abs(aLocal) < 1e-3 &&
+      Math.abs(nx) < 1.2e-4 &&
+      Math.abs(nv) < 1e-3
+    ) {
+      return { x: 0, v: 0 };
+    }
+    return { x: nx, v: nv };
   }
 
   private seedImpactContacts(opts?: CameraUpdateOpts): void {
