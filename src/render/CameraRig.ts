@@ -85,7 +85,7 @@ const TP_YAW_LAG_MAX = 1.2;
  *
  * Input a is estimated from Δlinvel (filtered). Turn-perpendicular component
  * is scaled down so slide direction-changes do not thrash the head.
- * Vertical bumps still contribute via impact layer C (landing kick / pitch).
+ * Vertical plane stays hard-locked to the seat (no Y soft-follow / impact Y).
  */
 /** Natural frequency ω (rad/s) per soft axis [lat X, lon Z]. */
 const HEAD_OMEGA = { x: 10, z: 11 } as const;
@@ -119,7 +119,7 @@ const HEAD_TURN_PERP_CAP_ROLL = 10;
 /**
  * Head roll (rad) from lateral accel only — same oscillator as position:
  * φ'' = −ω²(φ + S a_lat) − 2ζω φ̇, underdamped overshoot around φ_eq = −S a_lat.
- * Not driven by vertical a (bumps stay pitch/offset, not extra roll thrash).
+ * Not driven by vertical a (no roll thrash from hops).
  */
 const HEAD_ROLL_OMEGA = 9;
 const HEAD_ROLL_ZETA = 0.34;
@@ -189,8 +189,6 @@ export class CameraRig {
   /** FP head state seeded (false after mode switch / reset / snap). */
   private fpEyeInitialized = false;
   private linvelSeeded = false;
-  /** Transient impact pitch (rad, + = look up; landings kick negative). */
-  private impactPitch = 0;
   /** Transient impact roll (rad). */
   private impactRoll = 0;
   /** Seconds remaining before another impact kick may fire. */
@@ -307,7 +305,6 @@ export class CameraRig {
     this.prevSmoothLinvel.set(0, 0, 0);
     this.smoothAccelLocal.set(0, 0, 0);
     this.impactOffsetLocal.set(0, 0, 0);
-    this.impactPitch = 0;
     this.impactRoll = 0;
     this.impactCooldown = 0;
     this.prevWheelContacts = [];
@@ -333,9 +330,13 @@ export class CameraRig {
     };
   }
 
-  /** Residual impact pitch rad (tests / debug). */
-  getImpactPitch(): number {
-    return this.impactPitch;
+  /** Chassis-local impact position residual (m; tests / debug). Y is always 0. */
+  getImpactOffsetLocal(): { x: number; y: number; z: number } {
+    return {
+      x: this.impactOffsetLocal.x,
+      y: this.impactOffsetLocal.y,
+      z: this.impactOffsetLocal.z,
+    };
   }
 
   /** Inertial head roll rad (tests / debug); excludes impact roll kick. */
@@ -504,7 +505,6 @@ export class CameraRig {
       this.headRollVel = 0;
       this.smoothAccelLatRoll = 0;
       this.impactOffsetLocal.set(0, 0, 0);
-      this.impactPitch = 0;
       this.impactRoll = 0;
       this.seedLinvel(opts);
       // Seed contact history without firing (spawn / settle / mode switch).
@@ -519,8 +519,7 @@ export class CameraRig {
       this.applyImpactImpulses(opts);
       const decay = Math.exp(-IMPACT_DECAY * dt);
       this.impactOffsetLocal.multiplyScalar(decay);
-      this.impactOffsetLocal.y = 0; // vertical plane hard-lock
-      this.impactPitch = 0;
+      this.impactOffsetLocal.y = 0;
       this.impactRoll *= decay;
       this.rememberImpactContacts(opts);
     }
@@ -728,7 +727,7 @@ export class CameraRig {
       HEAD_MAX_FORE,
       HEAD_VEL_MAX,
     );
-    // Vertical: hard seat (no B-layer bob). Impact C may still add local Y.
+    // Vertical: hard seat (no B-layer bob).
     this.headOffsetLocal.set(hx.x, 0, hz.x);
     this.headVelLocal.set(hx.v, 0, hz.v);
 
@@ -846,8 +845,6 @@ export class CameraRig {
 
     // Longitudinal only in chassis local. Vertical plane stays on seat.
     this.impactOffsetLocal.z -= s * IMPACT_KICK_Z;
-    this.impactOffsetLocal.y = 0;
-    this.impactPitch = 0;
     if (bodyS * IMPACT_BODY_SCALE >= wheelS && bodyS > 0) {
       // Deterministic light roll on body slam (no RNG — stable tests).
       this.impactRoll += s * IMPACT_KICK_ROLL * (bodyN % 2 === 0 ? 1 : -1);

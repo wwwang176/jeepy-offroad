@@ -286,7 +286,10 @@ describe("CameraRig first-person impact shake (C)", () => {
       wheelContacts: [true, true, true, true],
       bodyContactCount: 2,
     });
-    expect(rig.getImpactPitch()).toBe(0);
+    const imp = rig.getImpactOffsetLocal();
+    expect(imp.x).toBe(0);
+    expect(imp.y).toBe(0);
+    expect(imp.z).toBe(0);
   });
 
   it("kicks longitudinal impact offset on wheel air→ground, not vertical", () => {
@@ -303,14 +306,15 @@ describe("CameraRig first-person impact shake (C)", () => {
       wheelContacts: [true, true, true, true],
       bodyContactCount: 0,
     });
-    // Vertical plane locked: no impact pitch, camera Y matches hard seat + XZ soft
-    expect(rig.getImpactPitch()).toBe(0);
+    const imp = rig.getImpactOffsetLocal();
+    expect(imp.z).toBeLessThan(-0.001);
+    expect(imp.y).toBe(0);
     expect(rig.getHeadOffsetLocal().y).toBe(0);
     // Flat chassis: impact Z does not change world Y vs pure seat path
     expect(camera.position.y).toBeCloseTo(rig.getFpEyeWorld().y, 5);
   });
 
-  it("does not apply impact pitch over time (vertical orientation locked)", () => {
+  it("decays longitudinal impact residual over time", () => {
     const { rig } = makeRig();
     rig.setMode("first");
     rig.update(0, poseAt(2), {
@@ -323,7 +327,8 @@ describe("CameraRig first-person impact shake (C)", () => {
       wheelContacts: [true, true, true, true],
       bodyContactCount: 0,
     });
-    expect(rig.getImpactPitch()).toBe(0);
+    const z0 = Math.abs(rig.getImpactOffsetLocal().z);
+    expect(z0).toBeGreaterThan(0.001);
     for (let i = 0; i < 60; i++) {
       rig.update(1 / 60, poseAt(1), {
         linvel: { x: 0, y: 0, z: 0 },
@@ -331,10 +336,11 @@ describe("CameraRig first-person impact shake (C)", () => {
         bodyContactCount: 0,
       });
     }
-    expect(rig.getImpactPitch()).toBe(0);
+    expect(Math.abs(rig.getImpactOffsetLocal().z)).toBeLessThan(z0 * 0.05);
+    expect(rig.getImpactOffsetLocal().y).toBe(0);
   });
 
-  it("fires body-slam roll without vertical pitch kick", () => {
+  it("fires body-slam roll without vertical impact offset", () => {
     const { rig } = makeRig();
     rig.setMode("first");
     rig.update(0, poseAt(1.5), {
@@ -347,7 +353,8 @@ describe("CameraRig first-person impact shake (C)", () => {
       wheelContacts: [true, true, true, true],
       bodyContactCount: 3,
     });
-    expect(rig.getImpactPitch()).toBe(0);
+    expect(rig.getImpactOffsetLocal().y).toBe(0);
+    expect(Math.abs(rig.getImpactOffsetLocal().z)).toBeGreaterThan(0.001);
   });
 
   it("does not re-fire while body stays in continuous contact", () => {
@@ -363,18 +370,18 @@ describe("CameraRig first-person impact shake (C)", () => {
       bodyContactCount: 2,
       wheelContacts: [true, true, true, true],
     });
-    // Cooldown: second frame with continuous contact must not re-trigger
-    const zAfter = Math.abs(rig.getHeadOffsetLocal().z);
+    const zAfter = Math.abs(rig.getImpactOffsetLocal().z);
+    expect(zAfter).toBeGreaterThan(0.001);
     rig.update(1 / 60, poseAt(1), {
       linvel: { x: 0, y: 0, z: 0 },
       bodyContactCount: 2,
       wheelContacts: [true, true, true, true],
     });
-    expect(rig.getImpactPitch()).toBe(0);
-    // Soft head Z may exist; just ensure we don't blow up / re-spike pitch
-    expect(Math.abs(rig.getHeadOffsetLocal().z)).toBeLessThanOrEqual(
-      zAfter + 0.05,
+    // Cooldown: residual only decays, must not re-spike above first kick
+    expect(Math.abs(rig.getImpactOffsetLocal().z)).toBeLessThanOrEqual(
+      zAfter + 1e-9,
     );
+    expect(rig.getImpactOffsetLocal().y).toBe(0);
   });
 
   it("keeps camera local-Y on seat under vertical hop + landing", () => {
@@ -396,7 +403,7 @@ describe("CameraRig first-person impact shake (C)", () => {
       // Flat yaw pose: camera world Y must match hard seat (+ optional XZ→no Y)
       expect(camera.position.y).toBeCloseTo(y + 1.15, 4);
       expect(rig.getHeadOffsetLocal().y).toBe(0);
-      expect(rig.getImpactPitch()).toBe(0);
+      expect(rig.getImpactOffsetLocal().y).toBe(0);
     }
   });
 });
