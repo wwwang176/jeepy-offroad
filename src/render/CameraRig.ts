@@ -18,7 +18,10 @@ export type CameraUpdateOpts = {
   snap?: boolean;
   /** Ground-plane speed (m/s); scales third-person yaw lag (slower = more lag). */
   speedMps?: number;
-  /** Chassis linear velocity (m/s); used for FP impact shake (vy). */
+  /**
+   * Chassis linear velocity (m/s). FP uses Δv/dt for head inertia (B)
+   * and vy for impact shake (C).
+   */
   linvel?: { x: number; y: number; z: number };
   /** Per-wheel ground contact this frame; FP impact uses air→ground edges. */
   wheelContacts?: boolean[];
@@ -73,30 +76,56 @@ const YAW_LAG_SPEED_REF = 10;
 const TP_YAW_LAG_MAX = 1.2;
 
 /**
- * First-person head soft-follow (layer B): eye lags hard-mount target in world
- * space, then offset is clamped in chassis local (m). Higher smooth = tighter.
+ * First-person head inertia (layer B): chassis-local eye offset driven by
+ * linear acceleration (smoothed Δlinvel/dt). Constant velocity → a≈0 → rest.
+ * Deadzone + LPF kill contact jitter when stuck on rocks / ledges.
+ * Gains: metres of offset per (m/s²).
+ *
+ * Smooth rates are exponential lerp rates (1/s): lower = softer / more lag.
+ * Asymmetric offset ease: snap lean-in on accel, slow return when a dies.
  */
-const HEAD_POS_SMOOTH = 11;
-const HEAD_MAX_UP = 0.06;
-const HEAD_MAX_DOWN = 0.08;
-const HEAD_MAX_FORE = 0.05;
-const HEAD_MAX_AFT = 0.05;
-const HEAD_MAX_LAT = 0.03;
+/** Lean-in (away from rest) — high so throttle/accel reads immediately. */
+const HEAD_OFFSET_SMOOTH_IN = 22;
+/** Return-to-rest is slower so the lean lingers after accel drops. */
+const HEAD_OFFSET_SMOOTH_OUT = 2.0;
+/** Gains / max offsets halved for subtler cabin motion. */
+const HEAD_GAIN_LON = 0.006;
+const HEAD_GAIN_LAT = 0.005;
+const HEAD_GAIN_VERT = 0.007;
+/** Low-pass linvel before differencing (higher = snappier, noisier). */
+const HEAD_VEL_SMOOTH = 18;
+/** Accel LPF: fast when |a| grows (throttle hit), slower when |a| falls. */
+const HEAD_ACCEL_SMOOTH_IN = 20;
+const HEAD_ACCEL_SMOOTH_OUT = 7;
+/** Clamp |a| per axis before gain (m/s²) to kill single-frame spikes. */
+const HEAD_ACCEL_MAX = 22;
+/** |a_local| below this (m/s²) treated as 0 — kills stuck micro-jitter. */
+const HEAD_ACCEL_DEADZONE = 3.5;
+const HEAD_MAX_UP = 0.03;
+const HEAD_MAX_DOWN = 0.04;
+const HEAD_MAX_FORE = 0.025;
+const HEAD_MAX_AFT = 0.025;
+const HEAD_MAX_LAT = 0.015;
 
 /**
  * First-person impact shake (layer C): event impulse on wheel landing / body slam.
  * Position kicks in chassis local (m); pitch nod in rad; exponential decay.
+ * Position kicks / caps halved with head gains.
  */
 const IMPACT_DECAY = 12;
-const IMPACT_KICK_Y = 0.045;
-const IMPACT_KICK_Z = 0.025;
+const IMPACT_KICK_Y = 0.0225;
+const IMPACT_KICK_Z = 0.0125;
 const IMPACT_KICK_PITCH = 0.035;
 const IMPACT_KICK_ROLL = 0.02;
 const IMPACT_BODY_SCALE = 1.25;
-const IMPACT_MAX_Y = 0.07;
-const IMPACT_MAX_Z = 0.04;
+const IMPACT_MAX_Y = 0.035;
+const IMPACT_MAX_Z = 0.02;
 const IMPACT_MAX_PITCH = 0.055;
 const IMPACT_MAX_ROLL = 0.04;
+/** Min time between impact kicks (s) — stops contact-flicker spam when stuck. */
+const IMPACT_COOLDOWN_S = 0.18;
+/** Ignore soft body scrapes for camera (|vy| below this = no body slam kick). */
+const IMPACT_BODY_MIN_DOWN_MPS = 1.0;
 
 export class CameraRig {
   mode: CameraMode = "third";
@@ -110,7 +139,15 @@ export class CameraRig {
   private readonly tmp = new THREE.Vector3();
   private readonly desiredEye = new THREE.Vector3();
   private readonly fpEyeWorld = new THREE.Vector3();
+  /** Accel-driven head offset in chassis local (m); rest at 0. */
+  private readonly headOffsetLocal = new THREE.Vector3();
+  private readonly headOffsetTarget = new THREE.Vector3();
   private readonly impactOffsetLocal = new THREE.Vector3();
+  /** Smoothed linvel used for Δv/dt (world). */
+  private readonly smoothLinvel = new THREE.Vector3();
+  private readonly prevSmoothLinvel = new THREE.Vector3();
+  /** Smoothed chassis-local accel after deadzone. */
+  private readonly smoothAccelLocal = new THREE.Vector3();
   private readonly chassisQuat = new THREE.Quaternion();
   private readonly chassisQuatInv = new THREE.Quaternion();
   private readonly lookExtra = new THREE.Quaternion();
@@ -123,12 +160,15 @@ export class CameraRig {
     new THREE.Vector3(0, 1, 0),
     Math.PI,
   );
-  /** Soft-follow eye has been seeded (false after mode switch / reset / snap). */
+  /** FP head state seeded (false after mode switch / reset / snap). */
   private fpEyeInitialized = false;
+  private linvelSeeded = false;
   /** Transient impact pitch (rad, + = look up; landings kick negative). */
   private impactPitch = 0;
   /** Transient impact roll (rad). */
   private impactRoll = 0;
+  /** Seconds remaining before another impact kick may fire. */
+  private impactCooldown = 0;
   private prevWheelContacts: boolean[] = [];
   private prevBodyContactCount = 0;
   private impactContactsSeeded = false;
@@ -228,23 +268,39 @@ export class CameraRig {
     this.resetHeadState();
   }
 
-  /** Clear FP soft-follow + impact (next FP update hard-snaps eye). */
+  /** Clear FP head inertia + impact (next FP update hard-snaps). */
   private resetHeadState(): void {
     this.fpEyeInitialized = false;
+    this.linvelSeeded = false;
+    this.headOffsetLocal.set(0, 0, 0);
+    this.headOffsetTarget.set(0, 0, 0);
+    this.smoothLinvel.set(0, 0, 0);
+    this.prevSmoothLinvel.set(0, 0, 0);
+    this.smoothAccelLocal.set(0, 0, 0);
     this.impactOffsetLocal.set(0, 0, 0);
     this.impactPitch = 0;
     this.impactRoll = 0;
+    this.impactCooldown = 0;
     this.prevWheelContacts = [];
     this.prevBodyContactCount = 0;
     this.impactContactsSeeded = false;
   }
 
-  /** World-space FP eye before impact kick (tests / debug). */
+  /** World-space FP eye with head inertia, before impact kick (tests / debug). */
   getFpEyeWorld(): { x: number; y: number; z: number } {
     return {
       x: this.fpEyeWorld.x,
       y: this.fpEyeWorld.y,
       z: this.fpEyeWorld.z,
+    };
+  }
+
+  /** Chassis-local head offset from accel inertia (m; tests / debug). */
+  getHeadOffsetLocal(): { x: number; y: number; z: number } {
+    return {
+      x: this.headOffsetLocal.x,
+      y: this.headOffsetLocal.y,
+      z: this.headOffsetLocal.z,
     };
   }
 
@@ -380,7 +436,7 @@ export class CameraRig {
     }
 
     // First person: chassis orientation hard-mount (pitch/roll/yaw with the jeep)
-    // + head soft-follow (B) + impact impulse (C).
+    // + accel-driven head inertia (B) + impact impulse (C).
     // Do NOT use lookAt(worldUp) — that strips roll and flattens body lean.
     if (pose.rotation) {
       this.chassisQuat.set(
@@ -407,29 +463,22 @@ export class CameraRig {
 
     const snap = opts?.snap || dt <= 0 || !this.fpEyeInitialized;
     if (snap) {
-      this.fpEyeWorld.copy(this.desiredEye);
       this.fpEyeInitialized = true;
+      this.headOffsetLocal.set(0, 0, 0);
+      this.headOffsetTarget.set(0, 0, 0);
       this.impactOffsetLocal.set(0, 0, 0);
       this.impactPitch = 0;
       this.impactRoll = 0;
+      this.seedLinvel(opts);
       // Seed contact history without firing (spawn / settle / mode switch).
       this.seedImpactContacts(opts);
     } else {
-      // B: soft-follow hard-mount target, clamp lag in chassis local.
-      const headK = 1 - Math.exp(-HEAD_POS_SMOOTH * dt);
-      this.fpEyeWorld.x += (this.desiredEye.x - this.fpEyeWorld.x) * headK;
-      this.fpEyeWorld.y += (this.desiredEye.y - this.fpEyeWorld.y) * headK;
-      this.fpEyeWorld.z += (this.desiredEye.z - this.fpEyeWorld.z) * headK;
-
-      this.tmp.subVectors(this.fpEyeWorld, this.desiredEye);
-      this.tmp.applyQuaternion(this.chassisQuatInv);
-      this.tmp.x = clamp(this.tmp.x, -HEAD_MAX_LAT, HEAD_MAX_LAT);
-      this.tmp.y = clamp(this.tmp.y, -HEAD_MAX_DOWN, HEAD_MAX_UP);
-      this.tmp.z = clamp(this.tmp.z, -HEAD_MAX_AFT, HEAD_MAX_FORE);
-      this.tmp.applyQuaternion(this.chassisQuat);
-      this.fpEyeWorld.copy(this.desiredEye).add(this.tmp);
-
+      // B: accel → local offset target; ease toward it (const vel → home).
+      this.updateHeadFromAccel(dt, opts);
       // C: detect landings / body slam, then decay residual kick.
+      if (this.impactCooldown > 0) {
+        this.impactCooldown = Math.max(0, this.impactCooldown - dt);
+      }
       this.applyImpactImpulses(opts);
       const decay = Math.exp(-IMPACT_DECAY * dt);
       this.impactOffsetLocal.multiplyScalar(decay);
@@ -438,7 +487,9 @@ export class CameraRig {
       this.rememberImpactContacts(opts);
     }
 
-    // Final eye = soft head + chassis-local impact offset
+    // Eye = hard-mount + head inertia (+ impact on final camera only)
+    this.tmp.copy(this.headOffsetLocal).applyQuaternion(this.chassisQuat);
+    this.fpEyeWorld.copy(this.desiredEye).add(this.tmp);
     this.tmp.copy(this.impactOffsetLocal).applyQuaternion(this.chassisQuat);
     this.camera.position.copy(this.fpEyeWorld).add(this.tmp);
 
@@ -468,6 +519,161 @@ export class CameraRig {
     this.camera.up.copy(this.tmp);
   }
 
+  private seedLinvel(opts?: CameraUpdateOpts): void {
+    const v = opts?.linvel;
+    if (v) {
+      this.smoothLinvel.set(v.x, v.y, v.z);
+      this.prevSmoothLinvel.set(v.x, v.y, v.z);
+    } else {
+      this.smoothLinvel.set(0, 0, 0);
+      this.prevSmoothLinvel.set(0, 0, 0);
+    }
+    this.smoothAccelLocal.set(0, 0, 0);
+    this.linvelSeeded = true;
+  }
+
+  /** Zero chassis-local accel components inside deadzone (m/s²). */
+  private static deadzoneAxis(v: number, dead: number): number {
+    return Math.abs(v) < dead ? 0 : v;
+  }
+
+  /**
+   * Layer B: smooth linvel → Δv/dt → local accel LPF + deadzone → offset target.
+   * Stuck contact jitter stays below deadzone so the eye returns to rest.
+   */
+  private updateHeadFromAccel(dt: number, opts?: CameraUpdateOpts): void {
+    const v = opts?.linvel;
+    if (!v) {
+      this.headOffsetTarget.set(0, 0, 0);
+      this.smoothAccelLocal.set(0, 0, 0);
+    } else if (!this.linvelSeeded || dt <= 1e-6) {
+      this.smoothLinvel.set(v.x, v.y, v.z);
+      this.prevSmoothLinvel.set(v.x, v.y, v.z);
+      this.smoothAccelLocal.set(0, 0, 0);
+      this.linvelSeeded = true;
+      this.headOffsetTarget.set(0, 0, 0);
+    } else {
+      // 1) Low-pass raw linvel (kills high-freq contact noise before Δ)
+      const velK = 1 - Math.exp(-HEAD_VEL_SMOOTH * dt);
+      this.smoothLinvel.x += (v.x - this.smoothLinvel.x) * velK;
+      this.smoothLinvel.y += (v.y - this.smoothLinvel.y) * velK;
+      this.smoothLinvel.z += (v.z - this.smoothLinvel.z) * velK;
+
+      const invDt = 1 / dt;
+      this.tmp.set(
+        (this.smoothLinvel.x - this.prevSmoothLinvel.x) * invDt,
+        (this.smoothLinvel.y - this.prevSmoothLinvel.y) * invDt,
+        (this.smoothLinvel.z - this.prevSmoothLinvel.z) * invDt,
+      );
+      this.prevSmoothLinvel.copy(this.smoothLinvel);
+
+      // 2) World → chassis local, hard cap spikes
+      this.tmp.applyQuaternion(this.chassisQuatInv);
+      this.tmp.x = clamp(this.tmp.x, -HEAD_ACCEL_MAX, HEAD_ACCEL_MAX);
+      this.tmp.y = clamp(this.tmp.y, -HEAD_ACCEL_MAX, HEAD_ACCEL_MAX);
+      this.tmp.z = clamp(this.tmp.z, -HEAD_ACCEL_MAX, HEAD_ACCEL_MAX);
+
+      // 3) Asymmetric low-pass local accel (snap onset, softer decay)
+      this.smoothAccelLocal.x = CameraRig.easeHeadAxis(
+        this.smoothAccelLocal.x,
+        this.tmp.x,
+        dt,
+        HEAD_ACCEL_SMOOTH_IN,
+        HEAD_ACCEL_SMOOTH_OUT,
+      );
+      this.smoothAccelLocal.y = CameraRig.easeHeadAxis(
+        this.smoothAccelLocal.y,
+        this.tmp.y,
+        dt,
+        HEAD_ACCEL_SMOOTH_IN,
+        HEAD_ACCEL_SMOOTH_OUT,
+      );
+      this.smoothAccelLocal.z = CameraRig.easeHeadAxis(
+        this.smoothAccelLocal.z,
+        this.tmp.z,
+        dt,
+        HEAD_ACCEL_SMOOTH_IN,
+        HEAD_ACCEL_SMOOTH_OUT,
+      );
+
+      // 4) Deadzone — micro jitter from stuck contacts dies here
+      const ax = CameraRig.deadzoneAxis(
+        this.smoothAccelLocal.x,
+        HEAD_ACCEL_DEADZONE,
+      );
+      const ay = CameraRig.deadzoneAxis(
+        this.smoothAccelLocal.y,
+        HEAD_ACCEL_DEADZONE,
+      );
+      const az = CameraRig.deadzoneAxis(
+        this.smoothAccelLocal.z,
+        HEAD_ACCEL_DEADZONE,
+      );
+
+      // Inertia: head lags opposite chassis acceleration
+      this.headOffsetTarget.set(
+        -ax * HEAD_GAIN_LAT,
+        -ay * HEAD_GAIN_VERT,
+        -az * HEAD_GAIN_LON,
+      );
+      this.headOffsetTarget.x = clamp(
+        this.headOffsetTarget.x,
+        -HEAD_MAX_LAT,
+        HEAD_MAX_LAT,
+      );
+      this.headOffsetTarget.y = clamp(
+        this.headOffsetTarget.y,
+        -HEAD_MAX_DOWN,
+        HEAD_MAX_UP,
+      );
+      this.headOffsetTarget.z = clamp(
+        this.headOffsetTarget.z,
+        -HEAD_MAX_AFT,
+        HEAD_MAX_FORE,
+      );
+    }
+
+    // Per-axis asymmetric ease: snappier lean-in, slower settle back to 0.
+    this.headOffsetLocal.x = CameraRig.easeHeadAxis(
+      this.headOffsetLocal.x,
+      this.headOffsetTarget.x,
+      dt,
+      HEAD_OFFSET_SMOOTH_IN,
+      HEAD_OFFSET_SMOOTH_OUT,
+    );
+    this.headOffsetLocal.y = CameraRig.easeHeadAxis(
+      this.headOffsetLocal.y,
+      this.headOffsetTarget.y,
+      dt,
+      HEAD_OFFSET_SMOOTH_IN,
+      HEAD_OFFSET_SMOOTH_OUT,
+    );
+    this.headOffsetLocal.z = CameraRig.easeHeadAxis(
+      this.headOffsetLocal.z,
+      this.headOffsetTarget.z,
+      dt,
+      HEAD_OFFSET_SMOOTH_IN,
+      HEAD_OFFSET_SMOOTH_OUT,
+    );
+  }
+
+  /**
+   * Exponential lerp toward target. If |target| < |current| (heading home),
+   * use slower `rateOut` so onset is snappy and return lingers.
+   */
+  private static easeHeadAxis(
+    current: number,
+    target: number,
+    dt: number,
+    rateIn: number,
+    rateOut: number,
+  ): number {
+    const returning = Math.abs(target) < Math.abs(current) - 1e-6;
+    const rate = returning ? rateOut : rateIn;
+    const k = 1 - Math.exp(-rate * dt);
+    return current + (target - current) * k;
+  }
+
   private seedImpactContacts(opts?: CameraUpdateOpts): void {
     const wheels = opts?.wheelContacts;
     this.prevWheelContacts = wheels ? wheels.slice() : [];
@@ -492,12 +698,15 @@ export class CameraRig {
   /**
    * One-shot kicks from wheel air→ground and body 0→N contacts.
    * Strength curves match dust FX (`wheelLandingImpact01` / `bodySlamImpact01`).
+   * Soft body scrapes and cooldown suppress stuck contact-flicker spam.
    */
   private applyImpactImpulses(opts?: CameraUpdateOpts): void {
     if (!this.impactContactsSeeded) {
       this.seedImpactContacts(opts);
       return;
     }
+    if (this.impactCooldown > 0) return;
+
     const vy = opts?.linvel?.y ?? 0;
     const wheels = opts?.wheelContacts;
     let wheelS = 0;
@@ -510,10 +719,16 @@ export class CameraRig {
       }
     }
     const bodyN = opts?.bodyContactCount ?? 0;
-    const bodyS = bodySlamImpact01(this.prevBodyContactCount, bodyN, vy);
+    let bodyS = bodySlamImpact01(this.prevBodyContactCount, bodyN, vy);
+    // Soft belly scrapes while wedged: ignore for camera (FX may still puff).
+    if (bodyS > 0 && Math.max(0, -vy) < IMPACT_BODY_MIN_DOWN_MPS) {
+      bodyS = 0;
+    }
     // Body slam reads heavier than a single wheel landing.
     const s = Math.max(wheelS, bodyS * IMPACT_BODY_SCALE);
     if (s <= 0) return;
+
+    this.impactCooldown = IMPACT_COOLDOWN_S;
 
     // Down + slightly aft in chassis local; nod pitch down (+pitch = look up).
     this.impactOffsetLocal.y -= s * IMPACT_KICK_Y;

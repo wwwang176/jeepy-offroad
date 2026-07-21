@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { CameraRig } from "@/render/CameraRig";
 
-function makeRig(): CameraRig {
-  const cam = new THREE.PerspectiveCamera(72, 1, 0.1, 1000);
-  return new CameraRig(cam);
+/** Tests own the camera instance; CameraRig keeps it private. */
+function makeRig(): { rig: CameraRig; camera: THREE.PerspectiveCamera } {
+  const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 1000);
+  return { rig: new CameraRig(camera), camera };
 }
 
 function poseAt(
   y: number,
   yaw = 0,
+  z = 0,
 ): {
   position: { x: number; y: number; z: number };
   yaw: number;
@@ -20,71 +22,110 @@ function poseAt(
     yaw,
   );
   return {
-    position: { x: 0, y, z: 0 },
+    position: { x: 0, y, z },
     yaw,
     rotation: { x: q.x, y: q.y, z: q.z, w: q.w },
   };
 }
 
-describe("CameraRig first-person head soft-follow (B)", () => {
+describe("CameraRig first-person head accel inertia (B)", () => {
   it("snaps eye to hard-mount on first FP update", () => {
-    const rig = makeRig();
+    const { rig, camera } = makeRig();
     rig.setMode("first");
     const pose = poseAt(2);
-    rig.update(1 / 60, pose, { snap: true });
+    rig.update(1 / 60, pose, { snap: true, linvel: { x: 0, y: 0, z: 0 } });
     // eyeLocal y=1.15 → world y ≈ 3.15
     expect(rig.getFpEyeWorld().y).toBeCloseTo(2 + 1.15, 4);
-    expect(rig.camera.position.y).toBeCloseTo(2 + 1.15, 4);
+    expect(camera.position.y).toBeCloseTo(2 + 1.15, 4);
+    expect(rig.getHeadOffsetLocal().z).toBeCloseTo(0, 5);
   });
 
-  it("lags behind a sudden chassis lift then catches up", () => {
-    const rig = makeRig();
+  it("shifts aft under forward acceleration then returns at constant speed", () => {
+    const { rig } = makeRig();
     rig.setMode("first");
-    rig.update(0, poseAt(1), { snap: true });
-    const y0 = rig.getFpEyeWorld().y;
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 0 },
+    });
 
-    // Step chassis up 0.5 m in one frame
-    rig.update(1 / 60, poseAt(1.5), {});
-    const y1 = rig.getFpEyeWorld().y;
-    const hardTarget = 1.5 + 1.15;
-    // Soft-follow: between previous and hard target
-    expect(y1).toBeGreaterThan(y0);
-    expect(y1).toBeLessThan(hardTarget - 0.01);
-
-    for (let i = 0; i < 90; i++) {
-      rig.update(1 / 60, poseAt(1.5), {});
+    // Sustained forward accel (world +Z) above deadzone after LPF
+    for (let i = 1; i <= 24; i++) {
+      rig.update(1 / 60, poseAt(1), {
+        linvel: { x: 0, y: 0, z: i * 1.0 },
+      });
     }
-    expect(rig.getFpEyeWorld().y).toBeCloseTo(hardTarget, 2);
+    expect(rig.getHeadOffsetLocal().z).toBeLessThan(-0.01);
+
+    // Constant velocity: accel → 0, head returns toward seat
+    for (let i = 0; i < 90; i++) {
+      rig.update(1 / 60, poseAt(1, 0, i * 0.2), {
+        linvel: { x: 0, y: 0, z: 24 },
+      });
+    }
+    expect(Math.abs(rig.getHeadOffsetLocal().z)).toBeLessThan(0.008);
+    expect(Math.abs(rig.getHeadOffsetLocal().x)).toBeLessThan(0.008);
   });
 
-  it("clamps soft-follow lag under HEAD_MAX_DOWN (~0.08 m)", () => {
-    const rig = makeRig();
+  it("does not stay aft under pure constant velocity from seed", () => {
+    const { rig } = makeRig();
     rig.setMode("first");
-    rig.update(0, poseAt(1), { snap: true });
-    // Huge single-frame jump upward — lag cannot exceed local max down of head
-    // relative to new desired (eye lags below target).
-    rig.update(1 / 60, poseAt(3), {});
-    const lag = 3 + 1.15 - rig.getFpEyeWorld().y;
-    expect(lag).toBeGreaterThan(0);
-    expect(lag).toBeLessThanOrEqual(0.08 + 1e-6);
+    // Seed already at cruise speed — first frames must not invent lag
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 15 },
+    });
+    for (let i = 0; i < 30; i++) {
+      rig.update(1 / 60, poseAt(1, 0, i), {
+        linvel: { x: 0, y: 0, z: 15 },
+      });
+    }
+    expect(Math.abs(rig.getHeadOffsetLocal().z)).toBeLessThan(0.005);
   });
 
-  it("third-person path ignores head soft-follow state", () => {
-    const rig = makeRig();
+  it("rejects high-frequency low-amplitude velocity noise (stuck jitter)", () => {
+    const { rig } = makeRig();
+    rig.setMode("first");
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 0 },
+    });
+    // Contact chatter ~±0.15 m/s — should stay under accel deadzone after LPF
+    for (let i = 0; i < 120; i++) {
+      const n = i % 2 === 0 ? 0.15 : -0.15;
+      rig.update(1 / 60, poseAt(1), {
+        linvel: { x: n * 0.4, y: n * 0.5, z: n },
+      });
+    }
+    const o = rig.getHeadOffsetLocal();
+    expect(Math.abs(o.x)).toBeLessThan(0.012);
+    expect(Math.abs(o.y)).toBeLessThan(0.012);
+    expect(Math.abs(o.z)).toBeLessThan(0.012);
+  });
+
+  it("hard-mounts eye to chassis when head offset is zero", () => {
+    const { rig } = makeRig();
+    rig.setMode("first");
+    rig.update(0, poseAt(1), { snap: true, linvel: { x: 0, y: 0, z: 0 } });
+    // Pose step with zero accel (linvel stays 0) → eye follows chassis 1:1
+    rig.update(1 / 60, poseAt(2), { linvel: { x: 0, y: 0, z: 0 } });
+    expect(rig.getFpEyeWorld().y).toBeCloseTo(2 + 1.15, 4);
+    expect(rig.getHeadOffsetLocal().y).toBeCloseTo(0, 4);
+  });
+
+  it("third-person path ignores head inertia state", () => {
+    const { rig, camera } = makeRig();
     rig.setMode("third");
     rig.update(0, poseAt(1), { snap: true });
-    const y0 = rig.camera.position.y;
+    const y0 = camera.position.y;
     rig.update(1 / 60, poseAt(2), { speedMps: 0 });
-    // TP eases Y but does not use FP eye helpers — still moves
-    expect(rig.camera.position.y).not.toBe(y0);
-    // FP eye world was never required; mode stays third
+    expect(camera.position.y).not.toBe(y0);
     expect(rig.mode).toBe("third");
   });
 });
 
 describe("CameraRig first-person impact shake (C)", () => {
   it("does not fire impact on snap seed even with contacts + vy", () => {
-    const rig = makeRig();
+    const { rig } = makeRig();
     rig.setMode("first");
     rig.update(0, poseAt(1), {
       snap: true,
@@ -96,7 +137,7 @@ describe("CameraRig first-person impact shake (C)", () => {
   });
 
   it("kicks pitch on wheel air→ground with downward vy", () => {
-    const rig = makeRig();
+    const { rig, camera } = makeRig();
     rig.setMode("first");
     // Seed grounded=false history
     rig.update(0, poseAt(2), {
@@ -112,12 +153,12 @@ describe("CameraRig first-person impact shake (C)", () => {
       bodyContactCount: 0,
     });
     expect(rig.getImpactPitch()).toBeLessThan(-0.005);
-    // Impact local -Y lowers cam below soft-follow eye (chassis identity).
-    expect(rig.camera.position.y).toBeLessThan(rig.getFpEyeWorld().y);
+    // Impact local -Y lowers cam below head-inertia eye (chassis identity).
+    expect(camera.position.y).toBeLessThan(rig.getFpEyeWorld().y);
   });
 
   it("decays impact residual over time", () => {
-    const rig = makeRig();
+    const { rig } = makeRig();
     rig.setMode("first");
     rig.update(0, poseAt(2), {
       snap: true,
@@ -144,7 +185,7 @@ describe("CameraRig first-person impact shake (C)", () => {
   });
 
   it("fires body slam when contacts go 0→N", () => {
-    const rig = makeRig();
+    const { rig } = makeRig();
     rig.setMode("first");
     rig.update(0, poseAt(1.5), {
       snap: true,
@@ -160,7 +201,7 @@ describe("CameraRig first-person impact shake (C)", () => {
   });
 
   it("does not re-fire while body stays in continuous contact", () => {
-    const rig = makeRig();
+    const { rig } = makeRig();
     rig.setMode("first");
     rig.update(0, poseAt(1.5), {
       snap: true,
