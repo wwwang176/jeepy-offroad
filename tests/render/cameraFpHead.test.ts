@@ -276,6 +276,125 @@ describe("CameraRig first-person head roll (lateral)", () => {
   });
 });
 
+describe("CameraRig first-person head pitch (longitudinal)", () => {
+  it("nods under sustained forward accel then returns when a→0", () => {
+    const { rig } = makeRig();
+    rig.setMode("first");
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 0 },
+    });
+    // Ramp +a_z (forward)
+    for (let i = 1; i <= 40; i++) {
+      rig.update(1 / 60, poseAt(1), {
+        linvel: { x: 0, y: 0, z: i * 0.7 },
+      });
+    }
+    // Positive a_z → negative head pitch (same −S a form as roll)
+    expect(rig.getHeadPitch()).toBeLessThan(-0.008);
+
+    for (let i = 0; i < 100; i++) {
+      rig.update(1 / 60, poseAt(1, 0, i * 0.3), {
+        linvel: { x: 0, y: 0, z: 28 },
+      });
+    }
+    expect(Math.abs(rig.getHeadPitch())).toBeLessThan(0.015);
+  });
+
+  it("overshoots pitch toward the opposite side when longitudinal a ends", () => {
+    const { rig } = makeRig();
+    rig.setMode("first");
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 0 },
+    });
+    for (let i = 1; i <= 35; i++) {
+      rig.update(1 / 60, poseAt(1), {
+        linvel: { x: 0, y: 0, z: i * 0.75 },
+      });
+    }
+    expect(rig.getHeadPitch()).toBeLessThan(-0.005);
+
+    let sawOpposite = false;
+    for (let i = 0; i < 80; i++) {
+      rig.update(1 / 60, poseAt(1), {
+        linvel: { x: 0, y: 0, z: 26 },
+      });
+      if (rig.getHeadPitch() > 0.002) sawOpposite = true;
+    }
+    expect(sawOpposite).toBe(true);
+  });
+
+  it("does not thrash pitch from pure vertical hop accel", () => {
+    const { rig } = makeRig();
+    rig.setMode("first");
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 8 },
+    });
+    let maxAbsPitch = 0;
+    for (let i = 0; i < 40; i++) {
+      const vy = i % 2 === 0 ? 3 : -3;
+      rig.update(1 / 60, poseAt(1), {
+        linvel: { x: 0, y: vy, z: 8 },
+      });
+      maxAbsPitch = Math.max(maxAbsPitch, Math.abs(rig.getHeadPitch()));
+    }
+    expect(maxAbsPitch).toBeLessThan(0.02);
+  });
+
+  it("keeps seat local-Y hard while pitching from accel", () => {
+    const { rig, camera } = makeRig();
+    rig.setMode("first");
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 0 },
+    });
+    for (let i = 1; i <= 30; i++) {
+      rig.update(1 / 60, poseAt(1), {
+        linvel: { x: 0, y: 0, z: i * 0.6 },
+      });
+    }
+    expect(Math.abs(rig.getHeadPitch())).toBeGreaterThan(0.005);
+    expect(rig.getHeadOffsetLocal().y).toBe(0);
+    expect(camera.position.y).toBeCloseTo(1 + 1.15, 4);
+  });
+
+  it("maps chassis pitch into camera roll when freelook yaws 90°", () => {
+    const { rig, camera } = makeRig();
+    rig.setMode("first");
+    // applyLookDelta is pixel-based; ~π/2 rad freelook yaw (matches CameraRig sens).
+    const fpLookSens =
+      (0.005 *
+        (Math.tan(((72 / 2) * Math.PI) / 180) /
+          Math.tan(((55 / 2) * Math.PI) / 180))) /
+      2;
+    const dxForRight = -(Math.PI / 2) / fpLookSens; // yawTarget -= dx * sens
+    rig.applyLookDelta(dxForRight, 0);
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 0 },
+    });
+    // Build pure longitudinal accel lean (head pitch nonzero, roll ~0)
+    for (let i = 1; i <= 40; i++) {
+      rig.update(1 / 60, poseAt(1), {
+        linvel: { x: 0, y: 0, z: i * 0.7 },
+      });
+    }
+    expect(Math.abs(rig.getHeadPitch())).toBeGreaterThan(0.008);
+    expect(Math.abs(rig.getHeadRoll())).toBeLessThan(0.01);
+
+    // Freelook right + chassis pitch → bank (horizon tilt), not just nod.
+    const up = new THREE.Vector3(0, 1, 0);
+    const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(
+      camera.quaternion,
+    );
+    const camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    const bank = Math.atan2(up.dot(camRight), up.dot(camUp));
+    expect(Math.abs(bank)).toBeGreaterThan(0.004);
+  });
+});
+
 describe("CameraRig first-person impact shake (C)", () => {
   it("does not fire impact on snap seed even with contacts + vy", () => {
     const { rig } = makeRig();

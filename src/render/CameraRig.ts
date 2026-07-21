@@ -131,9 +131,24 @@ const HEAD_ROLL_DEADZONE = 1.8;
 const HEAD_ROLL_ACCEL_SMOOTH = 9;
 
 /**
+ * Head pitch (rad) from longitudinal accel — same form as roll:
+ * θ'' = −ω²(θ + S a_lon) − 2ζω θ̇, θ_eq = −S a_lon.
+ * Driven by chassis-local az only (not ay) so hops don't thrash pitch.
+ * Freelook pitch is separate; this is inertial nod about the seat.
+ * Position Y stays hard-locked (no vertical soft offset).
+ */
+const HEAD_PITCH_OMEGA = 9;
+const HEAD_PITCH_ZETA = 0.34;
+/** rad per m/s²; a_lon≈5 → ~3.5° at equilibrium before clamp. */
+const HEAD_PITCH_S = 0.012;
+const HEAD_PITCH_MAX = 0.09; // ~5.2°
+const HEAD_PITCH_VEL_MAX = 1.8;
+const HEAD_PITCH_DEADZONE = 1.8;
+
+/**
  * First-person impact shake (layer C): event impulse on wheel landing / body slam.
- * Vertical plane is hard-locked to chassis: no local-Y position kick, no pitch nod
- * (those crawl the hood in FP). Only longitudinal Z + roll remain.
+ * Vertical position plane hard-locked (no local-Y kick). Impact has no pitch nod —
+ * inertial pitch is continuous layer B only. Longitudinal Z + roll remain.
  */
 const IMPACT_DECAY = 12;
 const IMPACT_KICK_Z = 0.0125;
@@ -166,6 +181,9 @@ export class CameraRig {
   private headRoll = 0;
   private headRollVel = 0;
   private smoothAccelLatRoll = 0;
+  /** Inertial head pitch (rad) and rate; driven by a_lon only. */
+  private headPitch = 0;
+  private headPitchVel = 0;
   private readonly impactOffsetLocal = new THREE.Vector3();
   /** Smoothed linvel used for Δv/dt (world). */
   private readonly smoothLinvel = new THREE.Vector3();
@@ -178,6 +196,12 @@ export class CameraRig {
   private readonly chassisQuatInv = new THREE.Quaternion();
   private readonly lookExtra = new THREE.Quaternion();
   private readonly lookEuler = new THREE.Euler(0, 0, 0, "YXZ");
+  /**
+   * Inertial pitch/roll in **chassis** axes (before freelook). So when freelook
+   * yaws 90°, chassis pitch reads as screen roll (and vice versa).
+   */
+  private readonly headOrient = new THREE.Quaternion();
+  private readonly headOrientEuler = new THREE.Euler(0, 0, 0, "YXZ");
   /**
    * Three.js cameras look down local -Z; our chassis forward is +Z.
    * Multiply by 180° yaw so FP faces the hood, not the tailgate.
@@ -301,6 +325,8 @@ export class CameraRig {
     this.headRoll = 0;
     this.headRollVel = 0;
     this.smoothAccelLatRoll = 0;
+    this.headPitch = 0;
+    this.headPitchVel = 0;
     this.smoothLinvel.set(0, 0, 0);
     this.prevSmoothLinvel.set(0, 0, 0);
     this.smoothAccelLocal.set(0, 0, 0);
@@ -342,6 +368,11 @@ export class CameraRig {
   /** Inertial head roll rad (tests / debug); excludes impact roll kick. */
   getHeadRoll(): number {
     return this.headRoll;
+  }
+
+  /** Inertial head pitch rad (tests / debug); freelook pitch is separate. */
+  getHeadPitch(): number {
+    return this.headPitch;
   }
 
   /** Lagged spring-arm vehicle yaw (for tests / debug). */
@@ -504,13 +535,15 @@ export class CameraRig {
       this.headRoll = 0;
       this.headRollVel = 0;
       this.smoothAccelLatRoll = 0;
+      this.headPitch = 0;
+      this.headPitchVel = 0;
       this.impactOffsetLocal.set(0, 0, 0);
       this.impactRoll = 0;
       this.seedLinvel(opts);
       // Seed contact history without firing (spawn / settle / mode switch).
       this.seedImpactContacts(opts);
     } else {
-      // B: a_local → underdamped pos (X/Z) + lateral roll; Y hard 0
+      // B: a_local → underdamped pos (X/Z) + pitch/roll; Y hard 0
       this.updateHeadFromAccel(dt, opts);
       // C: landings / body slam (Z + roll only; vertical plane locked)
       if (this.impactCooldown > 0) {
@@ -542,16 +575,21 @@ export class CameraRig {
       this.fpPitch += (this.fpPitchTarget - this.fpPitch) * k;
     }
 
-    // Chassis + facing fix + free look + inertial/impact roll (no impact pitch)
-    this.lookEuler.set(
-      this.fpPitch,
-      this.fpYaw,
+    // Freelook only (mouse) — not mixed with inertial pitch/roll.
+    this.lookEuler.set(this.fpPitch, this.fpYaw, 0, "YXZ");
+    this.lookExtra.setFromEuler(this.lookEuler);
+    // Chassis-local inertial pitch (a_lon) + roll (a_lat + impact).
+    // Applied *before* freelook so looking right maps pitch → screen roll.
+    this.headOrientEuler.set(
+      this.headPitch,
+      0,
       this.headRoll + this.impactRoll,
       "YXZ",
     );
-    this.lookExtra.setFromEuler(this.lookEuler);
+    this.headOrient.setFromEuler(this.headOrientEuler);
     this.camera.quaternion
       .copy(this.chassisQuat)
+      .multiply(this.headOrient)
       .multiply(this.camFacingFix)
       .multiply(this.lookExtra);
     this.tmp.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
@@ -616,8 +654,9 @@ export class CameraRig {
   }
 
   /**
-   * Estimate a_local from Δlinvel, then integrate position oscillators and
-   * lateral head roll (underdamped, φ_eq = −S a_lat).
+   * Estimate a_local from Δlinvel, then integrate position oscillators,
+   * longitudinal head pitch (θ_eq = −S a_lon), and lateral head roll
+   * (φ_eq = −S a_lat).
    */
   private updateHeadFromAccel(dt: number, opts?: CameraUpdateOpts): void {
     const v = opts?.linvel;
@@ -702,6 +741,11 @@ export class CameraRig {
       this.smoothAccelLatRoll,
       HEAD_ROLL_DEADZONE,
     );
+    // Pitch uses the same filtered a_lon as Z soft-follow (deadzone applied).
+    const aPitch = CameraRig.deadzoneAxis(
+      this.smoothAccelLocal.z,
+      HEAD_PITCH_DEADZONE,
+    );
 
     const hx = CameraRig.integrateHeadOscillator(
       this.headOffsetLocal.x,
@@ -731,6 +775,21 @@ export class CameraRig {
     this.headOffsetLocal.set(hx.x, 0, hz.x);
     this.headVelLocal.set(hx.v, 0, hz.v);
 
+    const hp = CameraRig.integrateHeadOscillator(
+      this.headPitch,
+      this.headPitchVel,
+      aPitch,
+      dt,
+      HEAD_PITCH_OMEGA,
+      HEAD_PITCH_ZETA,
+      HEAD_PITCH_S,
+      -HEAD_PITCH_MAX,
+      HEAD_PITCH_MAX,
+      HEAD_PITCH_VEL_MAX,
+    );
+    this.headPitch = hp.x;
+    this.headPitchVel = hp.v;
+
     const hr = CameraRig.integrateHeadOscillator(
       this.headRoll,
       this.headRollVel,
@@ -749,8 +808,8 @@ export class CameraRig {
 
   /**
    * Semi-implicit Euler for x'' = −ω²(x + S a) − 2ζω ẋ.
-   * Positive chassis accel (forward / up / right) displaces head negative
-   * (and rolls opposite for a_lat).
+   * Positive chassis accel (forward / right) displaces head negative
+   * (pitch/roll opposite for a_lon / a_lat).
    */
   private static integrateHeadOscillator(
     x: number,
