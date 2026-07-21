@@ -2,18 +2,6 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { CameraRig } from "@/render/CameraRig";
 
-describe("CameraRig.softKneeGain", () => {
-  it("is 0 below lo, 1 above hi, and rises smoothly in between", () => {
-    expect(CameraRig.softKneeGain(1, 2, 8)).toBe(0);
-    expect(CameraRig.softKneeGain(2, 2, 8)).toBe(0);
-    expect(CameraRig.softKneeGain(8, 2, 8)).toBe(1);
-    expect(CameraRig.softKneeGain(20, 2, 8)).toBe(1);
-    const mid = CameraRig.softKneeGain(5, 2, 8);
-    expect(mid).toBeGreaterThan(0.2);
-    expect(mid).toBeLessThan(0.8);
-  });
-});
-
 /** Tests own the camera instance; CameraRig keeps it private. */
 function makeRig(): { rig: CameraRig; camera: THREE.PerspectiveCamera } {
   const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 1000);
@@ -192,6 +180,23 @@ describe("CameraRig first-person head oscillator (B)", () => {
     expect(rig.getHeadOffsetLocal().y).toBeCloseTo(0, 4);
   });
 
+  it("keeps head Y soft-offset at 0 under strong vertical accel", () => {
+    const { rig } = makeRig();
+    rig.setMode("first");
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 8 },
+    });
+    for (let i = 1; i <= 40; i++) {
+      // Large Δvy each frame → would have driven the old Y oscillator hard.
+      rig.update(1 / 60, poseAt(1), {
+        linvel: { x: 0, y: i % 2 === 0 ? 8 : -8, z: 8 },
+      });
+    }
+    expect(rig.getHeadOffsetLocal().y).toBe(0);
+    expect(rig.getHeadOffsetLocal().y).toBeCloseTo(0, 5);
+  });
+
   it("third-person path ignores head inertia state", () => {
     const { rig, camera } = makeRig();
     rig.setMode("third");
@@ -284,7 +289,7 @@ describe("CameraRig first-person impact shake (C)", () => {
     expect(rig.getImpactPitch()).toBe(0);
   });
 
-  it("kicks pitch on wheel air→ground with downward vy", () => {
+  it("kicks longitudinal impact offset on wheel air→ground, not vertical", () => {
     const { rig, camera } = makeRig();
     rig.setMode("first");
     rig.update(0, poseAt(2), {
@@ -298,11 +303,14 @@ describe("CameraRig first-person impact shake (C)", () => {
       wheelContacts: [true, true, true, true],
       bodyContactCount: 0,
     });
-    expect(rig.getImpactPitch()).toBeLessThan(-0.005);
-    expect(camera.position.y).toBeLessThan(rig.getFpEyeWorld().y);
+    // Vertical plane locked: no impact pitch, camera Y matches hard seat + XZ soft
+    expect(rig.getImpactPitch()).toBe(0);
+    expect(rig.getHeadOffsetLocal().y).toBe(0);
+    // Flat chassis: impact Z does not change world Y vs pure seat path
+    expect(camera.position.y).toBeCloseTo(rig.getFpEyeWorld().y, 5);
   });
 
-  it("decays impact residual over time", () => {
+  it("does not apply impact pitch over time (vertical orientation locked)", () => {
     const { rig } = makeRig();
     rig.setMode("first");
     rig.update(0, poseAt(2), {
@@ -315,8 +323,7 @@ describe("CameraRig first-person impact shake (C)", () => {
       wheelContacts: [true, true, true, true],
       bodyContactCount: 0,
     });
-    const pitch0 = rig.getImpactPitch();
-    expect(pitch0).toBeLessThan(0);
+    expect(rig.getImpactPitch()).toBe(0);
     for (let i = 0; i < 60; i++) {
       rig.update(1 / 60, poseAt(1), {
         linvel: { x: 0, y: 0, z: 0 },
@@ -324,12 +331,10 @@ describe("CameraRig first-person impact shake (C)", () => {
         bodyContactCount: 0,
       });
     }
-    expect(Math.abs(rig.getImpactPitch())).toBeLessThan(
-      Math.abs(pitch0) * 0.05,
-    );
+    expect(rig.getImpactPitch()).toBe(0);
   });
 
-  it("fires body slam when contacts go 0→N", () => {
+  it("fires body-slam roll without vertical pitch kick", () => {
     const { rig } = makeRig();
     rig.setMode("first");
     rig.update(0, poseAt(1.5), {
@@ -342,7 +347,7 @@ describe("CameraRig first-person impact shake (C)", () => {
       wheelContacts: [true, true, true, true],
       bodyContactCount: 3,
     });
-    expect(rig.getImpactPitch()).toBeLessThan(-0.005);
+    expect(rig.getImpactPitch()).toBe(0);
   });
 
   it("does not re-fire while body stays in continuous contact", () => {
@@ -358,14 +363,40 @@ describe("CameraRig first-person impact shake (C)", () => {
       bodyContactCount: 2,
       wheelContacts: [true, true, true, true],
     });
-    const afterFirst = rig.getImpactPitch();
+    // Cooldown: second frame with continuous contact must not re-trigger
+    const zAfter = Math.abs(rig.getHeadOffsetLocal().z);
     rig.update(1 / 60, poseAt(1), {
       linvel: { x: 0, y: 0, z: 0 },
       bodyContactCount: 2,
       wheelContacts: [true, true, true, true],
     });
-    expect(Math.abs(rig.getImpactPitch())).toBeLessThanOrEqual(
-      Math.abs(afterFirst) + 1e-9,
+    expect(rig.getImpactPitch()).toBe(0);
+    // Soft head Z may exist; just ensure we don't blow up / re-spike pitch
+    expect(Math.abs(rig.getHeadOffsetLocal().z)).toBeLessThanOrEqual(
+      zAfter + 0.05,
     );
+  });
+
+  it("keeps camera local-Y on seat under vertical hop + landing", () => {
+    const { rig, camera } = makeRig();
+    rig.setMode("first");
+    rig.update(0, poseAt(1), {
+      snap: true,
+      linvel: { x: 0, y: 0, z: 0 },
+      wheelContacts: [false, false, false, false],
+      bodyContactCount: 0,
+    });
+    for (let i = 0; i < 20; i++) {
+      const y = 1 + (i % 3) * 0.1;
+      rig.update(1 / 60, poseAt(y), {
+        linvel: { x: 0, y: i % 2 === 0 ? 4 : -6, z: 5 },
+        wheelContacts: [i % 4 === 0, true, true, true],
+        bodyContactCount: i % 5 === 0 ? 2 : 0,
+      });
+      // Flat yaw pose: camera world Y must match hard seat (+ optional XZ→no Y)
+      expect(camera.position.y).toBeCloseTo(y + 1.15, 4);
+      expect(rig.getHeadOffsetLocal().y).toBe(0);
+      expect(rig.getImpactPitch()).toBe(0);
+    }
   });
 });

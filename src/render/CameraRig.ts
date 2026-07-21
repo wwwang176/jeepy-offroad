@@ -76,7 +76,8 @@ const YAW_LAG_SPEED_REF = 10;
 const TP_YAW_LAG_MAX = 1.2;
 
 /**
- * First-person head inertia (layer B) — canonical underdamped oscillator:
+ * First-person head inertia (layer B) — underdamped oscillator on **lateral X
+ * and longitudinal Z only** (no vertical Y soft-follow — seat eye Y is hard):
  *
  *   x'' + 2 ζ ω x' + ω² x = −ω² S a_local
  *   ⇔  x'' = −ω² (x + S a) − 2 ζ ω v
@@ -84,45 +85,26 @@ const TP_YAW_LAG_MAX = 1.2;
  *
  * Input a is estimated from Δlinvel (filtered). Turn-perpendicular component
  * is scaled down so slide direction-changes do not thrash the head.
- * No target-LERP / spring-to-offset layers — those are dead code paths removed.
+ * Vertical bumps still contribute via impact layer C (landing kick / pitch).
  */
-/** Natural frequency ω (rad/s) per axis [lat X, vert Y, lon Z]. */
-/** Y a bit livelier for hop ring; still below X/Z so micro-bumps stay soft. */
-const HEAD_OMEGA = { x: 10, y: 7, z: 11 } as const;
-/**
- * Damping ratio ζ < 1 → overshoot + ring (lower = more bounce).
- * Y more underdamped for bigger vertical overshoot; deadzone/LPF still gate noise.
- */
-const HEAD_ZETA = { x: 0.35, y: 0.36, z: 0.35 } as const;
-/**
- * Steady lean S (m per m/s²): x_eq = −S·a.
- * Y gain a bit higher for clearer hop travel once a clears the deadzone.
- */
-const HEAD_S = { x: 0.0045, y: 0.0065, z: 0.004 } as const;
+/** Natural frequency ω (rad/s) per soft axis [lat X, lon Z]. */
+const HEAD_OMEGA = { x: 10, z: 11 } as const;
+/** Damping ratio ζ < 1 → overshoot + ring (lower = more bounce). */
+const HEAD_ZETA = { x: 0.35, z: 0.35 } as const;
+/** Steady lean S (m per m/s²): x_eq = −S·a. */
+const HEAD_S = { x: 0.0045, z: 0.004 } as const;
 /** Cap |ẋ| (m/s local). */
 const HEAD_VEL_MAX = 0.55;
-/** Travel limits (m). */
-const HEAD_MAX_UP = 0.05;
-const HEAD_MAX_DOWN = 0.065;
+/** Travel limits (m) — X/Z only; head Y soft offset is always 0. */
 const HEAD_MAX_FORE = 0.028;
 const HEAD_MAX_AFT = 0.028;
 const HEAD_MAX_LAT = 0.028;
 /** Low-pass linvel before Δv/dt. */
 const HEAD_VEL_SMOOTH = 12;
-/** Low-pass estimated a_local (1/s). Same for all axes — no extra Y smear. */
+/** Low-pass estimated a_local (1/s). */
 const HEAD_ACCEL_SMOOTH = 10;
 const HEAD_ACCEL_MAX = 16;
 const HEAD_ACCEL_DEADZONE = 2.8;
-/**
- * Vertical soft-knee on |ay| (m/s²) — NOT a low-pass.
- * |ay| < LO → gain 0 (heightfield kinks / micro chatter).
- * LO..HI → smoothstep gain 0→1 (real small–mid bumps still register).
- * |ay| ≥ HI → full oscillator (big hops keep underdamped punch).
- * LO/HI kept relatively low so vertical motion stays frequent; only the
- * worst micro-spikes stay fully muted.
- */
-const HEAD_Y_KNEE_LO = 1.4;
-const HEAD_Y_KNEE_HI = 5.0;
 /** Perp-to-velocity accel scale / cap (slide dir-change) for position. */
 const HEAD_TURN_ACCEL_SCALE = 0.15;
 const HEAD_TURN_PERP_CAP = 5;
@@ -150,18 +132,14 @@ const HEAD_ROLL_ACCEL_SMOOTH = 9;
 
 /**
  * First-person impact shake (layer C): event impulse on wheel landing / body slam.
- * Position kicks in chassis local (m); pitch nod in rad; exponential decay.
- * Position kicks / caps halved with head gains.
+ * Vertical plane is hard-locked to chassis: no local-Y position kick, no pitch nod
+ * (those crawl the hood in FP). Only longitudinal Z + roll remain.
  */
 const IMPACT_DECAY = 12;
-const IMPACT_KICK_Y = 0.0225;
 const IMPACT_KICK_Z = 0.0125;
-const IMPACT_KICK_PITCH = 0.035;
 const IMPACT_KICK_ROLL = 0.02;
 const IMPACT_BODY_SCALE = 1.25;
-const IMPACT_MAX_Y = 0.035;
 const IMPACT_MAX_Z = 0.02;
-const IMPACT_MAX_PITCH = 0.055;
 const IMPACT_MAX_ROLL = 0.04;
 /** Min time between impact kicks (s) — stops contact-flicker spam when stuck. */
 const IMPACT_COOLDOWN_S = 0.18;
@@ -532,21 +510,24 @@ export class CameraRig {
       // Seed contact history without firing (spawn / settle / mode switch).
       this.seedImpactContacts(opts);
     } else {
-      // B: a_local → underdamped pos + lateral roll oscillators
+      // B: a_local → underdamped pos (X/Z) + lateral roll; Y hard 0
       this.updateHeadFromAccel(dt, opts);
-      // C: detect landings / body slam, then decay residual kick.
+      // C: landings / body slam (Z + roll only; vertical plane locked)
       if (this.impactCooldown > 0) {
         this.impactCooldown = Math.max(0, this.impactCooldown - dt);
       }
       this.applyImpactImpulses(opts);
       const decay = Math.exp(-IMPACT_DECAY * dt);
       this.impactOffsetLocal.multiplyScalar(decay);
-      this.impactPitch *= decay;
+      this.impactOffsetLocal.y = 0; // vertical plane hard-lock
+      this.impactPitch = 0;
       this.impactRoll *= decay;
       this.rememberImpactContacts(opts);
     }
 
-    // Eye = hard-mount seat + head offset (+ impact on final camera only)
+    // Eye = hard-mount seat + head XZ (+ impact XZ). Local Y always seat.
+    this.headOffsetLocal.y = 0;
+    this.impactOffsetLocal.y = 0;
     this.tmp.copy(this.headOffsetLocal).applyQuaternion(this.chassisQuat);
     this.fpEyeWorld.copy(this.desiredEye).add(this.tmp);
     this.tmp.copy(this.impactOffsetLocal).applyQuaternion(this.chassisQuat);
@@ -562,9 +543,9 @@ export class CameraRig {
       this.fpPitch += (this.fpPitchTarget - this.fpPitch) * k;
     }
 
-    // Chassis + facing fix + free look + inertial roll + impact nod/roll
+    // Chassis + facing fix + free look + inertial/impact roll (no impact pitch)
     this.lookEuler.set(
-      this.fpPitch + this.impactPitch,
+      this.fpPitch,
       this.fpYaw,
       this.headRoll + this.impactRoll,
       "YXZ",
@@ -594,17 +575,6 @@ export class CameraRig {
 
   private static deadzoneAxis(v: number, dead: number): number {
     return Math.abs(v) < dead ? 0 : v;
-  }
-
-  /**
-   * Soft-knee gain in [0,1] from |signal|. Hermite smoothstep between lo and hi.
-   * Below lo → 0; above hi → 1. Not a temporal filter.
-   */
-  static softKneeGain(absVal: number, lo: number, hi: number): number {
-    if (absVal <= lo) return 0;
-    if (absVal >= hi || hi <= lo) return 1;
-    const t = (absVal - lo) / (hi - lo);
-    return t * t * (3 - 2 * t);
   }
 
   /** World accel: along-track full, perp scaled/capped. Writes into `out`. */
@@ -702,8 +672,8 @@ export class CameraRig {
 
       this.tmp.applyQuaternion(this.chassisQuatInv);
       this.tmp.x = clamp(this.tmp.x, -HEAD_ACCEL_MAX, HEAD_ACCEL_MAX);
-      this.tmp.y = clamp(this.tmp.y, -HEAD_ACCEL_MAX, HEAD_ACCEL_MAX);
       this.tmp.z = clamp(this.tmp.z, -HEAD_ACCEL_MAX, HEAD_ACCEL_MAX);
+      // Y soft-follow disabled — do not drive vertical head offset from ay.
 
       this.tmpRollA.applyQuaternion(this.chassisQuatInv);
       const aLatRoll = clamp(
@@ -715,7 +685,7 @@ export class CameraRig {
       const aK = 1 - Math.exp(-HEAD_ACCEL_SMOOTH * dt);
       const aKr = 1 - Math.exp(-HEAD_ROLL_ACCEL_SMOOTH * dt);
       this.smoothAccelLocal.x += (this.tmp.x - this.smoothAccelLocal.x) * aK;
-      this.smoothAccelLocal.y += (this.tmp.y - this.smoothAccelLocal.y) * aK;
+      this.smoothAccelLocal.y = 0;
       this.smoothAccelLocal.z += (this.tmp.z - this.smoothAccelLocal.z) * aK;
       this.smoothAccelLatRoll +=
         (aLatRoll - this.smoothAccelLatRoll) * aKr;
@@ -725,14 +695,6 @@ export class CameraRig {
       this.smoothAccelLocal.x,
       HEAD_ACCEL_DEADZONE,
     );
-    // Soft-knee vertical: kill micro kinks, keep big hops full strength.
-    const ayRaw = this.smoothAccelLocal.y;
-    const ayGain = CameraRig.softKneeGain(
-      Math.abs(ayRaw),
-      HEAD_Y_KNEE_LO,
-      HEAD_Y_KNEE_HI,
-    );
-    const ay = ayRaw * ayGain;
     const az = CameraRig.deadzoneAxis(
       this.smoothAccelLocal.z,
       HEAD_ACCEL_DEADZONE,
@@ -754,18 +716,6 @@ export class CameraRig {
       HEAD_MAX_LAT,
       HEAD_VEL_MAX,
     );
-    const hy = CameraRig.integrateHeadOscillator(
-      this.headOffsetLocal.y,
-      this.headVelLocal.y,
-      ay,
-      dt,
-      HEAD_OMEGA.y,
-      HEAD_ZETA.y,
-      HEAD_S.y,
-      -HEAD_MAX_DOWN,
-      HEAD_MAX_UP,
-      HEAD_VEL_MAX,
-    );
     const hz = CameraRig.integrateHeadOscillator(
       this.headOffsetLocal.z,
       this.headVelLocal.z,
@@ -778,8 +728,9 @@ export class CameraRig {
       HEAD_MAX_FORE,
       HEAD_VEL_MAX,
     );
-    this.headOffsetLocal.set(hx.x, hy.x, hz.x);
-    this.headVelLocal.set(hx.v, hy.v, hz.v);
+    // Vertical: hard seat (no B-layer bob). Impact C may still add local Y.
+    this.headOffsetLocal.set(hx.x, 0, hz.x);
+    this.headVelLocal.set(hx.v, 0, hz.v);
 
     const hr = CameraRig.integrateHeadOscillator(
       this.headRoll,
@@ -893,20 +844,15 @@ export class CameraRig {
 
     this.impactCooldown = IMPACT_COOLDOWN_S;
 
-    // Down + slightly aft in chassis local; nod pitch down (+pitch = look up).
-    this.impactOffsetLocal.y -= s * IMPACT_KICK_Y;
+    // Longitudinal only in chassis local. Vertical plane stays on seat.
     this.impactOffsetLocal.z -= s * IMPACT_KICK_Z;
-    this.impactPitch -= s * IMPACT_KICK_PITCH;
+    this.impactOffsetLocal.y = 0;
+    this.impactPitch = 0;
     if (bodyS * IMPACT_BODY_SCALE >= wheelS && bodyS > 0) {
       // Deterministic light roll on body slam (no RNG — stable tests).
       this.impactRoll += s * IMPACT_KICK_ROLL * (bodyN % 2 === 0 ? 1 : -1);
     }
 
-    this.impactOffsetLocal.y = clamp(
-      this.impactOffsetLocal.y,
-      -IMPACT_MAX_Y,
-      IMPACT_MAX_Y,
-    );
     this.impactOffsetLocal.z = clamp(
       this.impactOffsetLocal.z,
       -IMPACT_MAX_Z,
@@ -917,11 +863,7 @@ export class CameraRig {
       -HEAD_MAX_LAT,
       HEAD_MAX_LAT,
     );
-    this.impactPitch = clamp(
-      this.impactPitch,
-      -IMPACT_MAX_PITCH,
-      IMPACT_MAX_PITCH,
-    );
+    this.impactOffsetLocal.y = 0;
     this.impactRoll = clamp(
       this.impactRoll,
       -IMPACT_MAX_ROLL,
