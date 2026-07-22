@@ -384,9 +384,9 @@ describe("CameraRig first-person head pitch (longitudinal)", () => {
       snap: true,
       linvel: { x: 0, y: 0, z: 0 },
     });
-    // Aggressive ramp — old hard-clamp at 0.09 would stick at the rail often
+    // Aggressive ramp — soft-sat + half gain should stay under hard rail
     let framesAtHard = 0;
-    const hard = 0.12;
+    const hard = 0.06;
     for (let i = 1; i <= 120; i++) {
       rig.update(1 / 60, poseAt(1), {
         linvel: { x: 0, y: 0, z: i * 1.2 },
@@ -394,8 +394,8 @@ describe("CameraRig first-person head pitch (longitudinal)", () => {
       if (Math.abs(rig.getHeadPitch()) >= hard - 1e-4) framesAtHard++;
     }
     expect(framesAtHard).toBe(0);
-    // Still reaches a clear nod (soft ceiling ~0.085, overshoot allowed)
-    expect(Math.abs(rig.getHeadPitch())).toBeGreaterThan(0.04);
+    // Clear nod but quieter than first pitch pass (soft ~0.0425)
+    expect(Math.abs(rig.getHeadPitch())).toBeGreaterThan(0.02);
     expect(Math.abs(rig.getHeadPitch())).toBeLessThan(hard);
   });
 
