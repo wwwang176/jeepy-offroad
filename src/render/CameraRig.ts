@@ -145,13 +145,13 @@ const HEAD_PITCH_OMEGA = 9;
 const HEAD_PITCH_ZETA = 0.34;
 /**
  * rad per m/s²; small a: θ_eq ≈ −S a.
- * Halved vs first pitch pass — hard accel/brake was too noddy; cruise (a≈0) unchanged.
+ * ~0.75× first pitch pass (full was too much, half too little); cruise a≈0 still 0.
  */
-const HEAD_PITCH_S = 0.006;
-/** Soft eq ceiling (rad, ~2.4°); tanh asymptote, rarely a true stop. */
-const HEAD_PITCH_SOFT_MAX = 0.0425;
-/** Hard rail for overshoot only (rad, ~3.4°). */
-const HEAD_PITCH_MAX = 0.06;
+const HEAD_PITCH_S = 0.009;
+/** Soft eq ceiling (rad, ~3.7°); tanh asymptote, rarely a true stop. */
+const HEAD_PITCH_SOFT_MAX = 0.064;
+/** Hard rail for overshoot only (rad, ~5.2°). */
+const HEAD_PITCH_MAX = 0.09;
 const HEAD_PITCH_VEL_MAX = 1.8;
 const HEAD_PITCH_DEADZONE = 1.8;
 
